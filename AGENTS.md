@@ -106,7 +106,8 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   a unit test checks, so caches serve the new files. Grep both files for the old behavior. Past feature PRs that only
   added a table row had to be followed by a separate README rewrite.
 
-- `main` is protected: no direct pushes (admins included), PRs need the `test` check passing on an up-to-date branch,
+- `main` is protected: no direct pushes (admins included), PRs need the three CI checks (Unit tests,
+  Integration tests and coverage, End-to-end tests (Chromium)) passing on an up-to-date branch,
   and merges are squash-only. Never try to push to `main` or disable protection to get a change in; open a PR.
 - Stacked PRs: once the base PR is squash-merged, the stacked branch still carries the base's original commits and
   conflicts. Rebase only its own commits: `git rebase --onto origin/main <last-commit-of-base> <branch>`, then

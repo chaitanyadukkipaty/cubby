@@ -186,8 +186,8 @@ We use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 `main` is protected, for everyone including maintainers:
 
 - Changes land **only through pull requests**. Direct pushes, force pushes and deleting `main` are blocked.
-- The **`test` check must pass** (unit, integration, coverage and end-to-end), and the branch must be **up to date**
-  with `main`. If it isn't, use GitHub's "Update branch" button or rebase.
+- **All three CI checks must pass**: *Unit tests*, *Integration tests and coverage*, and *End-to-end tests (Chromium)*.
+  The branch must also be **up to date** with `main`. If it isn't, use GitHub's "Update branch" button or rebase.
 - History is **linear**: squash merges only.
 - **Open review conversations must be resolved** before merging.
 - Required approvals are currently 0 while the project has a single maintainer; this goes up as maintainers join.

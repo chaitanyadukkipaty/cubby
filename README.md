@@ -15,7 +15,7 @@ AI coding agent build, deploy and share full-stack apps — each with a real dat
 [How it works](#how-it-works) ·
 [Contributing](CONTRIBUTING.md)
 
-[![Tests](https://github.com/chaitanyadukkipaty/cubby/actions/workflows/test.yml/badge.svg)](https://github.com/chaitanyadukkipaty/cubby/actions/workflows/test.yml)
+[![CI](https://github.com/chaitanyadukkipaty/cubby/actions/workflows/ci.yml/badge.svg)](https://github.com/chaitanyadukkipaty/cubby/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-d9480f)](https://chaitanyadukkipaty.github.io/cubby/)
 ![Node 20+](https://img.shields.io/badge/node-20%2B-1d1d1b)
 ![Self-hosted](https://img.shields.io/badge/self--hosted-Docker-1d1d1b)
