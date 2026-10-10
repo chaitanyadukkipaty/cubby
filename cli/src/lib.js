@@ -108,9 +108,31 @@ export function skillLinks(home) {
 }
 
 // The skill is server-neutral (one skill for every server you use); only its version is stamped.
+// "0.1.2", "v0.1.2" or "0.1.2-dev+abc" → [0, 1, 2]; null for anything else.
+export function versionCore(v) {
+  const m = String(v ?? '').trim().replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  return m ? m.slice(1).map(Number) : null;
+}
+
+// Is version a strictly newer release than b? Compares X.Y.Z only; unparseable versions are never newer.
+export function isNewerVersion(a, b) {
+  const x = versionCore(a);
+  const y = versionCore(b);
+  if (!x) return false;
+  if (!y) return true;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+
+// One skill serves every server, so it only ever moves forward: a skill from a newer CLI is never replaced
+// by an older one (returns { kept } instead).
 export function installSkill({ home, src, version }) {
   const { skillHome } = skillPaths(home);
   if (!existsSync(join(src, 'SKILL.md'))) throw new CliError('Skill files missing from this CLI install');
+  const current = skillStatus(home);
+  if (current.installed && isNewerVersion(current.version, version)) {
+    return { path: skillHome, agents: [], version: current.version, kept: true };
+  }
   rmSync(skillHome, { recursive: true, force: true });
   mkdirSync(dirname(skillHome), { recursive: true });
   cpSync(src, skillHome, { recursive: true });

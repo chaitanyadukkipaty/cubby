@@ -163,6 +163,21 @@ describe('agent skill install/remove/status', () => {
     assert.equal(lib.skillStatus(home).links.find((l) => l.agent === 'claude-code').state, 'linked');
     assert.ok(lstatSync(join(home, '.codex', 'skills', 'cubby')).isDirectory());
   });
+  test('never downgrades: an older CLI keeps the newer installed skill', () => {
+    lib.installSkill(opts());
+    const r = lib.installSkill({ home, src: SKILL_SRC, version: '1.0.0' });
+    assert.deepEqual([r.kept, r.version], [true, '9.8.7']);
+    assert.equal(lib.skillStatus(home).version, '9.8.7');
+    assert.equal(lib.installSkill({ home, src: SKILL_SRC, version: '9.9.0' }).version, '9.9.0', 'newer replaces it');
+  });
+  test('isNewerVersion compares X.Y.Z only; junk is never newer', () => {
+    assert.equal(lib.isNewerVersion('0.1.10', '0.1.9'), true);
+    assert.equal(lib.isNewerVersion('v1.0.0', '0.9.9-dev+abc'), true);
+    assert.equal(lib.isNewerVersion('0.1.1-dev+abc', '0.1.1'), false);
+    assert.equal(lib.isNewerVersion('0.1.1', 'junk'), true);
+    assert.equal(lib.isNewerVersion('junk', '0.0.1'), false);
+    assert.deepEqual(lib.versionCore('0.2.3-dev+x'), [0, 2, 3]);
+  });
   test('not-linked agents get linked on install', () => {
     mkdirSync(join(home, '.cursor'));
     assert.equal(lib.skillStatus(home).links.find((l) => l.agent === 'cursor').state, 'not linked');

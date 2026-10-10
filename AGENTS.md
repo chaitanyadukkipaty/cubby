@@ -75,14 +75,22 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 
 ## Version skew between servers (the launcher)
 
-- The global `cubby` bin is cli/src/launcher.js. App commands (`SERVER_COMMANDS`) run the CLI matching the target
-  server's version, downloaded into `~/.cubby/cli/<version>/`; account commands always run the bundled CLI so an
-  old CLI never rewrites the config. A new command must be classified in `SERVER_COMMANDS` or not, deliberately.
-- What every CLI version must keep understanding: `CUBBY_SERVER` + `CUBBY_TOKEN` env (the launcher passes the
-  resolved server and token this way, and strips `--server`, because 0.1.0 CLIs only take URLs), `GET /api/info`
-  returning `version`, and `/cli.tgz` containing `package/src/index.js`. Changing `config.json` or `cubby.json`
-  shape means bumping `format` and adding a migration in cli/src/servers.js and `/skill.sh` (which edits
-  config.json itself); readers refuse a newer format instead of guessing.
+- The rule: the CLI always matches the server it's talking to; in an app folder, the server in cubby.json. The
+  global `cubby` bin is cli/src/launcher.js: every command in `SERVER_COMMANDS` (login, signup, whoami, help and all
+  app commands) runs the CLI of the target server's version, downloaded into `~/.cubby/cli/<version>/`; only
+  `LOCAL_COMMANDS` (servers, use, logout, skill, version) run in the launcher. Never pick a CLI by "newest". A new
+  command must be put in one of the two sets deliberately (a unit test checks the classes).
+- Matched CLIs read and write the real `~/.cubby/config.json` themselves, so every CLI version must understand the
+  current config format. The launcher pins app commands with `CUBBY_SERVER` (the server it resolved) and sets
+  `CUBBY_LAUNCHED` so the child never dispatches again. Changing `config.json` or `cubby.json` shape means bumping
+  `format` and adding a migration in cli/src/servers.js and `/skill.sh` (which edits config.json itself). A newer
+  format is read leniently (to find servers) but never rewritten: `writeConfig` refuses it.
+- New commands and flags go in the command table (cli/src/commands.js), which drives `cubby help --json` and each
+  server's `/docs.md`. Never add them to SKILL.md: one skill serves every server version, so it may only name the
+  frozen core in cli/skill/core-commands.json (tests/unit/skill-core.test.js enforces it). Agents discover
+  anything else with `cubby help --json`, which answers for the server they target.
+- The installed skill only moves forward: the launcher refreshes it from a newer CLI before running it and never
+  installs an older one (`installSkill` refuses to downgrade too).
 - Cached CLIs get a `node_modules` symlink to the launcher's own, so the CLI's runtime dependencies are shared
   across versions. Keep them few and backward compatible (today only `tar`).
 - `cubby.json` pins an app to its server URL and is never rewritten to follow another server; moving an app is an

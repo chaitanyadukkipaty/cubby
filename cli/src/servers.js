@@ -18,11 +18,14 @@ export const serverId = (url) => new URL(normalizeUrl(url)).host;
 
 const emptyConfig = () => ({ format: CONFIG_FORMAT, default: null, servers: {} });
 
-const tooNew = (what, format) =>
-  new CliError(`${what} uses format ${format}, which this CLI is too old to read. Update the CLI from your server: npm i -g <server-url>/cli.tgz`);
+export const updateHint = (url) => `npm i -g ${url ? `${url}/cli.tgz` : '<server-url>/cli.tgz'}`;
+export const tooNew = (what, format, url) =>
+  new CliError(`${what} was written by a newer Cubby CLI (format ${format}). Update this one: ${updateHint(url)}`);
 
 // Accepts every shape config.json has had: missing, the single-server 0.1.0 shape, and format 1.
-export function migrateConfig(raw) {
+// A newer format is refused, unless `lenient`: then the servers it lists are still used for reading (to resolve
+// which server a command targets), but the config is marked `tooNew` and writeConfig refuses to touch it.
+export function migrateConfig(raw, { lenient = false } = {}) {
   if (!raw || typeof raw !== 'object') return emptyConfig();
   if (raw.format === undefined) {
     const cfg = emptyConfig();
@@ -33,11 +36,15 @@ export function migrateConfig(raw) {
     }
     return cfg;
   }
-  if (raw.format > CONFIG_FORMAT) throw tooNew('~/.cubby/config.json', raw.format);
+  if (raw.format > CONFIG_FORMAT) {
+    if (!lenient) throw tooNew('~/.cubby/config.json', raw.format);
+    const servers = raw.servers && typeof raw.servers === 'object' ? { ...raw.servers } : {};
+    return { format: raw.format, default: raw.default ?? null, servers, tooNew: true };
+  }
   return { format: CONFIG_FORMAT, default: raw.default ?? null, servers: { ...(raw.servers ?? {}) } };
 }
 
-export function readConfig(file) {
+export function readConfig(file, { lenient = false } = {}) {
   if (!existsSync(file)) return emptyConfig();
   let raw;
   try {
@@ -45,11 +52,13 @@ export function readConfig(file) {
   } catch (e) {
     throw new CliError(`${file} is not valid JSON: ${e.message}`);
   }
-  return migrateConfig(raw);
+  return migrateConfig(raw, { lenient });
 }
 
 // Atomic: a crash mid-write never leaves a half-written config (it holds tokens).
+// A config in a newer format than this CLI understands is never rewritten (that would downgrade it).
 export function writeConfig(file, cfg) {
+  if (cfg.tooNew) throw tooNew('~/.cubby/config.json', cfg.format, cfg.servers[cfg.default]?.url);
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify({ ...cfg, format: CONFIG_FORMAT }, null, 2) + '\n', { mode: 0o600 });

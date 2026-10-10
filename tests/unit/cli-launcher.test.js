@@ -1,4 +1,6 @@
-// The launcher: which CLI version runs for which server, version caching, atomic installs, offline fallback.
+// The launcher. Rule: the CLI that runs a command matches the version of the server that command talks to (in an
+// app folder, the server in cubby.json). Also: config.json ownership, newer-format refusal, login capture, skill
+// refresh, version caching, atomic installs and offline fallback.
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, lstatSync, readlinkSync } from 'node:fs';
@@ -6,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as tar from 'tar';
 import * as L from '../../cli/src/launcher.js';
+import { skillStatus } from '../../cli/src/lib.js';
 
 let home, cwd, nodeModules;
 beforeEach(() => {
@@ -16,11 +19,16 @@ beforeEach(() => {
 afterEach(() => { for (const d of [home, cwd, nodeModules]) rmSync(d, { recursive: true, force: true }); });
 
 // An npm-style tarball like a server's /cli.tgz, for a given version.
-async function cliTgz(version, { withEntry = true } = {}) {
+async function cliTgz(version, { withEntry = true, withHelp = true, skill = true } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cubby-tgz-'));
   mkdirSync(join(dir, 'package', 'src'), { recursive: true });
   writeFileSync(join(dir, 'package', 'package.json'), JSON.stringify({ name: 'cubby-cli', version }));
   if (withEntry) writeFileSync(join(dir, 'package', 'src', 'index.js'), `console.log('cli ${version}')`);
+  if (withHelp) writeFileSync(join(dir, 'package', 'src', 'commands.js'), 'export const COMMANDS = [];');
+  if (skill) {
+    mkdirSync(join(dir, 'package', 'skill', 'cubby'), { recursive: true });
+    writeFileSync(join(dir, 'package', 'skill', 'cubby', 'SKILL.md'), `# Cubby\n\n**Skill version: 0.0.0**\n\nfrom ${version}\n`);
+  }
   const chunks = [];
   for await (const c of tar.c({ gzip: true, cwd: dir, portable: true }, ['package'])) chunks.push(c);
   rmSync(dir, { recursive: true, force: true });
@@ -31,24 +39,51 @@ const writeCfg = (cfg) => { mkdirSync(join(home, '.cubby'), { recursive: true })
 const readCfg = () => JSON.parse(readFileSync(join(home, '.cubby', 'config.json'), 'utf8'));
 const NOW = 1_000_000_000_000;
 const server = (url, extra = {}) => ({ name: null, url, email: null, token: 'hk_tok', version: null, ...extra });
+const PRIYA = 'https://priya.dev';
+const ACME = 'https://cubby.acme.com';
+// priya.dev (default) runs 0.2.0 like the bundled CLI; cubby.acme.com runs 0.1.0.
+const VERSIONS = { [PRIYA]: '0.2.0', [ACME]: '0.1.0', 'https://new.dev': '0.1.0' };
+const twoServers = (acme = {}) => ({
+  format: 1, default: 'priya.dev',
+  servers: { 'priya.dev': server(PRIYA, { token: 'hk_priya' }), 'cubby.acme.com': server(ACME, { token: 'hk_acme', ...acme }) },
+});
 
 function deps(over = {}) {
   const calls = { fetch: [], download: [] };
   const d = {
     home, cwd, env: {}, now: () => NOW, nodeModules, bundledVersion: '0.2.0',
-    fetchVersion: async (url) => { calls.fetch.push(url); return '0.2.0'; },
-    download: async (url) => { calls.download.push(url); return cliTgz('0.1.0'); },
+    fetchVersion: async (url) => { calls.fetch.push(url); return VERSIONS[url] ?? '0.2.0'; },
+    download: async (url) => { calls.download.push(url); return cliTgz(VERSIONS[url.replace(/\/cli\.tgz$/, '')] ?? '0.1.0'); },
     ...over,
   };
   return { d, calls };
 }
 
 describe('parseLaunchArgs', () => {
-  test('finds the command and strips --server in both forms', () => {
-    assert.deepEqual(L.parseLaunchArgs(['deploy', '--server', 'Acme', '-m', 'x']), { command: 'deploy', server: 'Acme', argsWithoutServer: ['deploy', '-m', 'x'] });
-    assert.deepEqual(L.parseLaunchArgs(['--json', '--server=https://a.dev', 'init', 'app']), { command: 'init', server: 'https://a.dev', argsWithoutServer: ['--json', 'init', 'app'] });
+  test('finds the command, its argument and --server in both forms', () => {
+    const a = L.parseLaunchArgs(['deploy', '--server', 'Acme', '-m', 'x']);
+    assert.deepEqual([a.command, a.arg, a.server], ['deploy', null, 'Acme']);
+    const b = L.parseLaunchArgs(['--json', '--server=https://a.dev', 'login', 'https://b.dev', '--no-wait']);
+    assert.deepEqual([b.command, b.arg, b.server, b.json, b.noWait, b.wait], ['login', 'https://b.dev', 'https://a.dev', true, true, false]);
+  });
+  test('a flag\'s value is never mistaken for the command\'s argument', () => {
+    assert.equal(L.parseLaunchArgs(['login', '--token', 'hk_x']).arg, null);
+    assert.equal(L.parseLaunchArgs(['schema', 'push']).arg, 'push');
   });
   test('no command', () => assert.equal(L.parseLaunchArgs(['--help']).command, null));
+});
+
+describe('command classes', () => {
+  test('everything that talks to a server is version-matched, including login, whoami and help', () => {
+    for (const c of ['login', 'signup', 'whoami', 'help', 'init', 'link', 'projects', 'info', 'delete', 'schema', 'deploy', 'deploys', 'rollback']) assert.ok(L.SERVER_COMMANDS.has(c), c);
+  });
+  test('purely local commands are never version-matched', () => {
+    for (const c of ['servers', 'use', 'logout', 'skill', 'version']) {
+      assert.ok(L.LOCAL_COMMANDS.has(c), c);
+      assert.ok(!L.SERVER_COMMANDS.has(c), c);
+    }
+  });
+  test('config writers', () => assert.deepEqual([...L.CONFIG_WRITERS].sort(), ['login', 'logout', 'signup', 'use']));
 });
 
 describe('helpers', () => {
@@ -57,10 +92,6 @@ describe('helpers', () => {
     assert.equal(L.cachedVersion({ version: '1.0.0', version_checked_at: NOW - L.VERSION_TTL_MS - 1 }, NOW), null);
     assert.equal(L.cachedVersion({ version: '1.0.0' }, NOW), null);
     assert.equal(L.cachedVersion(null, NOW), null);
-  });
-  test('only app commands depend on the server version', () => {
-    for (const c of ['init', 'deploy', 'schema', 'rollback', 'version']) assert.ok(L.SERVER_COMMANDS.has(c), c);
-    for (const c of ['login', 'signup', 'logout', 'servers', 'use', 'skill', 'whoami', null]) assert.ok(!L.SERVER_COMMANDS.has(c), String(c));
   });
   test('sharedNodeModules finds the directory tar resolves from', () => {
     const dir = L.sharedNodeModules();
@@ -96,7 +127,10 @@ describe('network helpers (against a local server)', () => {
   });
   afterEach(() => new Promise((r) => srv.close(r)));
 
-  test('fetchVersion reads /api/info', async () => assert.equal(await L.fetchVersion(`${base}/ok`), '1.2.3'));
+  test('fetchVersion and fetchInfo read /api/info', async () => {
+    assert.equal(await L.fetchVersion(`${base}/ok`), '1.2.3');
+    assert.deepEqual(await L.fetchInfo(`${base}/ok`), { version: '1.2.3', name: 'X' });
+  });
   test('fetchVersion rejects errors and servers without a version', async () => {
     await assert.rejects(L.fetchVersion(`${base}/down`), /HTTP 503/);
     await assert.rejects(L.fetchVersion(`${base}/old`), /no version/);
@@ -135,33 +169,141 @@ describe('installCli', () => {
   });
 });
 
-describe('plan', () => {
-  const twoServers = (acme = {}) => ({
-    format: 1, default: 'priya.dev',
-    servers: { 'priya.dev': server('https://priya.dev'), 'cubby.acme.com': server('https://cubby.acme.com', { token: 'hk_acme', ...acme }) },
-  });
-
-  test('account and help commands always run the bundled CLI without network', async () => {
+describe('plan: the CLI matches the server each command talks to', () => {
+  // [description, argv, extra deps, expected server URL]
+  const sources = [
+    ['--server name', ['--server', 'cubby.acme.com'], {}, ACME],
+    ['--server URL', ['--server', ACME], {}, ACME],
+    ['CUBBY_SERVER', [], { env: { CUBBY_SERVER: 'cubby.acme.com' } }, ACME],
+    ['the app\'s cubby.json', [], { project: ACME }, ACME],
+    ['the default server', [], {}, PRIYA],
+  ];
+  const appCommands = [['deploy'], ['init', 'app'], ['schema', 'push'], ['projects'], ['help'], ['whoami']];
+  for (const [what, extra, over, url] of sources) {
+    for (const cmd of appCommands) {
+      test(`${cmd[0]} via ${what} → ${url === ACME ? '0.1.0 (cached)' : '0.2.0 (bundled)'}`, async () => {
+        writeCfg(twoServers());
+        if (over.project) writeFileSync(join(cwd, 'cubby.json'), JSON.stringify({ format: 1, project: 'p', server: over.project }));
+        const { d, calls } = deps(over.env ? { env: over.env } : {});
+        const p = await L.plan([...cmd, ...extra], d);
+        assert.deepEqual(calls.fetch, [url]);
+        if (url === ACME) {
+          assert.equal(p.run, 'cached');
+          assert.equal(p.version, '0.1.0');
+          assert.equal(p.env.CUBBY_SERVER, ACME);
+        } else {
+          assert.equal(p.run, 'bundled');
+        }
+      });
+    }
+  }
+  test('in an app folder, --server still wins over cubby.json (explicit beats implicit)', async () => {
+    writeCfg(twoServers());
+    writeFileSync(join(cwd, 'cubby.json'), JSON.stringify({ format: 1, project: 'p', server: ACME }));
     const { d, calls } = deps();
-    for (const argv of [['login', 'https://x.dev'], ['servers'], ['skill', 'status'], ['whoami'], [], ['--help']])
-      assert.deepEqual(await L.plan(argv, d), { run: 'bundled' });
+    await L.plan(['deploy', '--server', 'priya.dev'], d);
+    assert.deepEqual(calls.fetch, [PRIYA]);
+  });
+  test('never picks a CLI by "latest": an app on the older server always gets the older CLI', async () => {
+    writeCfg(twoServers());
+    await L.installCli({ home, url: 'u', download: () => cliTgz('0.9.0'), nodeModules }); // a newer cached CLI exists
+    writeFileSync(join(cwd, 'cubby.json'), JSON.stringify({ format: 1, project: 'p', server: ACME }));
+    const { d } = deps();
+    for (const cmd of [['whoami'], ['help', '--json'], ['deploy']]) {
+      const p = await L.plan(cmd, d);
+      assert.equal(p.version, '0.1.0', cmd[0]);
+    }
+  });
+});
+
+describe('plan: login and signup target the server they name', () => {
+  test('login <url> runs that server\'s CLI with the arguments untouched; it names its own server', async () => {
+    writeCfg(twoServers());
+    const { d, calls } = deps();
+    const p = await L.plan(['login', 'https://new.dev', '--token', 'hk_new'], d);
+    assert.deepEqual(calls.fetch, ['https://new.dev']);
+    assert.equal(p.run, 'cached');
+    assert.deepEqual(p.args, ['login', 'https://new.dev', '--token', 'hk_new']);
+    assert.equal(p.env.CUBBY_SERVER, undefined);
+    assert.equal(p.env.CUBBY_LAUNCHED, '1');
+  });
+  test('signup to a server you already use matches its version', async () => {
+    writeCfg(twoServers());
+    const p = await L.plan(['signup', 'cubby.acme.com', '--email', 'e'], deps().d);
+    assert.equal(p.target.url, ACME);
+    assert.equal(p.version, '0.1.0');
+  });
+  test('login --wait continues the login started by --no-wait', async () => {
+    writeCfg(twoServers());
+    writeFileSync(join(home, '.cubby', 'launcher-pending-login.json'), JSON.stringify({ url: ACME }));
+    const { d, calls } = deps();
+    const p = await L.plan(['login', '--wait', '--json'], d);
+    assert.deepEqual(calls.fetch, [ACME]);
+    assert.equal(p.version, '0.1.0');
+  });
+  test('login without a URL targets the current server', async () => {
+    writeCfg(twoServers());
+    const { d, calls } = deps();
+    await L.plan(['login', '--token', 'x'], d);
+    assert.deepEqual(calls.fetch, [PRIYA]);
+  });
+});
+
+describe('plan: what the matched CLI gets', () => {
+  test('the same environment, pinned to the server the launcher resolved, and marked so it never dispatches again', async () => {
+    writeCfg(twoServers());
+    const { d } = deps({ env: { HOME: home, PATH: '/bin', CUBBY_TOKEN: 'hk_ci' } });
+    const p = await L.plan(['deploy', '--server', 'cubby.acme.com', '-m', 'x'], d);
+    assert.deepEqual(p.args, ['deploy', '--server', 'cubby.acme.com', '-m', 'x'], 'arguments are passed through as they are');
+    assert.deepEqual([p.env.HOME, p.env.PATH, p.env.CUBBY_TOKEN], [home, '/bin', 'hk_ci']);
+    assert.deepEqual([p.env.CUBBY_SERVER, p.env.CUBBY_LAUNCHED], [ACME, '1']);
+  });
+  test('local commands run in the bundled CLI without network', async () => {
+    writeCfg(twoServers());
+    const { d, calls } = deps();
+    for (const argv of [['servers'], ['use', 'priya.dev'], ['logout', '--all'], ['skill', 'status'], [], ['--help'], ['bogus']]) {
+      assert.equal((await L.plan(argv, d)).run, 'bundled', argv.join(' '));
+    }
     assert.equal(calls.fetch.length, 0);
   });
   test('inside a launched child, never dispatch again', async () => {
     writeCfg(twoServers());
     const { d, calls } = deps({ env: { CUBBY_LAUNCHED: '1' } });
-    assert.deepEqual(await L.plan(['deploy'], d), { run: 'bundled' });
+    assert.equal((await L.plan(['deploy'], d)).run, 'bundled');
     assert.equal(calls.fetch.length, 0);
   });
+});
+
+describe('plan: a config written by a newer launcher', () => {
+  const newer = { format: 9, default: 'cubby.acme.com', servers: { 'cubby.acme.com': server(ACME, { token: 'hk_acme' }) } };
+  test('config-writing commands are refused with one clear update line', async () => {
+    writeCfg(newer);
+    for (const argv of [['login', ACME], ['signup', ACME]]) {
+      const p = await L.plan(argv, deps().d);
+      assert.equal(p.run, 'refuse');
+      assert.match(p.message, /written by a newer Cubby CLI\. Update this one first: npm i -g https:\/\/cubby\.acme\.com\/cli\.tgz/);
+    }
+    assert.equal((await L.plan(['use', 'x'], deps().d)).run, 'bundled', 'local writers: the bundled CLI refuses the write itself');
+  });
+  test('app commands still resolve their server from the readable fields, and the file is left alone', async () => {
+    writeCfg(newer);
+    const before = readFileSync(join(home, '.cubby', 'config.json'), 'utf8');
+    const p = await L.plan(['deploy'], deps().d);
+    assert.equal(p.version, '0.1.0');
+    assert.equal(p.env.CUBBY_SERVER, ACME);
+    assert.equal(readFileSync(join(home, '.cubby', 'config.json'), 'utf8'), before, 'no version cache written');
+  });
+});
+
+describe('plan: versions, caching and fallbacks', () => {
   test('an unresolvable server falls through to the bundled CLI (which reports it)', async () => {
-    const { d } = deps();
-    assert.deepEqual(await L.plan(['deploy'], d), { run: 'bundled' });
+    assert.equal((await L.plan(['deploy'], deps().d)).run, 'bundled');
   });
   test('same version as bundled: bundled, and the version is cached in config', async () => {
     writeCfg(twoServers());
     const { d, calls } = deps();
     assert.equal((await L.plan(['deploy'], d)).run, 'bundled');
-    assert.deepEqual(calls.fetch, ['https://priya.dev']);
+    assert.deepEqual(calls.fetch, [PRIYA]);
     assert.deepEqual([readCfg().servers['priya.dev'].version, readCfg().servers['priya.dev'].version_checked_at], ['0.2.0', NOW]);
   });
   test('a fresh cached version skips the network', async () => {
@@ -170,36 +312,20 @@ describe('plan', () => {
     const { d, calls } = deps();
     const p = await L.plan(['deploy', '--server', 'cubby.acme.com'], d);
     assert.equal(p.run, 'cached');
-    assert.equal(calls.fetch.length, 0);
-    assert.equal(calls.download.length, 0);
+    assert.equal(calls.fetch.length + calls.download.length, 0);
   });
-  test('a different version downloads that server\'s CLI and runs it with the server and token in env', async () => {
+  test('a different version downloads that server\'s CLI once', async () => {
     writeCfg(twoServers());
-    const { d, calls } = deps({ fetchVersion: async () => '0.1.0' });
+    const { d, calls } = deps();
     const p = await L.plan(['deploy', '--server', 'cubby.acme.com', '-m', 'x'], d);
-    assert.equal(p.run, 'cached');
-    assert.equal(p.version, '0.1.0');
     assert.equal(p.entry, L.cliEntry(home, '0.1.0'));
-    assert.deepEqual(p.args, ['deploy', '-m', 'x'], '--server is resolved by the launcher, not passed on');
-    assert.deepEqual([p.env.CUBBY_SERVER, p.env.CUBBY_TOKEN, p.env.CUBBY_LAUNCHED], ['https://cubby.acme.com', 'hk_acme', '1']);
-    assert.deepEqual(calls.download, ['https://cubby.acme.com/cli.tgz']);
-  });
-  test('the app\'s cubby.json picks the server', async () => {
-    writeCfg(twoServers());
-    writeFileSync(join(cwd, 'cubby.json'), JSON.stringify({ format: 1, project: 'p', server: 'https://cubby.acme.com' }));
-    const { d, calls } = deps({ fetchVersion: async (u) => { calls.fetch.push(u); return '0.2.0'; } });
-    await L.plan(['deploy'], d);
-    assert.deepEqual(calls.fetch, ['https://cubby.acme.com']);
-  });
-  test('an explicit CUBBY_TOKEN is not overridden', async () => {
-    writeCfg(twoServers());
-    const { d } = deps({ env: { CUBBY_TOKEN: 'hk_ci' }, fetchVersion: async () => '0.1.0' });
-    const p = await L.plan(['deploy', '--server', 'cubby.acme.com'], d);
-    assert.equal(p.env.CUBBY_TOKEN, 'hk_ci');
+    assert.deepEqual(calls.download, [`${ACME}/cli.tgz`]);
+    assert.equal(p.skillSrc, join(L.cliPackage(home, '0.1.0'), 'skill', 'cubby'));
+    await L.plan(['deploys', '--server', 'cubby.acme.com'], d);
+    assert.equal(calls.download.length, 1);
   });
   test('a URL you are not logged in to still dispatches, without a token', async () => {
-    const { d } = deps({ fetchVersion: async () => '0.1.0' });
-    const p = await L.plan(['projects', '--server', 'https://new.dev'], d);
+    const p = await L.plan(['projects', '--server', 'https://new.dev'], deps().d);
     assert.equal(p.run, 'cached');
     assert.equal(p.env.CUBBY_TOKEN, undefined);
   });
@@ -213,21 +339,63 @@ describe('plan', () => {
   });
   test('offline with no known version: bundled, silently', async () => {
     writeCfg(twoServers());
-    const { d } = deps({ fetchVersion: async () => { throw new Error('down'); } });
-    assert.deepEqual(await L.plan(['deploy', '--server', 'cubby.acme.com'], d), { run: 'bundled', notes: [] });
+    const p = await L.plan(['deploy', '--server', 'cubby.acme.com'], deps({ fetchVersion: async () => { throw new Error('down'); } }).d);
+    assert.deepEqual([p.run, p.notes], ['bundled', []]);
   });
   test('offline, known version, nothing cached and the download fails too: bundled with notes', async () => {
     writeCfg(twoServers({ version: '0.1.0' }));
     const { d } = deps({ fetchVersion: async () => { throw new Error('down'); }, download: async () => { throw new Error('down'); } });
     const p = await L.plan(['deploy', '--server', 'cubby.acme.com'], d);
     assert.equal(p.run, 'bundled');
-    assert.equal(p.notes.length, 2);
     assert.match(p.notes[1], /couldn't fetch the CLI for https:\/\/cubby\.acme\.com \(v0\.1\.0\): down; using the bundled v0\.2\.0/);
   });
-  test('online but /cli.tgz fails: bundled with a note', async () => {
+});
+
+describe('skill refresh: forward only', () => {
+  const skillSrc = (version) => {
+    const dir = mkdtempSync(join(tmpdir(), 'cubby-skill-src-'));
+    writeFileSync(join(dir, 'SKILL.md'), `# Cubby\n\n**Skill version: x**\n\nbody ${version}\n`);
+    return dir;
+  };
+  const installed = () => skillStatus(home);
+  const install = (version) => L.refreshSkill({ home, version, src: skillSrc(version) });
+
+  test('does nothing when the skill isn\'t installed', () => {
+    assert.equal(L.refreshSkill({ home, version: '0.3.0', src: skillSrc('0.3.0') }), null);
+    assert.equal(installed().installed, false);
+  });
+  test('upgrades from a newer CLI, never downgrades, ignores the same version', async () => {
+    const { installSkill } = await import('../../cli/src/lib.js');
+    installSkill({ home, src: skillSrc('0.2.0'), version: '0.2.0' });
+    assert.equal(install('0.1.0'), null, 'older: kept');
+    assert.equal(installed().version, '0.2.0');
+    assert.equal(install('0.2.0-dev+abc1234'), null, 'same release base: kept');
+    assert.equal(install('0.3.0').version, '0.3.0');
+    assert.equal(installed().version, '0.3.0');
+    assert.match(readFileSync(join(installed().path, 'SKILL.md'), 'utf8'), /body 0\.3\.0/);
+  });
+  test('the bundled skill ships with the launcher', () => {
+    assert.ok(existsSync(join(L.BUNDLED_SKILL, 'SKILL.md')));
+  });
+});
+
+describe('versionReport', () => {
+  test('reports the CLI that runs for the target server (its version), the launcher and the server', async () => {
     writeCfg(twoServers());
-    const { d } = deps({ fetchVersion: async () => '0.1.0', download: async () => { throw new Error('HTTP 404'); } });
-    const p = await L.plan(['deploy', '--server', 'cubby.acme.com'], d);
-    assert.deepEqual([p.run, p.notes.length], ['bundled', 1]);
+    writeFileSync(join(cwd, 'cubby.json'), JSON.stringify({ format: 1, project: 'p', server: ACME }));
+    const r = await L.versionReport(['version'], { home, cwd, env: {}, fetchInfo: async (u) => ({ name: 'Acme Cubby', version: VERSIONS[u] }), bundledVersion: '0.2.0' });
+    assert.deepEqual(r, { cli: '0.1.0', launcher: '0.2.0', server: ACME, server_name: 'Acme Cubby', server_version: '0.1.0' });
+  });
+  test('unreachable: falls back to the last known version, then the bundled one', async () => {
+    writeCfg(twoServers({ version: '0.1.0', name: 'Acme' }));
+    const down = async () => { throw new Error('down'); };
+    const a = await L.versionReport(['version', '--server', 'cubby.acme.com'], { home, cwd, env: {}, fetchInfo: down, bundledVersion: '0.2.0' });
+    assert.deepEqual([a.cli, a.server_version, a.server_name], ['0.1.0', null, 'Acme']);
+    const b = await L.versionReport(['version'], { home, cwd, env: {}, fetchInfo: down, bundledVersion: '0.2.0' });
+    assert.equal(b.cli, '0.2.0');
+  });
+  test('no servers at all', async () => {
+    const r = await L.versionReport(['version'], { home, cwd, env: {}, fetchInfo: async () => ({}), bundledVersion: '0.2.0' });
+    assert.deepEqual(r, { cli: '0.2.0', launcher: '0.2.0', server: null, server_name: null, server_version: null });
   });
 });
