@@ -8,6 +8,24 @@ import { CliError } from './lib.js';
 export const CONFIG_FORMAT = 1;
 export const PROJECT_FORMAT = 1;
 
+// The oldest Cubby server this CLI works with. Older servers' CLIs don't understand the multi-server config.
+export const MIN_SERVER_VERSION = '0.1.1';
+
+// null when a server version is supported, otherwise the one line to show. A server reporting the launcher's own
+// version is always supported (it's the same code, e.g. a development build before the version bump).
+export function unsupportedServer(version, { name, url, bundledVersion, min = MIN_SERVER_VERSION }) {
+  if (version === bundledVersion) return null;
+  const core = (v) => String(v).match(/^(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.+-]*)?$/)?.slice(1).map(Number);
+  const v = core(version);
+  const m = core(min);
+  const older = v && (v[0] - m[0] || v[1] - m[1] || v[2] - m[2]) < 0;
+  if (v && !older) return null;
+  const who = name || url;
+  return v
+    ? `${who} runs Cubby ${version}, older than ${min}, the oldest this CLI supports. Ask its admin to upgrade (sudo cubby-server upgrade).`
+    : `${who} reports an unrecognized Cubby version ("${version}"). Ask its admin to upgrade (sudo cubby-server upgrade).`;
+}
+
 export const normalizeUrl = (url) => {
   const u = new URL(url);
   return `${u.protocol}//${u.host}`.toLowerCase();

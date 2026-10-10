@@ -38,6 +38,8 @@ All notable changes to Cubby are documented here. The format follows
 - The agent skill only names a fixed core of commands every server supports and tells agents to run
   `cubby help --json` for the rest. The launcher refreshes the installed skill from newer CLIs and never downgrades it.
 - `cubby version` reports the CLI version that runs for the current server, the launcher's version and the server's.
+- Servers older than Cubby 0.1.1 aren't supported: the CLI refuses them with one line asking the admin to upgrade.
+- A server's `/skill.sh` keeps an installed skill that's newer than its own, instead of downgrading it.
 
 - Servers report exactly what they run: `X.Y.Z` for a release build, `X.Y.Z-dev+<commit>` for anything else, in
   `/api/info` (which also gains `commit`), the `x-cubby-version` header, the Admin tab, `/docs.md` and the CLI they
