@@ -246,7 +246,9 @@ tests/     unit, integration and browser tests
 | `npm run test:unit` | Fast unit tests, no network |
 | `npm run test:integration` | Tests against a real server and PocketBase |
 | `npm run test:e2e` | Browser tests for the dashboard and the app template (Playwright) |
-| `npm run coverage` | Unit and integration tests with a coverage report in `coverage/` |
+| `npm run coverage` | Unit and integration tests with a coverage report in `coverage/`; fails below the thresholds in `.c8rc.json` |
+| `npm run coverage:unit` | Unit tests alone against their own thresholds (`.c8rc.unit.json`) |
+| `npm run coverage:ratchet` | Raise both thresholds to the latest measured coverage (never lowers them) |
 | `npm test` | All of the above, in pyramid order |
 
 ## Contributing

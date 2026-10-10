@@ -22,8 +22,9 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: Run unit tests
-        run: npm run test:unit
+      # Fails if unit coverage drops below the thresholds in .c8rc.unit.json.
+      - name: Run unit tests with coverage gate
+        run: npm run coverage:unit
 
   integration:
     name: Integration tests and coverage
@@ -37,8 +38,8 @@ jobs:
           cache: npm
       - name: Install PocketBase and dependencies
         run: npm run setup
-      # Runs unit + integration tests under c8; the unit pass is fast and needed for the combined report.
-      - name: Run integration tests with coverage
+      # Runs unit + integration tests under c8 and fails if coverage drops below .c8rc.json thresholds.
+      - name: Run integration tests with coverage gate
         run: npm run coverage
       - name: Upload coverage report
         if: always()
