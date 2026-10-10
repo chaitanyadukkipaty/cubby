@@ -22,7 +22,8 @@ Closes #
 
 - [ ] Branch and commits follow [Conventional Commits](../CONTRIBUTING.md#commit-messages)
 - [ ] `npm test` passes locally and coverage didn't drop (`npm run coverage`)
-- [ ] Docs updated where behavior changed (docs site, README, CLI help, `SKILL.md`, `AGENTS.md`)
+- [ ] README **and** docs site updated for user-visible changes: story/examples, reference tables, screenshots, status lists ([checklist](../CONTRIBUTING.md#readme-and-docs-checklist))
+- [ ] Other docs updated where relevant (CLI help, `SKILL.md`, template `AGENTS.md`, `install.sh` prompts)
 - [ ] `CHANGELOG.md` has an entry under `[Unreleased]` if users will notice
 - [ ] No new dependencies, or the reason is explained above
 - [ ] Safe by default: no implicit data deletion, apps stay isolated, only owners change apps
