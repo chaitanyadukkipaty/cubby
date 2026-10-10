@@ -5,6 +5,8 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-10
+
 ### Added
 
 - Each server has a display name, like "Priya's Cubby". The installer asks for it (or set `CUBBY_SERVER_NAME` on
