@@ -9,6 +9,13 @@ export class AdminSection {
     this.appsPerUser = page.getByLabel('Apps per user');
     this.maxDeployMb = page.getByLabel('Max deploy (MB)');
     this.saveLimitsButton = page.getByRole('button', { name: 'Save limits' });
+    this.serverName = page.getByLabel('Server name');
+    this.saveNameButton = page.getByRole('button', { name: 'Save name' });
+  }
+
+  async renameServer(name) {
+    await this.serverName.fill(name);
+    await this.saveNameButton.click();
   }
 
   userRow(email) {

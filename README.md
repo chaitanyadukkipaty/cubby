@@ -92,7 +92,8 @@ On a Linux VPS with ports 80 and 443 open:
 curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/install.sh | sudo bash
 ```
 
-It asks for a domain (optional), an admin email and a password, then prints your URL and a **signup code**.
+It asks for a domain (optional), an admin email, a password and a name for your server (like "Priya's Cubby"),
+then prints your URL and a **signup code**.
 Send both to your friends.
 
 | Mode | App URLs | HTTPS |
@@ -194,4 +195,4 @@ Cubby is early. It's built for groups who trust each other, not as a hostile mul
 
 - All apps share one SQLite database, which suits a group of friends or a small team.
 - Not yet supported: server-side code, cron jobs, custom domains per app, single sign-on across apps, app emails.
-- Coming next: a name for each server ("Priya's Cubby") and one CLI for several servers.
+- Coming next: one CLI for several servers.

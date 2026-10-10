@@ -8,6 +8,7 @@ test('a person approves an agent login from its link, and the agent receives a w
 
   await connectPage.goto(device.verify_url);
   await expect(connectPage.signInHeading).toBeVisible();
+  await expect(connectPage.credit).toBeVisible();
   const email = `${uid('agentowner')}@e2e.dev`;
   const { signup_code: code } = await api.settings();
   await authPage.signUp({ email, password: 'password1234', code });

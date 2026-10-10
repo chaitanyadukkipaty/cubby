@@ -59,8 +59,10 @@
 
   /* Logged in */
   header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 12px; }
-  .logo { font-weight: 700; font-size: 20px; letter-spacing: -0.01em; }
+  .logo { font-weight: 700; font-size: 20px; line-height: 1.2; letter-spacing: -0.01em; margin: 0; }
   .logo span { color: var(--accent); }
+  .brandline { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+  .brandline .logo { overflow-wrap: anywhere; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
   .app h2 { word-break: break-all; }
   .app .meta { font-size: 13px; color: var(--muted); }
@@ -106,7 +108,9 @@ function ago(date, now = Date.now()) {
 const maskToken = (t) => `${String(t).slice(0, 6)}${'•'.repeat(20)}`;
 const installCommand = (server) => `curl -fsSL ${server}/skill.sh | sh`;
 const tokenLoginCommand = (server) => `cubby login ${server} --token <token>`;
-const inviteText = (server, code) => `Join my Cubby server: ${server}\nSignup code: ${code}`;
+const displayName = (name) => (typeof name === 'string' && name.trim()) || 'Cubby';
+const inviteText = (server, code, name) => `Join ${name ? displayName(name) : 'my Cubby server'}: ${server}\nSignup code: ${code}`;
+const connectHeading = (name) => `Connect your agent to ${name ? displayName(name) : 'this server'}?`;
 const isHttps = (url) => String(url).startsWith('https:');
 // /connect?code=XXXX-XXXX → "XXXX-XXXX"; any other page or a blank code → null.
 function parseConnectCode(pathname, search) {
@@ -121,7 +125,7 @@ const SERVER = '{{PUBLIC_URL}}';
 let token = null;
 try { token = localStorage.getItem('cubby_token'); } catch {}
 let me = null;
-let info = { open_signup: false, https: isHttps(SERVER) };
+let info = { name: 'Cubby', open_signup: false, https: isHttps(SERVER) };
 let tab = 'apps';
 
 const $app = document.getElementById('app');
@@ -157,6 +161,9 @@ function setToken(t) {
 }
 
 function logout() { setToken(null); me = null; render(); }
+
+// The server's own name leads; Cubby is credited quietly.
+const credit = () => h('span', { class: 'muted small' }, 'runs on ', h('a', { href: 'https://github.com/chaitanyadukkipaty/cubby', target: '_blank', rel: 'noopener' }, 'Cubby'));
 
 function httpBanner() {
   return info.https ? null : h('div', { class: 'banner' },
@@ -206,12 +213,12 @@ function renderAuth() {
     h('section', { class: 'hero' },
       h('div', {},
         connectCode
-          ? h('h1', {}, 'Connect your agent', h('br'), h('span', {}, 'to this server.'))
-          : h('h1', {}, 'Agents build it.', h('br'), h('span', {}, 'This server hosts it.')),
+          ? h('h1', {}, 'Connect your agent', h('br'), h('span', {}, `to ${displayName(info.name)}.`))
+          : h('h1', {}, 'Agents build it.', h('br'), h('span', {}, `${displayName(info.name)} hosts it.`)),
         h('p', { class: 'muted', style: 'font-size:18px' }, connectCode
           ? 'Sign up or log in, then approve the connection. Your agent is waiting and will carry on by itself.'
           : 'Describe an app to your AI agent and it gets built and hosted here — React on the front, a real database behind.'),
-        h('p', { class: 'muted small', style: 'margin-top:16px' }, `Cubby ${'{{VERSION}}'}`),
+        h('p', { class: 'muted small', style: 'margin-top:16px' }, credit(), ` ${'{{VERSION}}'}`),
       ),
       h('div', { class: 'card' }, tabs, form),
     ),
@@ -237,7 +244,7 @@ function render() {
   $app.replaceChildren(
     httpBanner() ?? '',
     h('header', {},
-      h('div', { class: 'logo' }, 'cubby', h('span', {}, '.')),
+      h('div', { class: 'brandline' }, h('h1', { class: 'logo' }, displayName(info.name)), credit()),
       h('div', { class: 'row' },
         h('span', { class: 'muted small' }, me.email),
         me.is_admin ? h('span', { class: 'badge accent' }, 'admin') : null,
@@ -308,7 +315,7 @@ function renderConnect() {
     httpBanner() ?? '',
     h('section', { class: 'hero', style: 'grid-template-columns:1fr;max-width:480px;margin:0 auto' },
       h('div', { class: 'card stack', style: 'text-align:center' },
-        h('h2', {}, 'Connect your agent?'),
+        h('h2', {}, connectHeading(info.name)),
         h('p', { class: 'muted' }, 'An AI agent on your computer wants to build and deploy apps as ', h('b', {}, me.email), '.'),
         h('p', {}, 'Check the code matches what your agent showed:'),
         h('code', { class: 'mono', style: 'font-size:24px;letter-spacing:.08em', 'aria-label': 'Connection code' }, connectCode),
@@ -376,7 +383,21 @@ async function renderAdmin(el) {
   const [overview, users, apps] = await Promise.all([api('GET', '/api/admin/overview'), api('GET', '/api/admin/users'), api('GET', '/api/admin/apps')]);
   const s = overview.settings;
   const srv = overview.server;
-  const invite = inviteText(SERVER, s.signup_code);
+  const invite = inviteText(SERVER, s.signup_code, s.server_name);
+
+  const nameForm = h('form', { class: 'row', onsubmit: async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api('PATCH', '/api/admin/settings', { server_name: new FormData(e.target).get('server_name') });
+      info.name = r.server_name;
+      document.title = displayName(info.name);
+      toast('Server name saved');
+      render();
+    } catch (ex) { toast(ex.message); }
+  } },
+    h('input', { type: 'text', name: 'server_name', value: s.server_name, maxlength: 60, required: true, 'aria-label': 'Server name', style: 'flex:1;min-width:0' }),
+    h('button', { type: 'submit' }, 'Save name'),
+  );
 
   const limitsForm = h('form', { class: 'row', onsubmit: async (e) => {
     e.preventDefault();
@@ -398,6 +419,12 @@ async function renderAdmin(el) {
       h('div', { class: 'card stat' }, h('span', { class: 'muted small' }, 'Data stored'), h('b', {}, fmtBytes(srv.data_bytes))),
       h('div', { class: 'card stat' }, h('span', { class: 'muted small' }, 'Disk free'), h('b', {}, fmtBytes(srv.disk_free_bytes)),
         h('span', { class: 'muted small' }, `of ${fmtBytes(srv.disk_total_bytes)}`)),
+    ),
+
+    h('h3', {}, 'Server name'),
+    h('div', { class: 'card stack' },
+      h('p', { class: 'muted small' }, 'Shown to everyone on the dashboard, the sign-in page and when connecting an agent.'),
+      nameForm,
     ),
 
     h('h3', {}, 'Invite people'),
@@ -473,6 +500,7 @@ async function renderAdmin(el) {
 
 (async () => {
   try { info = await (await fetch('/api/info')).json(); } catch {}
+  document.title = displayName(info.name);
   if (token) await load(); else render();
 })();
 </script>

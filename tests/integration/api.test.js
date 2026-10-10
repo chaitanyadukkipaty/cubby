@@ -6,7 +6,7 @@ import { api, signup, adminToken, deployTo } from '../helpers/integration.js';
 
 let srv, anon, adminCall, alice, aliceToken, bob, bobToken;
 before(async () => {
-  srv = await startServer();
+  srv = await startServer({ CUBBY_SERVER_NAME: '  Test   Cubby ' });
   anon = api(srv.url);
   adminCall = api(srv.url, await adminToken(srv.url, ADMIN));
   aliceToken = await signup(srv.url, 'alice@test.dev');
@@ -20,7 +20,7 @@ describe('bootstrap', () => {
   test('first boot creates the admin and settings; every response carries the version', async () => {
     const info = await anon('GET', '/api/info');
     assert.equal(info.status, 200);
-    assert.deepEqual(info.data, { version: info.data.version, open_signup: false, https: false, base_domain: `localhost:${srv.port}` });
+    assert.deepEqual(info.data, { name: 'Test Cubby', version: info.data.version, open_signup: false, https: false, base_domain: `localhost:${srv.port}` });
     assert.equal(info.headers.get('x-cubby-version'), info.data.version);
     const me = await adminCall('GET', '/api/me');
     assert.equal(me.data.email, ADMIN.email);
@@ -159,6 +159,17 @@ describe('admin', () => {
     await adminCall('PATCH', '/api/admin/settings', { body: { open_signup: false } });
     assert.equal((await anon('POST', '/api/signup', { body: { email: 'late@test.dev', password: 'password1234', code: SIGNUP_CODE } })).status, 403, 'old code stops working');
     assert.equal((await adminCall('PATCH', '/api/admin/settings', { body: { max_deploy_mb: 0 } })).status, 400);
+  });
+  test('server name: rename shows up in /api/info and /docs.md; invalid names are refused', async () => {
+    assert.equal((await adminCall('GET', '/api/admin/overview')).data.settings.server_name, 'Test Cubby', 'set from CUBBY_SERVER_NAME on first boot');
+    const r = await adminCall('PATCH', '/api/admin/settings', { body: { server_name: "  Priya's   Cubby " } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.server_name, "Priya's Cubby");
+    assert.equal((await anon('GET', '/api/info')).data.name, "Priya's Cubby");
+    assert.match((await anon('GET', '/docs.md')).text, /^# Priya's Cubby: Cubby server docs/);
+    for (const bad of ['', 'x'.repeat(61)]) assert.equal((await adminCall('PATCH', '/api/admin/settings', { body: { server_name: bad } })).status, 400);
+    assert.equal((await alice('PATCH', '/api/admin/settings', { body: { server_name: 'Mine' } })).status, 403);
+    assert.equal((await anon('GET', '/api/info')).data.name, "Priya's Cubby", 'unchanged by rejected requests');
   });
   test('users: list with app counts, disable blocks token and login, delete removes their apps', async () => {
     const users = (await adminCall('GET', '/api/admin/users')).data;

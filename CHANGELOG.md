@@ -5,6 +5,12 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Each server has a display name, like "Priya's Cubby". The installer asks for it (or set `CUBBY_SERVER_NAME` on
+  first boot), admins can rename it in the Admin tab, and it's shown on the dashboard, the sign-in and agent-approval
+  pages, `/api/info`, `/docs.md` and in CLI output, with a "runs on Cubby" credit.
+
 ## [0.1.0] - 2026-10-11
 
 First public version.

@@ -34,6 +34,9 @@ export function describeSchemaChanges(r) {
   return text;
 }
 
+// "Priya's Cubby (https://…)": how a server is shown in CLI output.
+export const serverLabel = (name, url) => (name ? `${name} (${url})` : url);
+
 export function versionWarning(cliVersion, serverVersion, server) {
   if (!serverVersion || serverVersion === cliVersion) return null;
   return `warning: CLI ${cliVersion} differs from server ${serverVersion}. Update with: npm i -g ${server}/cli.tgz`;

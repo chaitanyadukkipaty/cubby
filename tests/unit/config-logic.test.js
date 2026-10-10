@@ -57,8 +57,50 @@ describe('logic views', () => {
     assert.deepEqual(g, { slug: 's', url: 'u' });
   });
   test('settingsView exposes exactly the editable settings', () => {
-    assert.deepEqual(logic.settingsView({ id: 'x', signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9, created: 'z' }),
-      { signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9 });
+    assert.deepEqual(logic.settingsView({ id: 'x', server_name: "Priya's Cubby", signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9, created: 'z' }),
+      { server_name: "Priya's Cubby", signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9 });
+  });
+  test('settingsView falls back to "Cubby" for servers created before names existed', () => {
+    assert.equal(logic.settingsView({ signup_code: 'c' }).server_name, 'Cubby');
+  });
+});
+
+describe('server names', () => {
+  test('checkServerName trims and collapses whitespace', () => {
+    assert.equal(logic.checkServerName("  Priya's   Cubby  "), "Priya's Cubby");
+  });
+  test('checkServerName accepts exactly 60 characters', () => {
+    assert.equal(logic.checkServerName('x'.repeat(60)), 'x'.repeat(60));
+  });
+  for (const bad of [undefined, null, 42, '', '   ', 'x'.repeat(61), 'bad\u0000name', 'tab\u0007bell', 'del\u007f'])
+    test(`checkServerName rejects ${JSON.stringify(bad)?.slice(0, 20)}`, () => rejects(() => logic.checkServerName(bad), 400, /1-60 characters/));
+  test('a newline inside the name is normalised to a space, not rejected', () => {
+    assert.equal(logic.checkServerName('Team\nCubby'), 'Team Cubby');
+  });
+  test('defaultServerName uses the local part of the admin email', () => {
+    assert.equal(logic.defaultServerName('priya@example.com'), "priya's Cubby");
+    assert.equal(logic.defaultServerName(''), 'Cubby');
+    assert.equal(logic.defaultServerName(undefined), 'Cubby');
+    assert.equal(logic.defaultServerName(`${'a'.repeat(70)}@x.co`).length, 60);
+  });
+  test('initialServerName prefers a valid env name', () => {
+    assert.deepEqual(logic.initialServerName('Acme Tools', 'a@b.co'), { name: 'Acme Tools', ignored: false });
+  });
+  test('initialServerName falls back to the default when env is unset', () => {
+    assert.deepEqual(logic.initialServerName(undefined, 'sam@b.co'), { name: "sam's Cubby", ignored: false });
+  });
+  test('initialServerName flags an invalid env name and uses the default', () => {
+    assert.deepEqual(logic.initialServerName('x'.repeat(61), 'sam@b.co'), { name: "sam's Cubby", ignored: true });
+  });
+  test('serverName reads the stored name or falls back to Cubby', () => {
+    assert.equal(logic.serverName({ server_name: 'Acme' }), 'Acme');
+    assert.equal(logic.serverName({ server_name: '' }), 'Cubby');
+    assert.equal(logic.serverName(undefined), 'Cubby');
+  });
+  test('settingsPatch validates server_name and leaves it out when absent', () => {
+    assert.deepEqual(logic.settingsPatch({ server_name: ' Acme ' }, () => 'x'), { server_name: 'Acme' });
+    assert.ok(!('server_name' in logic.settingsPatch({ open_signup: true }, () => 'x')));
+    rejects(() => logic.settingsPatch({ server_name: '' }, () => 'x'), 400);
   });
 });
 
@@ -153,6 +195,11 @@ describe('logic.renderDocs', () => {
     assert.match(md, /Use <app_with_underscores>__tasks at https:\/\/<app>\.ex\.com\./);
     assert.doesNotMatch(md, /\{\{/);
     assert.doesNotMatch(md, /^# <app>/m, 'guide title line is dropped');
+  });
+  test('leads with the server name', () => {
+    const md = logic.renderDocs({ guide, settings: { server_name: 'Acme Cubby', open_signup: false, max_apps_per_user: 1, max_deploy_mb: 1 }, publicUrl: 'https://ex.com', baseDomain: 'ex.com', version: '1', keepDeploys: 10 });
+    assert.match(md, /^# Acme Cubby: Cubby server docs/);
+    assert.match(md, /Server name: Acme Cubby/);
   });
   test('warns on plain HTTP and open signup', () => {
     const md = logic.renderDocs({ guide, settings: { open_signup: true, max_apps_per_user: 1, max_deploy_mb: 1 }, publicUrl: 'http://1-2-3-4.sslip.io', baseDomain: '1-2-3-4.sslip.io', version: '1', keepDeploys: 10 });

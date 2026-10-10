@@ -138,6 +138,7 @@ async function ensurePlatformCollections() {
     type: 'base',
     ...LOCKED,
     fields: [
+      { name: 'server_name', type: 'text', max: 60 },
       { name: 'signup_code', type: 'text' },
       { name: 'open_signup', type: 'bool' },
       { name: 'max_apps_per_user', type: 'number', onlyInt: true },
