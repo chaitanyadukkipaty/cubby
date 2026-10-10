@@ -262,13 +262,14 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
       <h2>Install a server</h2>
       <p>You need a Linux VPS (Ubuntu or Debian work best) with ports 80 and 443 open. 1 vCPU and 1 GB of RAM is enough for a group of friends. Run:</p>
       <div class="code"><pre>curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/install.sh | sudo bash</pre></div>
-      <p>The installer asks three questions, then installs Docker if needed, builds the image and starts Cubby:</p>
+      <p>The installer asks four questions, then installs Docker if needed, builds the image and starts Cubby:</p>
       <div class="table"><table>
         <thead><tr><th>Question</th><th>What to answer</th></tr></thead>
         <tbody>
           <tr><td>Domain</td><td>e.g. <code>cubby.example.com</code>, or leave blank to use the server's IP address</td></tr>
           <tr><td>Admin email</td><td>Your email. You'll log in to the dashboard with it.</td></tr>
           <tr><td>Admin password</td><td>At least 8 characters. It isn't stored on disk after setup.</td></tr>
+          <tr><td>Name your cubby</td><td>What everyone sees, e.g. <code>Priya's Cubby</code>. Press Enter to use the suggested name; you can rename it later.</td></tr>
         </tbody>
       </table></div>
       <p>When it finishes it prints your URL and a signup code like <code>otter-maple-42</code>. Those two things are all your friends need.</p>
@@ -288,7 +289,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
     <section id="invite">
       <p class="kicker">Admin</p>
       <h2>Invite people</h2>
-      <p>Send your friends the server URL and the signup code. In the dashboard's <b>Admin</b> tab, <b>Copy invite</b> copies both. They open the URL, sign up with the code, and land on their dashboard.</p>
+      <p>Send your friends the server URL and the signup code. In the dashboard's <b>Admin</b> tab, <b>Copy invite</b> copies both. They open the URL, sign up with the code, and land on their dashboard, headed with your server's name.</p>
       <div class="two">
         <figure class="shot"><img src="assets/dashboard-my-apps.png" alt="Cubby dashboard showing the Connect your AI agent card and the user's Friend Polls app" loading="lazy" width="1280" height="820"><figcaption>What a friend sees after signing up.</figcaption></figure>
         <div>
@@ -405,6 +406,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
         <div>
           <p>The <b>Admin</b> tab shows users, apps, disk usage and limits. As admin you can:</p>
           <ul>
+            <li>Rename the server. The name shows on the dashboard, the sign-in page and when people connect an agent</li>
             <li>Rotate the signup code or turn on open signup</li>
             <li>Set apps per user and the maximum deploy size</li>
             <li>Disable a user (their apps stay online) or delete them with their apps</li>

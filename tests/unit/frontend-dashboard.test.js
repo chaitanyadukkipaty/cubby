@@ -20,7 +20,7 @@ class FakeElement extends Node {
 function load() {
   const ctx = vm.createContext({ Node, document: { createElement: (t) => new FakeElement(t) }, URLSearchParams, Date, String, Object });
   vm.runInContext(block, ctx);
-  return vm.runInContext('({ h, fmtBytes, ago, maskToken, installCommand, tokenLoginCommand, inviteText, isHttps, parseConnectCode, apiErrorMessage })', ctx);
+  return vm.runInContext('({ h, fmtBytes, ago, maskToken, installCommand, tokenLoginCommand, inviteText, isHttps, parseConnectCode, apiErrorMessage, displayName, connectHeading })', ctx);
 }
 
 test('the helper block exists and has no DOM-state or network access', () => {
@@ -93,6 +93,9 @@ describe('tokens and commands', () => {
   test('inviteText contains URL and code on separate lines', () => {
     assert.equal(f.inviteText('https://c.dev', 'otter-maple-42'), 'Join my Cubby server: https://c.dev\nSignup code: otter-maple-42');
   });
+  test('inviteText names the server when it has a name', () => {
+    assert.equal(f.inviteText('https://c.dev', 'otter-maple-42', "Priya's Cubby"), "Join Priya's Cubby: https://c.dev\nSignup code: otter-maple-42");
+  });
   test('isHttps', () => {
     assert.equal(f.isHttps('https://c.dev'), true);
     assert.equal(f.isHttps('http://c.dev'), false);
@@ -120,4 +123,12 @@ describe('apiErrorMessage()', () => {
     assert.equal(f.apiErrorMessage(500, null), 'Request failed (500)');
     assert.equal(f.apiErrorMessage(400, { error: { nested: true } }), 'Request failed (400)');
   });
+});
+
+describe('server names', () => {
+  test('displayName trims a real name', () => assert.equal(f.displayName('  Acme Cubby '), 'Acme Cubby'));
+  for (const blank of [undefined, null, '', '   ', 42, {}])
+    test(`displayName falls back to Cubby for ${JSON.stringify(blank)}`, () => assert.equal(f.displayName(blank), 'Cubby'));
+  test('connectHeading names the server', () => assert.equal(f.connectHeading("Priya's Cubby"), "Connect your agent to Priya's Cubby?"));
+  test('connectHeading without a name says "this server"', () => assert.equal(f.connectHeading(''), 'Connect your agent to this server?'));
 });

@@ -47,8 +47,40 @@ export function deployPatch(searchParams) {
 
 export const deployClient = (header) => String(header ?? '').slice(0, 60);
 
+// Each server has a display name ("Priya's Cubby"), shown to friends and agents.
+export const SERVER_NAME_MAX = 60;
+
+export function checkServerName(name) {
+  const trimmed = typeof name === 'string' ? name.trim().replace(/\s+/g, ' ') : '';
+  if (!trimmed || trimmed.length > SERVER_NAME_MAX || /[\u0000-\u001f\u007f]/.test(trimmed)) {
+    throw new HttpError(400, `Server name must be 1-${SERVER_NAME_MAX} characters`);
+  }
+  return trimmed;
+}
+
+// Default for a fresh install: "<local part of the admin email>'s Cubby".
+export function defaultServerName(adminEmail) {
+  const local = String(adminEmail ?? '').split('@')[0].trim();
+  return local ? `${local}'s Cubby`.slice(0, SERVER_NAME_MAX) : 'Cubby';
+}
+
+// First boot: CUBBY_SERVER_NAME if valid, else the default from the admin email.
+export function initialServerName(envName, adminEmail) {
+  const fallback = defaultServerName(adminEmail);
+  if (!envName) return { name: fallback, ignored: false };
+  try {
+    return { name: checkServerName(envName), ignored: false };
+  } catch {
+    return { name: fallback, ignored: true };
+  }
+}
+
+// Servers created before names existed have none stored.
+export const serverName = (s) => s?.server_name || 'Cubby';
+
 export function settingsPatch(body = {}, newCode) {
   const patch = {};
+  if (body.server_name !== undefined) patch.server_name = checkServerName(body.server_name);
   if (typeof body.open_signup === 'boolean') patch.open_signup = body.open_signup;
   if (body.rotate_code) patch.signup_code = newCode();
   for (const key of ['max_apps_per_user', 'max_deploy_mb']) {
@@ -61,7 +93,7 @@ export function settingsPatch(body = {}, newCode) {
   return patch;
 }
 
-export const settingsView = (s) => ({ signup_code: s.signup_code, open_signup: s.open_signup, max_apps_per_user: s.max_apps_per_user, max_deploy_mb: s.max_deploy_mb });
+export const settingsView = (s) => ({ server_name: serverName(s), signup_code: s.signup_code, open_signup: s.open_signup, max_apps_per_user: s.max_apps_per_user, max_deploy_mb: s.max_deploy_mb });
 
 // Signup rules that don't need the database: required fields, password length, signup code.
 export function checkSignup({ email, password, code } = {}, settings) {
@@ -97,8 +129,9 @@ export function renderDocs({ guide, settings: s, publicUrl, baseDomain, version,
     .replaceAll('{{SLUG}}', '<app>')
     .replaceAll('{{PREFIX}}', '<app_with_underscores>__')
     .replaceAll('{{URL}}', `${scheme}//<app>.${baseDomain}`);
-  return `# Cubby server docs
+  return `# ${serverName(s)}: Cubby server docs
 
+Server name: ${serverName(s)}
 Server: ${publicUrl}
 Version: ${version}
 Apps are served at: ${scheme}//<app>.${baseDomain}

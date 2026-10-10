@@ -36,8 +36,17 @@ test('rotating the signup code invalidates the old one; open signup removes the 
   await visitorPage.close();
 });
 
-test('limits: out-of-range values are rejected, valid ones are saved', async ({ api, dashboard }) => {
+test('settings: renaming the server updates the header and tab; limits reject out-of-range values', async ({ page, api, dashboard }) => {
   const { admin } = dashboard;
+  const original = (await api.settings()).server_name;
+  await admin.renameServer("E2E Crew's Cubby");
+  await expect(dashboard.toast).toHaveText('Server name saved');
+  await expect(page.getByRole('heading', { level: 1, name: "E2E Crew's Cubby" })).toBeVisible();
+  await expect(page.getByText(/runs on\s*Cubby/)).toBeVisible();
+  await expect(page).toHaveTitle("E2E Crew's Cubby");
+  expect((await api.settings()).server_name).toBe("E2E Crew's Cubby");
+  await api.updateSettings({ server_name: original });
+
   await admin.saveLimits({ appsPerUser: 20000 });
   await expect(dashboard.toast).toHaveText(/between 1 and 10000/);
 

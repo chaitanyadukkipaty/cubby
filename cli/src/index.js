@@ -7,7 +7,7 @@ import { join, resolve, relative } from 'node:path';
 import * as tar from 'tar';
 import {
   CliError, resolveServerUrl, normalizeServerArg, parseSchemaText, describeSchemaChanges, versionWarning,
-  deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval,
+  deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
 } from './lib.js';
 
@@ -97,6 +97,14 @@ async function api(method, path, { body, raw, contentType, auth = true } = {}) {
   return data;
 }
 
+// The server's display name, fetched once per command (older servers have none).
+let infoCache;
+async function serverName() {
+  infoCache ??= api('GET', '/api/info', { auth: false }).catch(() => ({}));
+  return (await infoCache).name ?? null;
+}
+const where = async () => serverLabel(await serverName(), serverUrl());
+
 let warned = false;
 function warnVersion(serverVersion) {
   const msg = warned ? null : versionWarning(CLI_VERSION, serverVersion, serverUrl());
@@ -141,7 +149,7 @@ const commands = {
     useServerArg(url);
     const r = await api('POST', '/api/signup', { auth: false, body: { email: flags.email, password: flags.password, code: flags.code } });
     saveSession(r.key, r.user.email);
-    out(`Signed up as ${r.user.email} on ${serverUrl()}`, { user: r.user, server: serverUrl() });
+    out(`Signed up as ${r.user.email} on ${await where()}`, { user: r.user, server: serverUrl(), server_name: await serverName() });
   },
   async login(url) {
     useServerArg(url);
@@ -151,8 +159,8 @@ const commands = {
       saveSession(token, me.email);
       const skill = flags['no-skill'] ? null : installSkill();
       out(
-        `Logged in as ${me.email} on ${serverUrl()}${skill ? `\nInstalled the cubby skill for: ${skill.agents.join(', ') || 'no agents found (copy is in ~/.agents/skills/cubby)'}` : ''}`,
-        { status: 'logged_in', email: me.email, server: serverUrl(), skill },
+        `Logged in as ${me.email} on ${await where()}${skill ? `\nInstalled the cubby skill for: ${skill.agents.join(', ') || 'no agents found (copy is in ~/.agents/skills/cubby)'}` : ''}`,
+        { status: 'logged_in', email: me.email, server: serverUrl(), server_name: await serverName(), skill },
       );
     };
     if (flags.token) return finish(flags.token);
@@ -217,7 +225,7 @@ const commands = {
   },
   async whoami() {
     const me = await api('GET', '/api/me');
-    out(`${me.email}${me.is_admin ? ' (admin)' : ''} @ ${serverUrl()}`, { email: me.email, is_admin: me.is_admin, server: serverUrl() });
+    out(`${me.email}${me.is_admin ? ' (admin)' : ''} @ ${await where()}`, { email: me.email, is_admin: me.is_admin, server: serverUrl(), server_name: await serverName() });
   },
 
   async init(slug) {
@@ -229,8 +237,8 @@ const commands = {
     writeJsonFile(join(dir, PROJECT_CONFIG), { project: slug, server: serverUrl() });
     if (!flags['no-install']) run('npm', ['install', '--no-audit', '--no-fund'], dir);
     out(
-      `Created ${slug} in ./${relative(process.cwd(), dir)}\n  url:  ${project.url}\n  next: cd ${relative(process.cwd(), dir)} && cubby schema push && cubby deploy`,
-      { ...project, dir },
+      `Created ${slug} on ${await where()} in ./${relative(process.cwd(), dir)}\n  url:  ${project.url}\n  next: cd ${relative(process.cwd(), dir)} && cubby schema push && cubby deploy`,
+      { ...project, dir, server_name: await serverName() },
     );
   },
   async link(slug) {
@@ -297,7 +305,7 @@ const commands = {
     for await (const chunk of tar.c({ gzip: true, cwd: dist, portable: true }, ['.'])) chunks.push(chunk);
     const params = deployParams({ ...flags, description: readJsonFile(resolve('package.json')).description });
     const d = await api('POST', `/api/projects/${slug}/deploys?${params}`, { raw: Buffer.concat(chunks), contentType: 'application/gzip' });
-    out(`Deployed ${d.id} (${d.files} files, ${(d.bytes / 1024).toFixed(0)} KB)\n  ${d.url}`, d);
+    out(`Deployed ${d.id} to ${await where()} (${d.files} files, ${(d.bytes / 1024).toFixed(0)} KB)\n  ${d.url}`, { ...d, server_name: await serverName() });
   },
   async deploys() {
     const list = await api('GET', `/api/projects/${requireProject()}/deploys`);

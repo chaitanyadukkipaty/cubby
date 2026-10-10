@@ -44,6 +44,11 @@ while true; do
   [[ "$ADMIN_PASSWORD" == "$CONFIRM" ]] && break
   echo "Passwords don't match."
 done
+# Shown to everyone who uses this server; changeable later in the dashboard's Admin tab.
+DEFAULT_NAME="${ADMIN_EMAIL%%@*}'s Cubby"
+SERVER_NAME="$(ask "Name your cubby [$DEFAULT_NAME]: " | tr -d '\000-\037' | sed 's/^ *//; s/ *$//')"
+SERVER_NAME="${SERVER_NAME:-$DEFAULT_NAME}"
+SERVER_NAME="${SERVER_NAME:0:60}"
 
 if [[ -n "$DOMAIN" ]]; then
   BASE_DOMAIN="$DOMAIN"
@@ -93,6 +98,7 @@ ACME_EMAIL=$ADMIN_EMAIL
 CUBBY_ADMIN_EMAIL=$ADMIN_EMAIL
 CUBBY_ADMIN_PASSWORD=$ADMIN_PASSWORD
 CUBBY_SIGNUP_CODE=$SIGNUP_CODE
+CUBBY_SERVER_NAME=$SERVER_NAME
 PB_SUPERUSER_EMAIL=superuser@cubby.internal
 PB_SUPERUSER_PASSWORD=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)
 ENV
@@ -115,6 +121,7 @@ echo
 bold "Cubby is running 🎉"
 echo
 info "URL:          $PUBLIC_URL"
+info "Name:         $SERVER_NAME"
 info "Admin:        $ADMIN_EMAIL"
 info "Signup code:  $SIGNUP_CODE"
 echo

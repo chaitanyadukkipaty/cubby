@@ -54,6 +54,8 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   lookup. Look tokens up by hash, never by the plain column.
 - install.sh deletes `CUBBY_ADMIN_PASSWORD` from the env file after first boot, and `bootstrap` only *creates* the admin.
   Changing admin credentials via env later does nothing; use `cubby-server reset-password`.
+- The same goes for every first-boot setting (`CUBBY_SIGNUP_CODE`, `CUBBY_SERVER_NAME`, `MAX_*`): `bootstrap` only reads
+  them when the settings row doesn't exist yet. After that, change them through the Admin tab / `/api/admin/settings`.
 
 ## Contracts between files that change together
 

@@ -43,6 +43,11 @@ describe('schema file helpers', () => {
   });
 });
 
+describe('serverLabel', () => {
+  test('shows the name with the URL', () => assert.equal(lib.serverLabel("Priya's Cubby", 'https://p.dev'), "Priya's Cubby (https://p.dev)"));
+  test('falls back to the URL for servers without a name', () => assert.equal(lib.serverLabel(null, 'https://p.dev'), 'https://p.dev'));
+});
+
 describe('versionWarning', () => {
   test('silent when versions match or the server sent none', () => { assert.equal(lib.versionWarning('1.0.0', '1.0.0', 's'), null); assert.equal(lib.versionWarning('1.0.0', null, 's'), null); });
   test('tells you how to update from this server', () => assert.equal(lib.versionWarning('1.0.0', '1.1.0', 'https://s'), 'warning: CLI 1.0.0 differs from server 1.1.0. Update with: npm i -g https://s/cli.tgz'));

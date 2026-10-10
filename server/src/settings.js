@@ -2,6 +2,7 @@
 import { randomInt } from 'node:crypto';
 import { admin } from './pb.js';
 import { config } from './config.js';
+import { initialServerName } from './logic.js';
 
 const WORDS = ['otter', 'maple', 'cedar', 'comet', 'river', 'falcon', 'ember', 'harbor', 'lumen', 'pebble', 'quartz', 'sable', 'tundra', 'willow', 'zephyr', 'birch'];
 export const newSignupCode = () => `${WORDS[randomInt(WORDS.length)]}-${WORDS[randomInt(WORDS.length)]}-${randomInt(10, 100)}`;
@@ -24,7 +25,10 @@ export async function updateSettings(patch) {
 export async function bootstrap() {
   const list = await admin.collection('cubby_settings').getList(1, 1);
   if (!list.items.length) {
+    const { name, ignored } = initialServerName(config.initial.serverName, config.initial.adminEmail);
+    if (ignored) console.error(`ignoring invalid CUBBY_SERVER_NAME; using "${name}"`);
     await admin.collection('cubby_settings').create({
+      server_name: name,
       signup_code: config.initial.signupCode || newSignupCode(),
       open_signup: false,
       max_apps_per_user: config.initial.maxAppsPerUser,

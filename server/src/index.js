@@ -52,7 +52,7 @@ const deviceLimit = rateLimiter(20, 60_000);
 const routes = [
   ['GET', '/api/info', 'public', async () => {
     const s = await getSettings();
-    return { version: config.version, open_signup: Boolean(s.open_signup), https: config.publicUrl.startsWith('https'), base_domain: config.baseDomain };
+    return { name: logic.serverName(s), version: config.version, open_signup: Boolean(s.open_signup), https: config.publicUrl.startsWith('https'), base_domain: config.baseDomain };
   }],
   ['POST', '/api/signup', 'public', async (req) => (authLimit(req), signup(await readJson(req)))],
   ['POST', '/api/login', 'public', async (req) => (authLimit(req), login(await readJson(req)))],

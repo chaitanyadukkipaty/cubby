@@ -15,6 +15,7 @@ export const config = {
     adminEmail: env('CUBBY_ADMIN_EMAIL'),
     adminPassword: env('CUBBY_ADMIN_PASSWORD'),
     signupCode: env('CUBBY_SIGNUP_CODE'),
+    serverName: env('CUBBY_SERVER_NAME'),
     maxAppsPerUser: Number(env('MAX_APPS_PER_USER', 10)),
     maxDeployMb: Number(env('MAX_DEPLOY_MB', 50)),
   },

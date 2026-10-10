@@ -64,7 +64,8 @@ describe('login', () => {
     assert.deepEqual(cfg, { server: srv.url, token, email: 'cli@test.dev' });
     assert.ok(lstatSync(join(home, '.claude/skills/cubby')).isSymbolicLink());
     assert.match(readFileSync(join(home, '.agents/skills/cubby/SKILL.md'), 'utf8'), new RegExp(`Server: \`${srv.url}\``));
-    assert.deepEqual(ok(await cubby(['whoami', '--json'])).json, { email: 'cli@test.dev', is_admin: false, server: srv.url });
+    assert.deepEqual(ok(await cubby(['whoami', '--json'])).json, { email: 'cli@test.dev', is_admin: false, server: srv.url, server_name: "admin's Cubby" });
+    assert.ok(ok(await cubby(['whoami'])).stdout.includes(`cli@test.dev @ admin's Cubby (${srv.url})`));
     const st = ok(await cubby(['skill', 'status', '--json'])).json;
     assert.equal(st.installed, true);
   });
@@ -127,7 +128,7 @@ describe('app lifecycle', () => {
     writeFileSync(join(dir(), 'package.json'), JSON.stringify({ ...pkg, description: 'CLI test app' }));
     const first = ok(await inApp(['deploy', '--no-build', '-m', 'one', '--client', 'test-agent']));
     assert.match(first.stdout, /Schema applied\. created: users, tasks/);
-    assert.match(first.stdout, /Deployed \w+ \(1 files/);
+    assert.match(first.stdout, /Deployed \w+ to admin's Cubby \(http:\/\/localhost:\d+\) \(1 files/);
     const second = ok(await inApp(['deploy', '--no-build', '-m', 'two', '--unlisted']));
     assert.doesNotMatch(second.stdout, /Schema applied/);
     const info = ok(await inApp(['info', '--json'])).json;
