@@ -1,0 +1,62 @@
+import { test, describe, mock } from 'node:test';
+import assert from 'node:assert/strict';
+import { backupDue, scheduleBackups } from '../../server/src/backups.js';
+
+const at = (iso) => new Date(iso);
+
+describe('backupDue', () => {
+  // Local-time hour, so build dates from local components.
+  const local = (h, day = 10) => new Date(2026, 9, day, h, 30);
+  test('due during the configured hour if not yet run today', () => {
+    const now = local(3);
+    assert.equal(backupDue(now, '', 3), now.toISOString().slice(0, 10));
+  });
+  test('not due outside the hour', () => {
+    for (const h of [0, 2, 4, 23]) assert.equal(backupDue(local(h), '', 3), null);
+  });
+  test('not due twice on the same day', () => {
+    const now = local(3);
+    assert.equal(backupDue(now, now.toISOString().slice(0, 10), 3), null);
+  });
+  test('due again the next day', () => {
+    const today = local(3).toISOString().slice(0, 10);
+    assert.ok(backupDue(local(3, 11), today, 3));
+  });
+  test('uses the ISO date as the stamp', () => assert.match(backupDue(at('2026-10-10T03:00:00'), '', at('2026-10-10T03:00:00').getHours()), /^\d{4}-\d{2}-\d{2}$/));
+});
+
+describe('scheduleBackups', () => {
+  test('checks every minute and runs once per day in the backup hour', async () => {
+    mock.timers.enable({ apis: ['setInterval'] });
+    try {
+      let clock = new Date(2026, 9, 10, 2, 59);
+      const runs = [];
+      scheduleBackups({ run: async () => runs.push(clock.getHours()), now: () => clock, hour: 3 });
+      mock.timers.tick(60_000);
+      assert.equal(runs.length, 0, 'not yet 3am');
+      clock = new Date(2026, 9, 10, 3, 0);
+      mock.timers.tick(60_000);
+      clock = new Date(2026, 9, 10, 3, 1);
+      mock.timers.tick(60_000);
+      assert.equal(runs.length, 1, 'only once in the hour');
+      clock = new Date(2026, 9, 11, 3, 0);
+      mock.timers.tick(60_000);
+      assert.equal(runs.length, 2, 'again the next night');
+    } finally {
+      mock.timers.reset();
+    }
+  });
+  test('a failing backup is logged, not thrown', async () => {
+    mock.timers.enable({ apis: ['setInterval'] });
+    const errors = mock.method(console, 'error', () => {});
+    try {
+      scheduleBackups({ run: async () => { throw new Error('disk full'); }, now: () => new Date(2026, 9, 10, 3, 0), hour: 3 });
+      mock.timers.tick(60_000);
+      await new Promise((r) => setImmediate(r));
+      assert.match(errors.mock.calls[0].arguments.join(' '), /backup failed: disk full/);
+    } finally {
+      errors.mock.restore();
+      mock.timers.reset();
+    }
+  });
+});

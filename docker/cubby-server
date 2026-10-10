@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Manage a Cubby install. Installed to /usr/local/bin/cubby-server by install.sh.
+set -euo pipefail
+
+CUBBY_HOME=/opt/cubby
+ENV_FILE="$CUBBY_HOME/cubby.env"
+SRC="$CUBBY_HOME/src"
+IMAGE=cubby:local
+NAME=cubby
+VOLUME=cubby-data
+
+[[ $EUID -eq 0 ]] || { echo "Run with sudo." >&2; exit 1; }
+[[ -f "$ENV_FILE" ]] || { echo "Cubby isn't installed ($ENV_FILE missing)." >&2; exit 1; }
+
+start_container() {
+  docker rm -f "$NAME" >/dev/null 2>&1 || true
+  docker run -d --name "$NAME" --restart unless-stopped \
+    -p 80:80 -p 443:443 -p 127.0.0.1:8090:8090 \
+    -v "$VOLUME":/data --env-file "$ENV_FILE" "$IMAGE" >/dev/null
+}
+
+set_env() { # key value
+  if grep -q "^$1=" "$ENV_FILE"; then sed -i "s#^$1=.*#$1=$2#" "$ENV_FILE"; else echo "$1=$2" >> "$ENV_FILE"; fi
+}
+
+case "${1:-help}" in
+  status)
+    docker ps --filter "name=^${NAME}$" --format 'table {{.Status}}\t{{.Ports}}'
+    grep -E '^(PUBLIC_URL|BASE_DOMAIN)=' "$ENV_FILE"
+    ;;
+  logs) docker logs --tail "${2:-200}" -f "$NAME" ;;
+  restart) docker restart "$NAME" >/dev/null && echo "Restarted." ;;
+  rebuild)
+    docker build -q -t "$IMAGE" "$SRC" >/dev/null
+    start_container
+    ;;
+  upgrade)
+    git -C "$SRC" pull -q --ff-only
+    docker build -q -t "$IMAGE" "$SRC" >/dev/null
+    start_container
+    echo "Upgraded to $(git -C "$SRC" describe --always --tags). Data is untouched."
+    ;;
+  code) docker exec "$NAME" node /app/server/src/admin-tasks.js code ;;
+  reset-password)
+    [[ $# -eq 3 ]] || { echo "usage: cubby-server reset-password <email> <new-password>"; exit 1; }
+    docker exec "$NAME" node /app/server/src/admin-tasks.js reset-password "$2" "$3"
+    ;;
+  backup)
+    docker exec "$NAME" node /app/server/src/admin-tasks.js backup
+    docker run --rm -v "$VOLUME":/data "$IMAGE" sh -c 'ls -1 /data/pb_data/backups /data/backups 2>/dev/null'
+    ;;
+  backups)
+    docker run --rm -v "$VOLUME":/data "$IMAGE" sh -c 'ls -1 /data/pb_data/backups 2>/dev/null | sed -n "s/^cubby-\(.*\)\.zip$/\1/p"'
+    ;;
+  restore)
+    [[ $# -eq 2 ]] || { echo "usage: cubby-server restore <YYYY-MM-DD>   (see: cubby-server backups)"; exit 1; }
+    DATE="$2"
+    echo "This restores ALL apps and accounts to $DATE. Anything newer is lost."
+    read -r -p "Type 'restore' to continue: " ok </dev/tty
+    [[ "$ok" == "restore" ]] || exit 1
+    docker stop "$NAME" >/dev/null
+    docker run --rm -v "$VOLUME":/data "$IMAGE" bash -euc "
+      cd /data
+      test -f pb_data/backups/cubby-$DATE.zip || { echo 'No backup for $DATE'; exit 1; }
+      mkdir -p /tmp/restore && cd /tmp/restore && unzip -q /data/pb_data/backups/cubby-$DATE.zip
+      cd /data/pb_data && find . -mindepth 1 -maxdepth 1 ! -name backups -exec rm -rf {} +
+      cp -a /tmp/restore/. /data/pb_data/
+      if [ -f /data/backups/sites-$DATE.tar.gz ]; then rm -rf /data/sites && tar -xzf /data/backups/sites-$DATE.tar.gz -C /data; fi
+    "
+    docker start "$NAME" >/dev/null
+    echo "Restored $DATE."
+    ;;
+  set-domain)
+    [[ $# -eq 2 ]] || { echo "usage: cubby-server set-domain <domain>   (point <domain> and *.<domain> at this server first)"; exit 1; }
+    set_env BASE_DOMAIN "$2"
+    set_env PUBLIC_URL "https://$2"
+    set_env CUBBY_HTTPS 1
+    start_container
+    echo "Now serving https://$2 — app URLs changed to https://<app>.$2. Everyone must re-run:"
+    echo "  cubby login https://$2 --token <token>"
+    ;;
+  *)
+    cat <<USAGE
+cubby-server — manage this Cubby install
+  status | logs [lines] | restart
+  upgrade                     pull latest code, rebuild, restart (data kept)
+  code                        show the signup code
+  reset-password <email> <pw> reset any account's password
+  backup                      run a backup now
+  backups                     list available backups (7 nightly kept)
+  restore <YYYY-MM-DD>        restore all data to a backup
+  set-domain <domain>         switch from IP to a real domain with HTTPS
+USAGE
+    ;;
+esac

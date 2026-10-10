@@ -1,0 +1,148 @@
+// Shared PocketBase: process management, superuser client, and platform collections.
+import { spawn, execFileSync } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import PocketBase from 'pocketbase';
+import { config } from './config.js';
+
+export const admin = new PocketBase(config.pb.url);
+admin.autoCancellation(false);
+
+let child;
+
+export async function startPocketBase() {
+  if (config.pb.spawn) {
+    const dir = join(config.dataDir, 'pb_data');
+    mkdirSync(dir, { recursive: true });
+    execFileSync(config.pb.bin, ['superuser', 'upsert', config.pb.email, config.pb.password, '--dir', dir]);
+    const host = config.pb.listen || new URL(config.pb.url).host;
+    child = spawn(config.pb.bin, ['serve', '--http', host, '--dir', dir], { stdio: ['ignore', 'inherit', 'inherit'] });
+    child.on('exit', (code) => {
+      console.error(`PocketBase exited with code ${code}`);
+      process.exit(1);
+    });
+    for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { child.kill(); process.exit(0); });
+  }
+  await connectAdmin();
+  await ensurePlatformCollections();
+}
+
+// Authenticates the shared superuser client against an already-running PocketBase.
+export async function connectAdmin() {
+  await waitForHealth();
+  await admin.collection('_superusers').authWithPassword(config.pb.email, config.pb.password, { autoRefreshThreshold: 30 * 60 });
+}
+
+async function waitForHealth() {
+  for (let i = 0; i < 50; i++) {
+    try {
+      const res = await fetch(`${config.pb.url}/api/health`);
+      if (res.ok) return;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`PocketBase not reachable at ${config.pb.url}`);
+}
+
+const LOCKED = { listRule: null, viewRule: null, createRule: null, updateRule: null, deleteRule: null };
+const autodates = [
+  { name: 'created', type: 'autodate', onCreate: true, onUpdate: false },
+  { name: 'updated', type: 'autodate', onCreate: true, onUpdate: true },
+];
+
+async function upsertCollection(def) {
+  try {
+    const existing = await admin.collections.getOne(def.name);
+    const fields = def.fields && mergeFieldIds(existing.fields, def.fields);
+    return await admin.collections.update(existing.id, { ...def, ...(fields && { fields }) });
+  } catch (err) {
+    if (err.status !== 404) throw err;
+    return await admin.collections.create(def);
+  }
+}
+
+// Keep existing field ids so PocketBase updates fields in place instead of recreating them.
+export function mergeFieldIds(existingFields, fields) {
+  const byName = new Map(existingFields.map((f) => [f.name, f]));
+  const merged = fields.map((f) => (byName.has(f.name) ? { ...f, id: byName.get(f.name).id } : f));
+  // System fields (id, password, tokenKey, email...) must always be kept.
+  for (const f of existingFields) if (f.system && !merged.some((m) => m.name === f.name)) merged.unshift(f);
+  return merged;
+}
+
+// Adds any missing fields to an existing collection, leaving everything else untouched.
+async function ensureFields(name, fields, extra = {}) {
+  const col = await admin.collections.getOne(name);
+  const missing = fields.filter((f) => !col.fields.some((e) => e.name === f.name));
+  return admin.collections.update(col.id, { ...extra, ...(missing.length && { fields: [...col.fields, ...missing] }) });
+}
+
+async function ensurePlatformCollections() {
+  // Platform accounts live in the default "users" auth collection; only the server may touch them.
+  const users = await ensureFields('users', [
+    { name: 'is_admin', type: 'bool' },
+    { name: 'disabled', type: 'bool' },
+  ], LOCKED);
+
+  const projects = await upsertCollection({
+    name: 'cubby_projects',
+    type: 'base',
+    ...LOCKED,
+    fields: [
+      { name: 'slug', type: 'text', required: true, max: 40 },
+      { name: 'name', type: 'text', max: 100 },
+      { name: 'description', type: 'text', max: 300 },
+      { name: 'owner', type: 'relation', collectionId: users.id, maxSelect: 1, required: true, cascadeDelete: true },
+      { name: 'current_deploy', type: 'text' },
+      { name: 'last_deployed', type: 'date' },
+      { name: 'unlisted', type: 'bool' },
+      { name: 'schema_hash', type: 'text' },
+      ...autodates,
+    ],
+    indexes: ['CREATE UNIQUE INDEX idx_cubby_projects_slug ON cubby_projects (slug)'],
+  });
+
+  // One token per user. Stored in plain text (superuser-only collection) so the dashboard can show it again.
+  await upsertCollection({
+    name: 'cubby_api_keys',
+    type: 'base',
+    ...LOCKED,
+    fields: [
+      { name: 'owner', type: 'relation', collectionId: users.id, maxSelect: 1, required: true, cascadeDelete: true },
+      { name: 'label', type: 'text', max: 100 },
+      { name: 'key', type: 'text' },
+      { name: 'key_hash', type: 'text', required: true },
+      { name: 'last_used', type: 'date' },
+      ...autodates,
+    ],
+    indexes: ['CREATE UNIQUE INDEX idx_cubby_api_keys_hash ON cubby_api_keys (key_hash)'],
+  });
+
+  await upsertCollection({
+    name: 'cubby_deploys',
+    type: 'base',
+    ...LOCKED,
+    fields: [
+      { name: 'project', type: 'relation', collectionId: projects.id, maxSelect: 1, required: true, cascadeDelete: true },
+      { name: 'files', type: 'number' },
+      { name: 'bytes', type: 'number' },
+      { name: 'message', type: 'text', max: 500 },
+      { name: 'client', type: 'text', max: 60 },
+      ...autodates,
+    ],
+  });
+
+  // Single-row server settings, editable from the admin tab.
+  await upsertCollection({
+    name: 'cubby_settings',
+    type: 'base',
+    ...LOCKED,
+    fields: [
+      { name: 'signup_code', type: 'text' },
+      { name: 'open_signup', type: 'bool' },
+      { name: 'max_apps_per_user', type: 'number', onlyInt: true },
+      { name: 'max_deploy_mb', type: 'number', onlyInt: true },
+      ...autodates,
+    ],
+  });
+}

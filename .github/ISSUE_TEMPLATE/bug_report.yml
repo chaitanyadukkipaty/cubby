@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Cubby doesn't work as documented
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! For security problems, use a [private advisory](https://github.com/chaitanyadukkipaty/cubby/security/advisories/new) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `cubby deploy` in …
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Cubby version
+      description: From the Admin tab, `/api/info`, or the `x-cubby-version` response header.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Install / server management
+        - Dashboard
+        - CLI
+        - Agent skill
+        - App template
+        - Hosting / database proxy
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Install mode
+      options:
+        - Domain (HTTPS)
+        - IP only (sslip.io)
+        - Local development
+  - type: input
+    id: agent
+    attributes:
+      label: Agent (if relevant)
+      placeholder: Claude Code 2.x, Codex, Cursor…
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and output
+      description: CLI output with `--json`, or `sudo cubby-server logs`. Remove tokens before pasting.
+      render: shell

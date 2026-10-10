@@ -1,0 +1,12 @@
+{
+  "name": "@cubby/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=../.env src/index.js"
+  },
+  "dependencies": {
+    "pocketbase": "^0.28.1",
+    "tar": "^7.4.3"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "cubby-cli",
+  "version": "0.1.0",
+  "description": "Build and host full-stack apps on Cubby. Designed for coding agents.",
+  "type": "module",
+  "bin": {
+    "cubby": "src/index.js"
+  },
+  "files": [
+    "src",
+    "template",
+    "skill"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "tar": "^7.4.3"
+  }
+}

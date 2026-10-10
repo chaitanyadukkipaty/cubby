@@ -1,0 +1,47 @@
+// Browser-approved CLI login (like `gh auth login`): the CLI gets a short code and a link,
+// the person approves it on the dashboard, and the CLI picks up their token.
+import { randomBytes, randomInt } from 'node:crypto';
+import { HttpError } from './http.js';
+import { tokenFor } from './auth.js';
+
+const TTL_MS = 10 * 60 * 1000;
+const pending = new Map(); // deviceId -> { userCode, expires, userId }
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+export const USER_CODE_RE = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
+const userCode = () => Array.from({ length: 8 }, (_, i) => (i === 4 ? '-' : '') + ALPHABET[randomInt(ALPHABET.length)]).join('');
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, d] of pending) if (d.expires < now) pending.delete(id);
+}, 60_000).unref();
+
+// `now` and `issueToken` are injectable for tests.
+export function startDevice(publicUrl, now = Date.now()) {
+  const deviceId = randomBytes(24).toString('base64url');
+  const code = userCode();
+  pending.set(deviceId, { userCode: code, expires: now + TTL_MS, userId: null });
+  return { device_id: deviceId, user_code: code, verify_url: `${publicUrl}/connect?code=${code}`, expires_in: TTL_MS / 1000, interval: 2 };
+}
+
+const findByCode = (code, now) => [...pending.values()].find((d) => d.userCode === String(code).trim().toUpperCase() && d.expires > now);
+
+export function deviceInfo(code, now = Date.now()) {
+  if (!findByCode(code, now)) throw new HttpError(404, 'This login link has expired or was already used. Ask your agent to run `cubby login` again.');
+  return { ok: true };
+}
+
+export function approveDevice(user, code, now = Date.now()) {
+  const d = findByCode(code, now);
+  if (!d) throw new HttpError(404, 'This login link has expired or was already used. Ask your agent to run `cubby login` again.');
+  d.userId = user.id;
+  return { ok: true };
+}
+
+export async function pollDevice(deviceId, { now = Date.now(), issueToken = tokenFor } = {}) {
+  const d = pending.get(deviceId);
+  if (!d || d.expires < now) throw new HttpError(410, 'Login request expired. Run `cubby login` again.');
+  if (!d.userId) return { status: 'pending' };
+  pending.delete(deviceId);
+  return { status: 'approved', token: await issueToken(d.userId) };
+}

@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cubby</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23d9480f'/%3E%3Ccircle cx='16' cy='17' r='7' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --card: #fff; --line: #e7e4dc; --accent: #d9480f;
+    --accent-fg: #fff; --code: #f3f1ea; --warn-bg: #fff4e5; --warn-fg: #8a4b00; --danger: #c92a2a; --ok: #2b8a3e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413; --fg: #ecebe6; --muted: #9a988f; --card: #1c1c1a; --line: #2e2d2a; --accent: #ff8a4c;
+      --accent-fg: #141413; --code: #232320; --warn-bg: #3a2a12; --warn-fg: #ffc078; --danger: #ff6b6b; --ok: #69db7c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 32px 16px 80px; }
+  a { color: var(--accent); }
+  h1 { font-size: 40px; line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 12px; }
+  h1 span { color: var(--accent); }
+  h2 { font-size: 18px; margin: 0 0 4px; }
+  h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 28px 0 10px; font-weight: 600; }
+  p { margin: 0 0 8px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  pre { background: var(--code); border-radius: 8px; padding: 12px 14px; margin: 8px 0; white-space: pre-wrap; word-break: break-all; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .stack > * + * { margin-top: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .spread { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  input[type=email], input[type=password], input[type=text], input[type=number] {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit;
+  }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button {
+    font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg);
+    padding: 7px 12px; cursor: pointer; white-space: nowrap;
+  }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; padding: 10px 14px; }
+  button.danger { color: var(--danger); }
+  button.link { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; }
+  .error { color: var(--danger); font-size: 14px; min-height: 1em; }
+  .banner { background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 10px 14px; font-size: 14px; margin-bottom: 16px; }
+  .badge { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border-radius: 99px; background: var(--code); color: var(--muted); }
+  .badge.accent { background: var(--accent); color: var(--accent-fg); }
+
+  /* Logged out */
+  .hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; min-height: 80vh; }
+  @media (max-width: 760px) { .hero { grid-template-columns: 1fr; gap: 24px; min-height: 0; padding-top: 24px; } h1 { font-size: 32px; } }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 20px; overflow-x: auto; }
+  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 10px 12px; color: var(--muted); }
+  .tabs button[aria-selected=true] { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
+
+  /* Logged in */
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 12px; }
+  .logo { font-weight: 700; font-size: 20px; letter-spacing: -0.01em; }
+  .logo span { color: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .app h2 { word-break: break-all; }
+  .app .meta { font-size: 13px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .table-wrap { overflow-x: auto; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+  .empty { text-align: center; padding: 32px; color: var(--muted); }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  label.check { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+// ---- BEGIN PURE HELPERS ----
+// No DOM state or network here: tests/unit/frontend-dashboard.test.js loads this block in a vm.
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (v === true) el.setAttribute(k, '');
+    else if (v !== false && v != null) el.setAttribute(k, v);
+  }
+  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : String(c));
+  return el;
+}
+
+const fmtBytes = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(1)} GB`;
+function ago(date, now = Date.now()) {
+  if (!date) return 'never';
+  const s = (now - new Date(date.replace(' ', 'T')).getTime()) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+const maskToken = (t) => `${String(t).slice(0, 6)}${'•'.repeat(20)}`;
+const installCommand = (server) => `curl -fsSL ${server}/skill.sh | sh`;
+const tokenLoginCommand = (server) => `cubby login ${server} --token <token>`;
+const inviteText = (server, code) => `Join my Cubby server: ${server}\nSignup code: ${code}`;
+const isHttps = (url) => String(url).startsWith('https:');
+// /connect?code=XXXX-XXXX → "XXXX-XXXX"; any other page or a blank code → null.
+function parseConnectCode(pathname, search) {
+  if (pathname !== '/connect') return null;
+  const code = (new URLSearchParams(search).get('code') || '').trim();
+  return code || null;
+}
+const apiErrorMessage = (status, data) => (data && typeof data.error === 'string' && data.error) || `Request failed (${status})`;
+// ---- END PURE HELPERS ----
+
+const SERVER = '{{PUBLIC_URL}}';
+let token = null;
+try { token = localStorage.getItem('cubby_token'); } catch {}
+let me = null;
+let info = { open_signup: false, https: isHttps(SERVER) };
+let tab = 'apps';
+
+const $app = document.getElementById('app');
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+async function copy(text, what = 'Copied') {
+  try { await navigator.clipboard.writeText(text); toast(what); }
+  catch { toast('Copy failed — select the text manually'); }
+}
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: { ...(token && { authorization: `Bearer ${token}` }), ...(body && { 'content-type': 'application/json' }) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && token) { logout(); throw new Error('Session expired'); }
+  if (!res.ok) throw new Error(apiErrorMessage(res.status, data));
+  return data;
+}
+
+function setToken(t) {
+  token = t;
+  try { t ? localStorage.setItem('cubby_token', t) : localStorage.removeItem('cubby_token'); } catch {}
+}
+
+function logout() { setToken(null); me = null; render(); }
+
+function httpBanner() {
+  return info.https ? null : h('div', { class: 'banner' },
+    '⚠ This server runs on plain HTTP, so passwords and tokens are not encrypted in transit. ',
+    'Ask the admin to add a domain to enable HTTPS.');
+}
+
+// --- Logged out -----------------------------------------------------------------------------
+
+function renderAuth() {
+  let mode = 'signup';
+  const err = h('p', { class: 'error', role: 'alert' });
+  const form = h('form', { class: 'stack' });
+  const tabs = h('div', { class: 'tabs', role: 'tablist' });
+
+  function draw() {
+    tabs.replaceChildren(
+      h('button', { type: 'button', role: 'tab', 'aria-selected': String(mode === 'signup'), onclick: () => { mode = 'signup'; draw(); } }, 'Sign up'),
+      h('button', { type: 'button', role: 'tab', 'aria-selected': String(mode === 'login'), onclick: () => { mode = 'login'; draw(); } }, 'Log in'),
+    );
+    form.replaceChildren(
+      h('input', { name: 'email', type: 'email', placeholder: 'Email', required: true, autocomplete: 'email', 'aria-label': 'Email' }),
+      h('input', { name: 'password', type: 'password', placeholder: 'Password (8+ characters)', required: true, minlength: 8, autocomplete: mode === 'signup' ? 'new-password' : 'current-password', 'aria-label': 'Password' }),
+      mode === 'signup' && !info.open_signup
+        ? h('input', { name: 'code', type: 'text', placeholder: 'Signup code from your admin', required: true, autocomplete: 'off', 'aria-label': 'Signup code' })
+        : null,
+      err,
+      h('button', { class: 'primary', type: 'submit', style: 'width:100%' }, mode === 'signup' ? 'Create account' : 'Log in'),
+    );
+    err.textContent = '';
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form));
+    err.textContent = '';
+    try {
+      const r = await api('POST', mode === 'signup' ? '/api/signup' : '/api/login', data);
+      setToken(r.key);
+      await load();
+    } catch (ex) { err.textContent = ex.message; }
+  });
+  draw();
+
+  $app.replaceChildren(
+    httpBanner() ?? '',
+    h('section', { class: 'hero' },
+      h('div', {},
+        connectCode
+          ? h('h1', {}, 'Connect your agent', h('br'), h('span', {}, 'to this server.'))
+          : h('h1', {}, 'Agents build it.', h('br'), h('span', {}, 'This server hosts it.')),
+        h('p', { class: 'muted', style: 'font-size:18px' }, connectCode
+          ? 'Sign up or log in, then approve the connection. Your agent is waiting and will carry on by itself.'
+          : 'Describe an app to your AI agent and it gets built and hosted here — React on the front, a real database behind.'),
+        h('p', { class: 'muted small', style: 'margin-top:16px' }, `Cubby ${'{{VERSION}}'}`),
+      ),
+      h('div', { class: 'card' }, tabs, form),
+    ),
+  );
+}
+
+// --- Logged in ------------------------------------------------------------------------------
+
+async function load() {
+  try {
+    me = await api('GET', '/api/me');
+  } catch {
+    me = null;
+  }
+  render();
+}
+
+function render() {
+  if (!token || !me) return renderAuth();
+  if (connectCode && history.state !== 'connected') return renderConnect();
+  const tabsList = [['apps', 'My apps'], ['gallery', "Everyone's apps"], ...(me.is_admin ? [['admin', 'Admin']] : [])];
+  const body = h('div');
+  $app.replaceChildren(
+    httpBanner() ?? '',
+    h('header', {},
+      h('div', { class: 'logo' }, 'cubby', h('span', {}, '.')),
+      h('div', { class: 'row' },
+        h('span', { class: 'muted small' }, me.email),
+        me.is_admin ? h('span', { class: 'badge accent' }, 'admin') : null,
+        h('button', { onclick: logout }, 'Log out'),
+      ),
+    ),
+    h('nav', { class: 'tabs', role: 'tablist' }, tabsList.map(([id, label]) =>
+      h('button', { role: 'tab', 'aria-selected': String(tab === id), onclick: () => { tab = id; render(); } }, label))),
+    body,
+  );
+  ({ apps: renderMyApps, gallery: renderGallery, admin: renderAdmin })[tab](body);
+}
+
+function setupCard() {
+  const install = installCommand(SERVER);
+  const masked = () => maskToken(me.token);
+  let revealed = false;
+  const tokenEl = h('code', { class: 'mono', 'aria-label': 'Your token' });
+  const draw = () => { tokenEl.textContent = revealed ? me.token : masked(); };
+  draw();
+  return h('div', { class: 'card stack' },
+    h('div', {},
+      h('h2', {}, 'Connect your AI agent'),
+      h('p', { class: 'muted small' }, 'Run this once on your computer. It teaches Claude Code, Codex, Cursor or OpenCode how to use this server:'),
+      h('pre', {}, install),
+      h('button', { class: 'primary', onclick: () => copy(install, 'Command copied') }, 'Copy command'),
+      h('p', { class: 'small', style: 'margin-top:12px' }, 'Then just ask your agent, for example: ',
+        h('i', {}, '“Build me a polls app for my friends and host it on Cubby.”'),
+        ' It sets itself up, sends you a link to approve, builds the app and gives you the URL.'),
+    ),
+    h('details', { class: 'small', style: 'border-top:1px solid var(--line);padding-top:12px' },
+      h('summary', { class: 'muted', style: 'cursor:pointer' }, 'Token for scripts and CI'),
+      h('div', { class: 'spread', style: 'margin-top:10px' },
+        tokenEl,
+        h('div', { class: 'row' },
+          h('button', { onclick: () => { revealed = !revealed; draw(); } }, 'Reveal'),
+          h('button', { onclick: () => copy(me.token, 'Token copied') }, 'Copy'),
+          h('button', { class: 'danger', onclick: async () => {
+            if (!confirm('Regenerate your token? The old one stops working immediately, including for agents already connected.')) return;
+            const r = await api('POST', '/api/token/regenerate');
+            setToken(r.token);
+            me.token = r.token;
+            toast('New token created');
+            render();
+          } }, 'Regenerate'),
+        ),
+      ),
+      h('p', { class: 'muted', style: 'margin-top:8px' }, 'Use with ', h('code', {}, tokenLoginCommand(SERVER)), ' or the CUBBY_TOKEN environment variable.'),
+    ),
+  );
+}
+
+// /connect?code=XXXX-XXXX: approve a CLI/agent login.
+const connectCode = parseConnectCode(location.pathname, location.search);
+
+function renderConnect() {
+  const status = h('p', { class: 'error', role: 'alert' });
+  const done = () => {
+    history.replaceState(null, '', '/');
+    $app.replaceChildren(h('section', { class: 'hero', style: 'grid-template-columns:1fr;max-width:480px;margin:0 auto' },
+      h('div', { class: 'card stack', style: 'text-align:center' },
+        h('h2', {}, '✅ Agent connected'),
+        h('p', { class: 'muted' }, 'You can close this tab and go back to your agent. It will carry on building.'),
+        h('button', { onclick: () => { location.href = '/'; } }, 'Open dashboard'),
+      )));
+  };
+  $app.replaceChildren(
+    httpBanner() ?? '',
+    h('section', { class: 'hero', style: 'grid-template-columns:1fr;max-width:480px;margin:0 auto' },
+      h('div', { class: 'card stack', style: 'text-align:center' },
+        h('h2', {}, 'Connect your agent?'),
+        h('p', { class: 'muted' }, 'An AI agent on your computer wants to build and deploy apps as ', h('b', {}, me.email), '.'),
+        h('p', {}, 'Check the code matches what your agent showed:'),
+        h('code', { class: 'mono', style: 'font-size:24px;letter-spacing:.08em', 'aria-label': 'Connection code' }, connectCode),
+        status,
+        h('div', { class: 'row', style: 'justify-content:center' },
+          h('button', { class: 'primary', onclick: async () => {
+            try { await api('POST', '/api/device/approve', { code: connectCode }); done(); }
+            catch (ex) { status.textContent = ex.message; }
+          } }, 'Approve'),
+          h('button', { onclick: () => { location.href = '/'; } }, 'Cancel'),
+        ),
+      )),
+  );
+}
+
+async function renderMyApps(el) {
+  const list = h('div', { class: 'grid' }, h('p', { class: 'muted' }, 'Loading…'));
+  el.replaceChildren(setupCard(), h('h3', {}, 'Your apps'), list);
+  const apps = await api('GET', '/api/projects');
+  if (!apps.length) {
+    return list.replaceWith(h('div', { class: 'card empty' }, 'No apps yet. Run ', h('code', {}, 'cubby init my-app'), ' to create one.'));
+  }
+  list.replaceChildren(...apps.map((a) => h('article', { class: 'card app stack', 'aria-label': a.name },
+    h('div', {},
+      h('div', { class: 'spread' }, h('h2', {}, a.name), a.unlisted ? h('span', { class: 'badge' }, 'unlisted') : null),
+      a.description ? h('p', { class: 'muted small' }, a.description) : null,
+      h('p', { class: 'meta' }, a.current_deploy ? `Deployed ${ago(a.last_deployed)}` : 'Not deployed yet'),
+    ),
+    h('div', { class: 'row' },
+      a.current_deploy ? h('a', { href: a.url, target: '_blank', rel: 'noopener' }, 'Open ↗') : h('span', { class: 'muted small' }, a.url.replace(/^https?:\/\//, '')),
+    ),
+    h('div', { class: 'spread' },
+      h('label', { class: 'check small' },
+        h('input', { type: 'checkbox', checked: !a.unlisted, onchange: async (e) => {
+          await api('PATCH', `/api/projects/${a.slug}`, { unlisted: !e.target.checked });
+          toast(e.target.checked ? 'Shown in gallery' : 'Hidden from gallery');
+        } }),
+        'Show in gallery'),
+      h('button', { class: 'danger', onclick: async () => {
+        if (prompt(`This deletes ${a.slug}, all its data and deploys. Type the app name to confirm:`) !== a.slug) return;
+        await api('DELETE', `/api/projects/${a.slug}`);
+        toast(`Deleted ${a.slug}`);
+        render();
+      } }, 'Delete'),
+    ),
+  )));
+}
+
+async function renderGallery(el) {
+  el.replaceChildren(h('p', { class: 'muted' }, 'Loading…'));
+  const apps = await api('GET', '/api/gallery');
+  if (!apps.length) return el.replaceChildren(h('div', { class: 'card empty' }, 'Nobody has shipped anything yet. Be the first.'));
+  el.replaceChildren(h('div', { class: 'grid' }, apps.map((a) => h('article', { class: 'card app stack', 'aria-label': a.name },
+    h('div', {},
+      h('h2', {}, a.name),
+      a.description ? h('p', { class: 'muted small' }, a.description) : null,
+      h('p', { class: 'meta' }, `by ${a.owner} · ${ago(a.last_deployed)}`),
+    ),
+    h('a', { href: a.url, target: '_blank', rel: 'noopener' }, 'Open ↗'),
+  ))));
+}
+
+async function renderAdmin(el) {
+  el.replaceChildren(h('p', { class: 'muted' }, 'Loading…'));
+  const [overview, users, apps] = await Promise.all([api('GET', '/api/admin/overview'), api('GET', '/api/admin/users'), api('GET', '/api/admin/apps')]);
+  const s = overview.settings;
+  const srv = overview.server;
+  const invite = inviteText(SERVER, s.signup_code);
+
+  const limitsForm = h('form', { class: 'row', onsubmit: async (e) => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target));
+    try {
+      await api('PATCH', '/api/admin/settings', { max_apps_per_user: Number(d.max_apps_per_user), max_deploy_mb: Number(d.max_deploy_mb) });
+      toast('Limits saved');
+    } catch (ex) { toast(ex.message); }
+  } },
+    h('label', { class: 'small' }, 'Apps per user', h('input', { type: 'number', name: 'max_apps_per_user', min: 1, value: s.max_apps_per_user, style: 'width:110px;display:block' })),
+    h('label', { class: 'small' }, 'Max deploy (MB)', h('input', { type: 'number', name: 'max_deploy_mb', min: 1, value: s.max_deploy_mb, style: 'width:110px;display:block' })),
+    h('button', { type: 'submit', style: 'align-self:flex-end' }, 'Save limits'),
+  );
+
+  el.replaceChildren(
+    h('div', { class: 'stats' },
+      h('div', { class: 'card stat' }, h('span', { class: 'muted small' }, 'Users'), h('b', {}, srv.users)),
+      h('div', { class: 'card stat' }, h('span', { class: 'muted small' }, 'Apps'), h('b', {}, srv.apps)),
+      h('div', { class: 'card stat' }, h('span', { class: 'muted small' }, 'Data stored'), h('b', {}, fmtBytes(srv.data_bytes))),
+      h('div', { class: 'card stat' }, h('span', { class: 'muted small' }, 'Disk free'), h('b', {}, fmtBytes(srv.disk_free_bytes)),
+        h('span', { class: 'muted small' }, `of ${fmtBytes(srv.disk_total_bytes)}`)),
+    ),
+
+    h('h3', {}, 'Invite people'),
+    h('div', { class: 'card stack' },
+      h('div', { class: 'spread' },
+        h('div', {}, h('span', { class: 'muted small' }, 'Signup code '), h('code', { class: 'mono', style: 'font-size:16px', 'aria-label': 'Current signup code' }, s.signup_code)),
+        h('div', { class: 'row' },
+          h('button', { class: 'primary', onclick: () => copy(invite, 'Invite copied') }, 'Copy invite'),
+          h('button', { onclick: async () => {
+            if (!confirm('Rotate the signup code? The current code stops working for new signups.')) return;
+            await api('PATCH', '/api/admin/settings', { rotate_code: true });
+            toast('New code generated');
+            render();
+          } }, 'Rotate code'),
+        ),
+      ),
+      h('label', { class: 'check small' },
+        h('input', { type: 'checkbox', checked: s.open_signup, onchange: async (e) => {
+          await api('PATCH', '/api/admin/settings', { open_signup: e.target.checked });
+          toast(e.target.checked ? 'Anyone with the URL can sign up' : 'Signup code required');
+        } }),
+        'Open signup (no code needed — anyone with the URL can join)'),
+    ),
+
+    h('h3', {}, 'Limits'),
+    h('div', { class: 'card' }, limitsForm),
+
+    h('h3', {}, `Users (${users.length})`),
+    h('div', { class: 'card table-wrap' }, h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, 'Email'), h('th', {}, 'Apps'), h('th', {}, 'Disk'), h('th', {}, 'Joined'), h('th', {}, ''))),
+      h('tbody', {}, users.map((u) => h('tr', {},
+        h('td', {}, u.email, ' ', u.is_admin ? h('span', { class: 'badge accent' }, 'admin') : null, u.disabled ? h('span', { class: 'badge' }, 'disabled') : null),
+        h('td', {}, u.apps), h('td', {}, fmtBytes(u.disk_bytes)), h('td', { class: 'muted' }, ago(u.created)),
+        h('td', { style: 'text-align:right' }, u.id === me.id ? null : h('div', { class: 'row', style: 'justify-content:flex-end' },
+          h('button', { onclick: async () => {
+            await api('PATCH', `/api/admin/users/${u.id}`, { disabled: !u.disabled });
+            toast(u.disabled ? 'User enabled' : 'User disabled — their apps stay online');
+            render();
+          } }, u.disabled ? 'Enable' : 'Disable'),
+          h('button', { class: 'danger', onclick: async () => {
+            if (prompt(`Delete ${u.email} and all ${u.apps} of their apps? Type their email to confirm:`) !== u.email) return;
+            await api('DELETE', `/api/admin/users/${u.id}`);
+            toast('User deleted');
+            render();
+          } }, 'Delete'),
+        )),
+      ))),
+    )),
+
+    h('h3', {}, `All apps (${apps.length})`),
+    apps.length ? h('div', { class: 'card table-wrap' }, h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, 'App'), h('th', {}, 'Owner'), h('th', {}, 'Disk'), h('th', {}, 'Last deploy'), h('th', {}, ''))),
+      h('tbody', {}, apps.sort((a, b) => b.disk_bytes - a.disk_bytes).map((a) => h('tr', {},
+        h('td', {}, h('a', { href: a.url, target: '_blank', rel: 'noopener' }, a.slug), a.unlisted ? h('span', { class: 'badge', style: 'margin-left:6px' }, 'unlisted') : null),
+        h('td', { class: 'muted' }, a.owner), h('td', {}, fmtBytes(a.disk_bytes)), h('td', { class: 'muted' }, ago(a.last_deployed)),
+        h('td', { style: 'text-align:right' }, h('button', { class: 'danger', onclick: async () => {
+          if (prompt(`Delete ${a.slug} (owned by ${a.owner}), its data and deploys? Type the app name to confirm:`) !== a.slug) return;
+          await api('DELETE', `/api/admin/apps/${a.slug}`);
+          toast(`Deleted ${a.slug}`);
+          render();
+        } }, 'Delete')),
+      ))),
+    )) : h('div', { class: 'card empty' }, 'No apps yet.'),
+
+    h('h3', {}, 'Server'),
+    h('div', { class: 'card small stack' },
+      h('p', {}, `Cubby ${srv.version} · ${srv.public_url} · ${srv.https ? 'HTTPS' : 'HTTP only'}`),
+      h('p', { class: 'muted' }, 'Backups run nightly (7 kept). Manage them with ', h('code', {}, 'cubby-server backup'), ' / ', h('code', {}, 'cubby-server restore'), ' on the server. ',
+        'The database dashboard is reachable from the server only: ', h('code', {}, 'ssh -L 8090:127.0.0.1:8090 <server>'), ' then open http://localhost:8090/_/'),
+    ),
+  );
+}
+
+(async () => {
+  try { info = await (await fetch('/api/info')).json(); } catch {}
+  if (token) await load(); else render();
+})();
+</script>
+</body>
+</html>

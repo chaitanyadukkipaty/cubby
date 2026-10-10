@@ -1,0 +1,31 @@
+{
+  "collections": [
+    {
+      "name": "users",
+      "type": "auth",
+      "fields": [
+        { "name": "name", "type": "text", "max": 100 }
+      ],
+      "listRule": "id = @request.auth.id",
+      "viewRule": "id = @request.auth.id",
+      "createRule": "",
+      "updateRule": "id = @request.auth.id",
+      "deleteRule": "id = @request.auth.id"
+    },
+    {
+      "name": "tasks",
+      "type": "base",
+      "fields": [
+        { "name": "title", "type": "text", "required": true, "max": 200 },
+        { "name": "done", "type": "bool" },
+        { "name": "owner", "type": "relation", "collection": "users", "required": true, "maxSelect": 1, "cascadeDelete": true }
+      ],
+      "indexes": [{ "columns": ["owner"] }],
+      "listRule": "owner = @request.auth.id",
+      "viewRule": "owner = @request.auth.id",
+      "createRule": "@request.auth.id != \"\" && @request.body.owner = @request.auth.id",
+      "updateRule": "owner = @request.auth.id",
+      "deleteRule": "owner = @request.auth.id"
+    }
+  ]
+}

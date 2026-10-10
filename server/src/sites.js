@@ -1,0 +1,148 @@
+// Deploys (immutable static bundles on disk) and serving them per project.
+import { createReadStream } from 'node:fs';
+import { mkdir, rm, rename, stat, readdir } from 'node:fs/promises';
+import { join, extname, normalize, sep } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import * as tar from 'tar';
+import { admin } from './pb.js';
+import { config } from './config.js';
+import { HttpError } from './http.js';
+
+const sitesDir = (slug) => join(config.dataDir, 'sites', slug);
+
+// Extracts a deploy tarball into `dir`, keeping only regular files and directories (no symlinks or
+// hardlinks that could escape it). Requires index.html at the root. Cleans up `dir` on failure.
+export async function extractDeploy(tarball, dir) {
+  await mkdir(dir, { recursive: true });
+  let files = 0;
+  let bytes = 0;
+  try {
+    await pipeline(
+      Readable.from(tarball),
+      tar.x({
+        cwd: dir,
+        strict: true,
+        filter: (_path, entry) => {
+          if (entry.type !== 'File' && entry.type !== 'Directory') return false;
+          if (entry.type === 'File') { files++; bytes += entry.size; }
+          return true;
+        },
+      }),
+    );
+  } catch (err) {
+    await rm(dir, { recursive: true, force: true });
+    throw new HttpError(400, `Invalid tarball: ${err.message}`);
+  }
+  if (!(await exists(join(dir, 'index.html')))) {
+    await rm(dir, { recursive: true, force: true });
+    throw new HttpError(400, 'Deploy must contain index.html at its root (upload the contents of dist/)');
+  }
+  return { files, bytes };
+}
+
+export async function createDeploy(project, tarball, message = '', client = '') {
+  const tmp = join(config.dataDir, 'tmp', `${project.slug}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const { files, bytes } = await extractDeploy(tarball, tmp);
+
+  const record = await admin.collection('cubby_deploys').create({ project: project.id, files, bytes, message, client });
+  await mkdir(sitesDir(project.slug), { recursive: true });
+  await rename(tmp, join(sitesDir(project.slug), record.id));
+  await admin.collection('cubby_projects').update(project.id, { current_deploy: record.id, last_deployed: record.created });
+  await pruneDeploys(project);
+  return { id: record.id, files, bytes, message, client, created: record.created };
+}
+
+async function pruneDeploys(project) {
+  const deploys = await listDeploys(project);
+  for (const d of deploys.slice(config.keepDeploys)) {
+    await admin.collection('cubby_deploys').delete(d.id);
+    await rm(join(sitesDir(project.slug), d.id), { recursive: true, force: true });
+  }
+}
+
+export async function listDeploys(project) {
+  const records = await admin.collection('cubby_deploys').getFullList({
+    filter: admin.filter('project = {:p}', { p: project.id }),
+    sort: '-created',
+  });
+  return records.map((r) => ({ id: r.id, files: r.files, bytes: r.bytes, message: r.message, client: r.client, created: r.created, current: r.id === project.current_deploy }));
+}
+
+export async function rollback(project, deployId) {
+  const deploys = await listDeploys(project);
+  if (!deploys.some((d) => d.id === deployId)) throw new HttpError(404, `Deploy ${deployId} not found`);
+  await admin.collection('cubby_projects').update(project.id, { current_deploy: deployId });
+}
+
+export const removeSite = (slug) => rm(sitesDir(slug), { recursive: true, force: true });
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif',
+  '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.txt': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml', '.webmanifest': 'application/manifest+json', '.mp4': 'video/mp4', '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg', '.wasm': 'application/wasm', '.pdf': 'application/pdf', '.map': 'application/json',
+};
+
+const exists = (p) => stat(p).then((s) => s.isFile(), () => false);
+
+export async function serveSite(req, res, project, pathname) {
+  if (!project.current_deploy) return sendPage(res, 404, `${project.slug} has no deploys yet`, 'Run <code>cubby deploy</code> from the project directory.');
+  const root = join(sitesDir(project.slug), project.current_deploy);
+  let rel;
+  try {
+    rel = normalize(decodeURIComponent(pathname)).replace(/^([/\\])+/, '');
+  } catch {
+    return sendPage(res, 400, 'Bad request');
+  }
+  let file = join(root, rel);
+  if (!file.startsWith(root + sep) && file !== root) return sendPage(res, 400, 'Bad request');
+
+  if (!(await exists(file))) {
+    if (await exists(join(file, 'index.html'))) file = join(file, 'index.html');
+    else if (extname(rel)) return sendPage(res, 404, 'Not found');
+    else file = join(root, 'index.html'); // SPA fallback for client-side routes
+  }
+  const isHtml = extname(file) === '.html';
+  res.writeHead(200, {
+    'content-type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
+    'cache-control': isHtml ? 'no-cache' : rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=300',
+    'x-content-type-options': 'nosniff',
+  });
+  if (req.method === 'HEAD') return res.end();
+  createReadStream(file).pipe(res);
+}
+
+export function sendPage(res, status, title, body = '') {
+  res.writeHead(status, { 'content-type': 'text/html; charset=utf-8' });
+  res.end(`<!doctype html><meta charset="utf-8"><title>${title}</title>
+<body style="font-family:system-ui;display:grid;place-items:center;min-height:90vh;color:#334">
+<div style="text-align:center"><h1 style="font-weight:600">${title}</h1><p>${body}</p></div></body>`);
+}
+
+
+// Total bytes under a directory (0 if it doesn't exist).
+export async function dirSize(dir) {
+  let total = 0;
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const e of entries) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) total += await dirSize(p);
+    else if (e.isFile()) total += (await stat(p)).size;
+  }
+  return total;
+}
+
+// Disk used by an app: its deploys plus files uploaded to its PocketBase collections.
+export async function appDiskUsage(slug, collectionIds) {
+  let total = await dirSize(sitesDir(slug));
+  for (const id of collectionIds) total += await dirSize(join(config.dataDir, 'pb_data', 'storage', id));
+  return total;
+}
