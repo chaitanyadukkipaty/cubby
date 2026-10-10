@@ -1,0 +1,63 @@
+name: Release
+
+# Publishes a release when main's package.json version has no vX.Y.Z tag yet. The maintainer decides to release by
+# merging a release PR (see CONTRIBUTING.md "Releases"); nobody pushes tags by hand. Runs after CI succeeds on main.
+# v* tags are protected by the "Release tags" ruleset: the tag is pushed over SSH with the RELEASE_DEPLOY_KEY deploy
+# key (a ruleset bypass actor); the GitHub Release is then created for that existing tag with GITHUB_TOKEN.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag and publish
+    if: >-
+      github.repository == 'chaitanyadukkipaty/cubby' && (
+        github.event_name == 'workflow_dispatch' || (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Decide
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag --list 'v*' > tags.txt
+          gh release list --limit 200 --json tagName --jq '.[].tagName' > releases.txt
+          node scripts/release.mjs plan --tags tags.txt --releases releases.txt --notes release-notes.md
+
+      - name: Push tag
+        if: steps.plan.outputs.action == 'release'
+        run: |
+          git tag "${{ steps.plan.outputs.tag }}" HEAD
+          git push origin "refs/tags/${{ steps.plan.outputs.tag }}"
+
+      - name: Publish GitHub Release
+        if: steps.plan.outputs.action == 'release' || steps.plan.outputs.action == 'publish'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ steps.plan.outputs.tag }}" --verify-tag --title "${{ steps.plan.outputs.tag }}" --notes-file release-notes.md

@@ -58,7 +58,13 @@ describe('logic views', () => {
   });
   test('settingsView exposes exactly the editable settings', () => {
     assert.deepEqual(logic.settingsView({ id: 'x', server_name: "Priya's Cubby", signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9, created: 'z' }),
-      { server_name: "Priya's Cubby", signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9 });
+      { server_name: "Priya's Cubby", signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9, update_check: true });
+  });
+  test('the update check is stored inverted, so settings rows from before it existed keep it on', () => {
+    assert.equal(logic.settingsView({ update_check_off: true }).update_check, false);
+    assert.deepEqual(logic.settingsPatch({ update_check: false }), { update_check_off: true });
+    assert.deepEqual(logic.settingsPatch({ update_check: true }), { update_check_off: false });
+    assert.deepEqual(logic.settingsPatch({ update_check: 'yes' }), {}, 'only booleans');
   });
   test('settingsView falls back to "Cubby" for servers created before names existed', () => {
     assert.equal(logic.settingsView({ signup_code: 'c' }).server_name, 'Cubby');

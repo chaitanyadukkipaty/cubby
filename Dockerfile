@@ -20,6 +20,13 @@ COPY cli/package.json cli/
 RUN npm ci --omit=dev --no-audit --no-fund
 COPY . .
 
+# Build identity (.git isn't in the build context): cubby-server passes the commit and, for release builds, the
+# vX.Y.Z tag. The server reports "X.Y.Z" for a release build and "X.Y.Z-dev+<commit>" otherwise.
+ARG CUBBY_COMMIT=""
+ARG CUBBY_TAG=""
+ENV CUBBY_COMMIT=$CUBBY_COMMIT \
+    CUBBY_TAG=$CUBBY_TAG
+
 ENV DATA_DIR=/data \
     PB_BIN=/usr/local/bin/pocketbase \
     PB_URL=http://127.0.0.1:8090 \

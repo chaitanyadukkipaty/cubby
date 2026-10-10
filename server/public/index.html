@@ -119,6 +119,25 @@ function parseConnectCode(pathname, search) {
   return code || null;
 }
 const apiErrorMessage = (status, data) => (data && typeof data.error === 'string' && data.error) || `Request failed (${status})`;
+// "Cubby 0.1.1" for a release build; "Cubby 0.1.1 · development build abc1234" for anything else.
+function versionLabel(version) {
+  const m = String(version || '').match(/^(\d+\.\d+\.\d+)-dev\+([0-9a-f]+)$/);
+  return m ? `Cubby ${m[1]} · development build ${m[2]}` : `Cubby ${version || 'unknown version'}`;
+}
+const UPGRADE_COMMAND = 'sudo cubby-server upgrade';
+// What the Admin tab says about updates, from /api/admin/overview's `update`.
+function updateNotice(u) {
+  if (!u) return { kind: 'unknown', text: "Couldn't check for updates." };
+  if (!u.enabled) {
+    return u.reason === 'env'
+      ? { kind: 'off', text: 'Update checks are turned off on the server (CUBBY_UPDATE_CHECK=0).' }
+      : { kind: 'off', text: 'Update checks are off.' };
+  }
+  if (u.update_available) return { kind: 'available', text: `Update available: ${u.latest}`, command: UPGRADE_COMMAND, url: u.release_url || null };
+  if (u.error && !u.latest) return { kind: 'unknown', text: "Couldn't reach GitHub to check for updates. Cubby will try again tomorrow." };
+  if (!u.checked_at) return { kind: 'unknown', text: 'Checking for updates…' };
+  return { kind: 'current', text: u.latest ? `You're on the latest release (${u.latest}).` : 'No releases published yet.' };
+}
 // ---- END PURE HELPERS ----
 
 const SERVER = '{{PUBLIC_URL}}';
@@ -378,6 +397,30 @@ async function renderGallery(el) {
   ))));
 }
 
+function updateCard(update, s) {
+  const n = updateNotice(update);
+  return h('div', { class: 'card stack', role: 'region', 'aria-label': 'Updates' },
+    h('div', { class: 'spread' },
+      h('div', {},
+        n.kind === 'available' ? h('span', { class: 'badge accent' }, 'update') : null,
+        ' ', h('b', {}, n.text)),
+      n.url ? h('a', { href: n.url, target: '_blank', rel: 'noopener' }, 'Release notes ↗') : null,
+    ),
+    n.command ? h('div', {},
+      h('p', { class: 'muted small' }, 'Run this on the server (a backup is taken first; data is kept):'),
+      h('pre', {}, n.command),
+      h('button', { onclick: () => copy(n.command, 'Command copied') }, 'Copy command'),
+    ) : null,
+    update?.reason === 'env' ? null : h('label', { class: 'check small' },
+      h('input', { type: 'checkbox', checked: s.update_check, onchange: async (e) => {
+        await api('PATCH', '/api/admin/settings', { update_check: e.target.checked });
+        toast(e.target.checked ? 'Update checks on' : 'Update checks off');
+        render();
+      } }),
+      'Check for new Cubby releases once a day (asks GitHub; the only outbound request Cubby makes)'),
+  );
+}
+
 async function renderAdmin(el) {
   el.replaceChildren(h('p', { class: 'muted' }, 'Loading…'));
   const [overview, users, apps] = await Promise.all([api('GET', '/api/admin/overview'), api('GET', '/api/admin/users'), api('GET', '/api/admin/apps')]);
@@ -490,11 +533,11 @@ async function renderAdmin(el) {
     )) : h('div', { class: 'card empty' }, 'No apps yet.'),
 
     h('h3', {}, 'Server'),
-    h('div', { class: 'card small stack' },
-      h('p', {}, `Cubby ${srv.version} · ${srv.public_url} · ${srv.https ? 'HTTPS' : 'HTTP only'}`),
+    h('div', { class: 'stack' }, updateCard(overview.update, s), h('div', { class: 'card small stack' },
+      h('p', {}, `${versionLabel(srv.version)} · ${srv.public_url} · ${srv.https ? 'HTTPS' : 'HTTP only'}`),
       h('p', { class: 'muted' }, 'Backups run nightly (7 kept). Manage them with ', h('code', {}, 'cubby-server backup'), ' / ', h('code', {}, 'cubby-server restore'), ' on the server. ',
         'The database dashboard is reachable from the server only: ', h('code', {}, 'ssh -L 8090:127.0.0.1:8090 <server>'), ' then open http://localhost:8090/_/'),
-    ),
+    )),
   );
 }
 

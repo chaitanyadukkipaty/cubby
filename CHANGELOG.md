@@ -17,8 +17,33 @@ All notable changes to Cubby are documented here. The format follows
   each server, a CLI matching that server's version (downloaded once into `~/.cubby/cli/<version>/`), and falls back
   to the last known version when a server is unreachable.
 - `CUBBY_VERSION_OVERRIDE` server setting, for testing version skew locally.
+- Choose what to install: `install.sh` installs the latest release by default; `--version X.Y.Z` picks a release and
+  `--ref <branch|tag|commit>` installs any ref. `--domain`/`--no-domain`, `--admin-email`, `--admin-password-file`
+  and `--name` answer the questions up front, for installs without prompts.
+- `cubby-server upgrade` moves to the latest release (or keeps following the branch you installed from), takes a
+  backup first, and replaces itself with the new version's script. `--version X.Y.Z` pins or rolls back, `--ref`
+  switches to any ref, `--no-backup` skips the backup. `cubby-server version` shows what's running, what it follows
+  and the latest release.
+- "Update available" notice in the Admin tab, with the release notes and the upgrade command. The server asks GitHub
+  for the latest release once a day (its only outbound request); admins can turn it off, and `CUBBY_UPDATE_CHECK=0`
+  disables it entirely.
+- Releases are tagged and published automatically when a release PR is merged (see CONTRIBUTING.md "Releases").
 
 ### Changed
+
+- Servers report exactly what they run: `X.Y.Z` for a release build, `X.Y.Z-dev+<commit>` for anything else, in
+  `/api/info` (which also gains `commit`), the `x-cubby-version` header, the Admin tab, `/docs.md` and the CLI they
+  serve.
+
+### Upgrading from 0.1.0
+
+0.1.0's `cubby-server upgrade` pulls `main` and doesn't update itself. Run these once:
+
+```sh
+sudo cubby-server upgrade
+sudo install -m 755 /opt/cubby/src/docker/cubby-server /usr/local/bin/cubby-server
+sudo cubby-server upgrade --version <latest release>   # switch from following main to releases
+```
 
 - `~/.cubby/config.json` moves to a multi-server format (`"format": 1`). Existing single-server configs are migrated
   automatically on first use.

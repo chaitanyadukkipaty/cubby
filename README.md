@@ -75,7 +75,7 @@ else's platform and you can't bring your own agent.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps in a gallery, and manage users, limits and disk from an admin tab.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
-- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, one-command upgrades.
+- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin tab tells you when one is out, and `cubby-server upgrade` installs it after a backup.
 
 <table>
 <tr>
@@ -84,7 +84,7 @@ else's platform and you can't bring your own agent.
 </tr>
 <tr>
 <td width="50%"><img src="docs/assets/dashboard-gallery.png?v=9cdf21ee" alt="Gallery of everyone's apps"><p align="center"><sub>Everyone's apps</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-admin.png?v=98117fea" alt="Admin tab with users, apps, limits and invite code"><p align="center"><sub>Admin: server name, invites, limits, users, disk</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-admin.png?v=e8871123" alt="Admin tab with users, apps, limits, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, users, disk, updates</sub></p></td>
 </tr>
 </table>
 
@@ -106,6 +106,31 @@ Send both to your friends.
 | **No domain** | `http://<app>.203-0-113-5.sslip.io` | No, so traffic is unencrypted |
 
 Switch later with `sudo cubby-server set-domain example.com`. See the [full install guide](https://chaitanyadukkipaty.github.io/cubby/#install).
+
+### Choose a version, and upgrade
+
+The installer installs the **latest release**. To pick something else, pass options after `bash -s --`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/install.sh | sudo bash -s -- --version 0.1.1
+curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/install.sh | sudo bash -s -- --ref my-branch
+```
+
+`--domain`, `--no-domain`, `--admin-email`, `--admin-password-file` and `--name` answer the questions up front, for an
+install with no prompts.
+
+When a new release is out, the Admin tab says so, with the release notes. On the server:
+
+| Command | Does |
+| --- | --- |
+| `sudo cubby-server upgrade` | Back up, then move to the latest release (or keep following the branch you installed) |
+| `sudo cubby-server upgrade --version 0.1.1` | Move to a specific release, including rolling back |
+| `sudo cubby-server upgrade --ref <branch\|tag\|commit>` | Run any ref, e.g. to try a fix before it's released |
+| `sudo cubby-server version` | Show what's running, what it follows, and the latest release |
+
+A server built from a release reports its version, like `0.1.1`. Anything else reports the commit too, like
+`0.1.1-dev+b2cb75c`, so you always know exactly what code is running. Releases are cut by the maintainer and published
+automatically; see [Releases](CONTRIBUTING.md#releases).
 
 ## Connect your agent and build
 

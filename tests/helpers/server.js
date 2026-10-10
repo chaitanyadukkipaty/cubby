@@ -43,6 +43,11 @@ export async function startServer(extraEnv = {}) {
     CUBBY_SIGNUP_CODE: SIGNUP_CODE,
     MAX_APPS_PER_USER: '10',
     MAX_DEPLOY_MB: '5',
+    // Report the plain package.json version (as if built without git info) so it matches the in-repo CLI,
+    // and never call GitHub from tests.
+    CUBBY_COMMIT: '',
+    CUBBY_TAG: '',
+    CUBBY_UPDATE_CHECK: '0',
     ...extraEnv,
   };
   const child = spawn(process.execPath, [join(ROOT, 'server/src/index.js')], { env, stdio: ['ignore', 'pipe', 'pipe'] });

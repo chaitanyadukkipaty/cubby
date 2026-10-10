@@ -12,6 +12,10 @@ import { scheduleBackups } from './backups.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
+import { createUpdateChecker, fetchLatestRelease, scheduleUpdateChecks, updateView } from './updates.js';
+
+const updates = createUpdateChecker({ current: config.version, fetchLatest: () => fetchLatestRelease(config.updates.url) });
+const updatesOn = async () => config.updates.enabled && !(await getSettings()).update_check_off;
 
 const appUrl = (slug) => logic.appUrl(slug, config.publicUrl, config.baseDomain);
 const projectView = (p) => logic.projectView(p, config);
@@ -52,7 +56,7 @@ const deviceLimit = rateLimiter(20, 60_000);
 const routes = [
   ['GET', '/api/info', 'public', async () => {
     const s = await getSettings();
-    return { name: logic.serverName(s), version: config.version, open_signup: Boolean(s.open_signup), https: config.publicUrl.startsWith('https'), base_domain: config.baseDomain };
+    return { name: logic.serverName(s), version: config.version, commit: config.commit, open_signup: Boolean(s.open_signup), https: config.publicUrl.startsWith('https'), base_domain: config.baseDomain };
   }],
   ['POST', '/api/signup', 'public', async (req) => (authLimit(req), signup(await readJson(req)))],
   ['POST', '/api/login', 'public', async (req) => (authLimit(req), login(await readJson(req)))],
@@ -133,15 +137,19 @@ const routes = [
       settings: logic.settingsView(s),
       invite: `${config.publicUrl}  (signup code: ${s.signup_code})`,
       server: {
-        version: config.version, public_url: config.publicUrl, https: config.publicUrl.startsWith('https'),
+        version: config.version, commit: config.commit, public_url: config.publicUrl, https: config.publicUrl.startsWith('https'),
         data_bytes: await dirSize(config.dataDir), disk_free_bytes: fs.bavail * fs.bsize, disk_total_bytes: fs.blocks * fs.bsize,
         users: users.totalItems, apps: apps.totalItems,
       },
+      update: updateView({ envEnabled: config.updates.enabled, settingEnabled: !s.update_check_off, checker: updates }),
     };
   }],
   ['PATCH', '/api/admin/settings', 'admin', async (req) => {
     const patch = logic.settingsPatch(await readJson(req), newSignupCode);
-    return logic.settingsView(await updateSettings(patch));
+    const s = await updateSettings(patch);
+    // Turning the check (back) on asks GitHub right away, so the admin sees a current answer.
+    if (patch.update_check_off === false && config.updates.enabled) await updates.check({ force: true });
+    return logic.settingsView(s);
   }],
   ['GET', '/api/admin/users', 'admin', async () => {
     const [users, projects] = await Promise.all([
@@ -284,6 +292,7 @@ await startPocketBase();
 await bootstrap();
 await buildCliTarball();
 scheduleBackups();
+scheduleUpdateChecks({ checker: updates, isEnabled: updatesOn });
 server.listen(config.port, () => {
   console.log(`cubby ${config.version} on ${config.publicUrl}`);
   console.log(`apps served at ${new URL(config.publicUrl).protocol}//<app>.${config.baseDomain}`);

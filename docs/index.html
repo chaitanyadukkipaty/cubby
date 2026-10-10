@@ -284,6 +284,12 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
       </table></div>
       <p>For a domain, add two DNS <code>A</code> records pointing at the server before installing: one for <code>cubby.example.com</code> and a wildcard for <code>*.cubby.example.com</code>. Started on an IP? Switch any time:</p>
       <div class="code"><pre>sudo cubby-server set-domain cubby.example.com</pre></div>
+
+      <h3>Which version gets installed?</h3>
+      <p>The latest <a href="https://github.com/chaitanyadukkipaty/cubby/releases">release</a>, unless you choose. Pass options after <code>bash -s --</code>:</p>
+      <div class="code"><pre>curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/install.sh | sudo bash -s -- --version 0.1.1   <span class="c"># a specific release</span>
+curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/install.sh | sudo bash -s -- --ref my-branch   <span class="c"># any branch, tag or commit</span></pre></div>
+      <p>A <code>--ref</code> install isn't a release, so it hasn't been through release testing; use it to try a fix early. To install without any prompts, answer the questions with <code>--domain</code> (or <code>--no-domain</code>), <code>--admin-email</code>, <code>--admin-password-file</code> and <code>--name</code>.</p>
     </section>
 
     <section id="invite">
@@ -423,14 +429,17 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
           </ul>
           <p>Admins can't deploy into or edit other people's apps.</p>
         </div>
-        <figure class="shot"><img src="assets/dashboard-admin.png?v=98117fea" alt="Admin tab with user and app counts, disk usage, the signup code, limits and a users table" loading="lazy" width="1280" height="1460"><figcaption>The Admin tab.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-admin.png?v=e8871123" alt="Admin tab with user and app counts, disk usage, the signup code, limits, users, apps and an update notice" loading="lazy" width="1280" height="1917"><figcaption>The Admin tab.</figcaption></figure>
       </div>
       <h3>On the server</h3>
       <div class="table"><table>
         <thead><tr><th>Command</th><th>What it does</th></tr></thead>
         <tbody>
           <tr><td><code>cubby-server status</code> · <code>logs</code> · <code>restart</code></td><td>Check on it</td></tr>
-          <tr><td><code>cubby-server upgrade</code></td><td>Pull the latest code, rebuild and restart. Data is kept.</td></tr>
+          <tr><td><code>cubby-server upgrade</code></td><td>Back up, then move to the latest release (or keep following the branch you installed from). Data is kept.</td></tr>
+          <tr><td><code>cubby-server upgrade --version &lt;X.Y.Z&gt;</code></td><td>Move to a specific release, including rolling back</td></tr>
+          <tr><td><code>cubby-server upgrade --ref &lt;ref&gt;</code></td><td>Run any branch, tag or commit (not a release)</td></tr>
+          <tr><td><code>cubby-server version</code></td><td>What's running, what it follows, and the latest release</td></tr>
           <tr><td><code>cubby-server code</code></td><td>Show the current signup code</td></tr>
           <tr><td><code>cubby-server backup</code> · <code>backups</code></td><td>Back up now, or list backups</td></tr>
           <tr><td><code>cubby-server restore &lt;YYYY-MM-DD&gt;</code></td><td>Restore all apps and accounts to that day</td></tr>
@@ -438,6 +447,8 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
           <tr><td><code>cubby-server set-domain &lt;domain&gt;</code></td><td>Move from IP to a domain with HTTPS</td></tr>
         </tbody>
       </table></div>
+      <p><b>Updates.</b> Once a day the server asks GitHub for the latest Cubby release. When there's a newer one, the Admin tab shows <b>Update available</b> with a link to the release notes and the command to run. Turn the check off in the Admin tab, or set <code>CUBBY_UPDATE_CHECK=0</code> in <code>/opt/cubby/cubby.env</code> to disable it completely.</p>
+      <p><b>Versions.</b> A server built from a release shows its version, like <code>0.1.1</code>. Anything else shows the commit too, like <code>0.1.1-dev+b2cb75c</code>, so you always know which code is running.</p>
       <p><b>Backups</b> run every night at 03:00: a full database backup plus all deployed sites. The last 7 are kept. Restoring rolls back every app on the server, so it's for real accidents.</p>
       <p>The PocketBase admin UI is only reachable from the server itself: <code>ssh -L 8090:127.0.0.1:8090 you@server</code>, then open <code>http://localhost:8090/_/</code>.</p>
     </section>
@@ -453,6 +464,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
         <li><b>Deploys are inert files.</b> Uploads are unpacked as plain files only (no symlinks), into folders that can't be escaped.</li>
         <li><b>Tokens</b> are stored so the dashboard can show yours again. <b>Regenerate</b> revokes the old one immediately.</li>
         <li><b>Use a domain.</b> On an IP-only server, traffic is unencrypted.</li>
+        <li><b>One outbound request.</b> The daily release check to GitHub is the only request a server makes on its own, and it sends nothing about your server or users. Admins can turn it off.</li>
       </ul>
     </section>
 
@@ -466,6 +478,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
       <details class="faq"><summary>What's not supported yet?</summary><p>Server-side code, cron jobs, custom domains per app, single sign-on across apps, and app emails (verification, password reset).</p></details>
       <details class="faq"><summary>Can I use several Cubby servers?</summary><p>Yes. Run each server's <code>skill.sh</code> command once; your agent then picks a server by its name, and asks if it isn't sure. <code>cubby servers</code> lists them and <code>cubby use</code> sets the default. Servers on different Cubby versions work side by side.</p></details>
       <details class="faq"><summary>A server moved to a new address. How do I move my app?</summary><p>Each app's <code>cubby.json</code> remembers its server's address. Log in to the new address, then run <code>cubby link &lt;app&gt; --server &lt;new-url&gt;</code> in the app's folder.</p></details>
+      <details class="faq"><summary>Which version am I on, and how do I update?</summary><p>The Admin tab shows the version at the bottom and tells you when a newer release is out. On the server, <code>sudo cubby-server version</code> shows the details and <code>sudo cubby-server upgrade</code> updates (it backs up first). Normal releases go 0.1.1 → 0.1.2; only a major change moves to 0.2.0.</p></details>
       <details class="faq"><summary>My agent's login link expired.</summary><p>Links last 10 minutes. Ask the agent to try again; it starts a fresh one.</p></details>
     </section>
 

@@ -57,6 +57,33 @@ test('settings: renaming the server updates the header and tab; limits reject ou
   await api.updateSettings({ max_apps_per_user: 10, max_deploy_mb: 5 });
 });
 
+test('updates: a newer release shows the notice with notes and the upgrade command; the toggle turns it off', async ({ page, dashboard }) => {
+  const { admin } = dashboard;
+  const setLatest = (tag) => fetch(`${process.env.CUBBY_E2E_RELEASES_URL}/set?tag=${tag}`, { method: 'POST' });
+  const info = await (await fetch(`${process.env.CUBBY_E2E_URL}/api/info`)).json();
+  const [maj, min, pat] = info.version.split('.').map(Number);
+  const newer = `v${maj}.${min}.${pat + 1}`;
+
+  await expect(page.getByText(`Cubby ${info.version} ·`)).toBeVisible();
+  await expect(admin.updates).toContainText(`Update available: ${newer}`);
+  await expect(admin.releaseNotesLink).toHaveAttribute('href', `https://github.com/chaitanyadukkipaty/cubby/releases/tag/${newer}`);
+  await expect(admin.updates.getByText('sudo cubby-server upgrade', { exact: true })).toBeVisible();
+  await expect(admin.copyUpgradeButton).toBeVisible();
+
+  await admin.updateCheck.uncheck();
+  await expect(dashboard.toast).toHaveText('Update checks off');
+  await expect(admin.updates).toContainText('Update checks are off.');
+  await expect(admin.updates).not.toContainText('Update available');
+
+  // Back on with the server already on the latest release: no notice.
+  await setLatest(`v${info.version}`);
+  await admin.updateCheck.check();
+  await expect(dashboard.toast).toHaveText('Update checks on');
+  await expect(admin.updates).toContainText(`You're on the latest release (v${info.version}).`);
+  await expect(admin.copyUpgradeButton).toHaveCount(0);
+  await setLatest(newer);
+});
+
 test('users and apps: disable and re-enable a user, delete their app, then delete them', async ({ page, api, dashboard }) => {
   const { admin } = dashboard;
   const user = await api.createUser('managed');

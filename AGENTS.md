@@ -45,8 +45,8 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 - Device-login codes, rate-limit counters and the settings row (`getSettings` cache) are per-process. Cubby assumes one
   server process; anything multi-process needs shared storage first. Settings edited directly in PocketBase aren't seen
   until restart; go through `updateSettings`.
-- `/cli.tgz` is packed once at boot from `cli/` (src, template, skill) and stamped with the **root** package.json
-  version. CLI, template or skill edits need a server restart to be served; `cli/package.json`'s version is ignored.
+- `/cli.tgz` is packed once at boot from `cli/` (src, template, skill) and stamped with the version the server
+  reports (`config.version`), not `cli/package.json`'s. CLI, template or skill edits need a server restart to be served.
 
 ## Tokens and secrets
 
@@ -97,6 +97,27 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 - `fetch()` silently drops `Host`; use `hostRequest` for `<app>.localhost` routing.
 - c8 collects child-process coverage only if the server exits cleanly. Its SIGTERM handler is registered only when
   `PB_SPAWN=1` (server/src/pb.js), so keep that in tests.
+
+## Versions and releases
+
+- Never bump the version in a feature PR. Normal releases bump PATCH (0.1.1 → 0.1.2); MINOR/MAJOR only when the
+  maintainer decided on a major change (`scripts/release.mjs bump` refuses without `--major-change`). Only release PRs
+  (`release/vX.Y.Z`, made with `node scripts/release.mjs bump`) change versions; they bump root and
+  cli/package.json together (a unit test checks they match the lockfile).
+- Never push, move or delete `v*` tags: a ruleset blocks it, and the Release workflow is the only thing that creates
+  them (over SSH with the `RELEASE_DEPLOY_KEY` deploy key). It tags when main's version has no tag and refuses if
+  CHANGELOG.md has no section for that version.
+- The reported version must differ whenever the code differs: `X.Y.Z` only for a build of tag `vX.Y.Z`, otherwise
+  `X.Y.Z-dev+<sha>` (server/src/version.js). The launcher picks CLIs by this string, so don't "simplify" it to
+  package.json. Docker builds get the commit/tag via `CUBBY_COMMIT`/`CUBBY_TAG` build args from `cubby-server`;
+  tests set both to `''` (= unknown, plain version) in tests/helpers/server.js.
+- The daily release check (server/src/updates.js) is the only outbound request a server makes. Tests must never
+  reach GitHub: the helper sets `CUBBY_UPDATE_CHECK=0`; tests that need it point `CUBBY_UPDATE_URL` at a local stub.
+- docker/ref.sh is sourced by both install.sh (downloaded from main when piped) and cubby-server, so it must stay
+  compatible with older checkouts' callers. cubby-server runs everything inside `main()` and replaces itself by
+  rename at the end of `upgrade`; keep both, or an upgrade can edit the script bash is executing.
+- Shell-script tests run real bash with fake `docker`/`curl`/`git` first on `PATH`. When building those envs, put
+  the fake `PATH` *after* spreading `process.env`, or the real docker runs (and can touch a real `cubby` container).
 
 ## Git and pull requests
 
