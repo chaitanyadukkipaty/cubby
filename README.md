@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" width="88" alt="Cubby logo">
+<img src="docs/assets/logo.svg?v=aa679b5d" width="88" alt="Cubby logo">
 
 # Cubby
 
@@ -20,7 +20,7 @@ AI coding agent build, deploy and share full-stack apps — each with a real dat
 ![Node 20+](https://img.shields.io/badge/node-20%2B-1d1d1b)
 ![Self-hosted](https://img.shields.io/badge/self--hosted-Docker-1d1d1b)
 
-<img src="docs/assets/app-friend-polls.png" width="760" alt="Friend Polls, an app built by an AI agent from one sentence and hosted on Cubby">
+<img src="docs/assets/app-friend-polls.png?v=20577a53" width="760" alt="Friend Polls, an app built by an AI agent from one sentence and hosted on Cubby">
 
 <sub>Friend Polls: built and deployed by Claude Code from one sentence, in about three minutes.</sub>
 
@@ -79,12 +79,12 @@ else's platform and you can't bring your own agent.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-my-apps.png" alt="Dashboard with the Connect your AI agent card"><p align="center"><sub>Your dashboard on Priya's Cubby: connect your agent, see your apps</sub></p></td>
-<td width="50%"><img src="docs/assets/connect-approve.png" alt="Approval page for connecting an AI agent"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=2a8e741c" alt="Dashboard with the Connect your AI agent card"><p align="center"><sub>Your dashboard on Priya's Cubby: connect your agent, see your apps</sub></p></td>
+<td width="50%"><img src="docs/assets/connect-approve.png?v=fd35d280" alt="Approval page for connecting an AI agent"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-gallery.png" alt="Gallery of everyone's apps"><p align="center"><sub>Everyone's apps</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-admin.png" alt="Admin tab with users, apps, limits and invite code"><p align="center"><sub>Admin: server name, invites, limits, users, disk</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-gallery.png?v=9cdf21ee" alt="Gallery of everyone's apps"><p align="center"><sub>Everyone's apps</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-admin.png?v=98117fea" alt="Admin tab with users, apps, limits and invite code"><p align="center"><sub>Admin: server name, invites, limits, users, disk</sub></p></td>
 </tr>
 </table>
 

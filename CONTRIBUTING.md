@@ -140,7 +140,9 @@ For any user-visible change, go through both `README.md` and `docs/index.html` a
 - **The story:** the opening example, "What it feels like", diagrams and step-by-step instructions still describe how
   Cubby actually works. If your feature changes the typical flow, the example should show it.
 - **Reference:** CLI tables, flags, install questions and admin actions are complete.
-- **Screenshots:** they show the current UI. They're static PNGs, so they go stale silently.
+- **Screenshots:** they show the current UI. They're static PNGs, so they go stale silently. After retaking any,
+  run `npm run docs:stamp` so the README and docs site link to the new files (a content hash in the URL defeats
+  browser and GitHub image caches). `npm run test:unit` fails if you forget.
 - **Status lists:** move shipped items out of "Coming next" or "Not supported yet", and add new limitations.
 - **Search for the old behavior:** `grep -rn "<old command or wording>" README.md docs/` before you open the PR.
 

@@ -102,7 +102,8 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 
 - A feature PR isn't done until `README.md` and `docs/index.html` tell its story, not just list it: update the
   opening example, step-by-step instructions, diagrams and status lists, and retake `docs/assets/*.png` when the UI
-  changes (they're static and go stale silently). Grep both files for the old behavior. Past feature PRs that only
+  changes (they're static and go stale silently), then run `npm run docs:stamp`: image links carry a `?v=<hash>` that
+  a unit test checks, so caches serve the new files. Grep both files for the old behavior. Past feature PRs that only
   added a table row had to be followed by a separate README rewrite.
 
 - `main` is protected: no direct pushes (admins included), PRs need the `test` check passing on an up-to-date branch,
