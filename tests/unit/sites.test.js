@@ -164,10 +164,11 @@ describe('disk usage', () => {
 });
 
 describe('cli-dist', () => {
-  test('skillMarkdown stamps the version and stays server-neutral', () => {
+  test('skillMarkdown stamps the version and stays server-neutral', async () => {
     const md = cliDist.skillMarkdown();
     assert.match(md, /^---\nname: cubby/);
-    assert.match(md, /\*\*Skill version: \d+\.\d+\.\d+\*\*/);
+    const { config } = await import('../../server/src/config.js');
+    assert.ok(md.includes(`**Skill version: ${config.version}**`), 'stamped with the version this server reports');
     assert.doesNotMatch(md, /\{\{/);
     assert.doesNotMatch(md, /https:\/\/ex\.com/, 'one skill serves every server; skill.sh registers the server');
   });
@@ -185,8 +186,9 @@ describe('cli-dist', () => {
       assert.ok(entries.includes(want), `missing ${want}`);
     assert.ok(entries.every((p) => p.startsWith('package/')));
     assert.ok(!entries.some((p) => p.includes('node_modules')));
-    const rootPkg = JSON.parse((await import('node:fs')).readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
-    assert.equal(pkg.version, rootPkg.version);
+    // Stamped with the version the server reports ("X.Y.Z", or "X.Y.Z-dev+<sha>" outside a release build).
+    const { config } = await import('../../server/src/config.js');
+    assert.equal(pkg.version, config.version);
     assert.deepEqual(pkg.bin, { cubby: 'src/launcher.js' });
   });
 });

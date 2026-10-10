@@ -198,14 +198,41 @@ We use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
 ## Releases
 
-Cubby follows [Semantic Versioning](https://semver.org/). The version lives in the root `package.json` and is shared
-by the server, the CLI it serves, and the skill. To release, a maintainer:
+The version lives in the root `package.json` (and `cli/package.json`, kept equal). It's shared by the server, the CLI
+it serves, and the skill.
 
-1. Moves `## [Unreleased]` entries in `CHANGELOG.md` under a new version heading.
-2. Bumps `version` in `package.json`.
-3. Tags `vX.Y.Z` and publishes a GitHub release with the changelog section.
+### Versioning rule
 
-Servers pick up releases with `sudo cubby-server upgrade`.
+| Release | Bump | Example | Who decides |
+| --- | --- | --- | --- |
+| Normal release: features and fixes | **Patch** | 0.1.0 → 0.1.1 → 0.1.2 | Maintainer, by merging the release PR |
+| Major change: a big milestone or a deliberate breaking redesign | **Minor** | 0.1.9 → 0.2.0 | Maintainer only |
+| Declared stable | **Major** | 0.x → 1.0.0 | Maintainer only |
+
+Contributors and agents never bump the minor or major version on their own, and never change the version outside a
+release PR. Feature PRs only add entries under `## [Unreleased]` in `CHANGELOG.md`.
+
+### How a release happens
+
+1. **Release PR.** From `main`, create `release/vX.Y.Z` and run `node scripts/release.mjs bump` (next patch; a minor or
+   major bump needs `bump minor --major-change`, only after the maintainer decided). It moves the `[Unreleased]`
+   entries under `## [X.Y.Z] - <date>` and bumps both `package.json` files and the lockfile. Open the PR; CI runs as
+   usual.
+2. **The maintainer merges it.** That merge is the decision to release.
+3. **Automation tags and publishes.** After CI passes on `main`, the [Release workflow](.github/workflows/release.yml)
+   sees a version without a `vX.Y.Z` tag, creates the tag and publishes a GitHub Release whose notes are that
+   version's `CHANGELOG.md` section. If the section is missing, nothing is released.
+
+**Release tags are created only by that workflow.** A tag ruleset protects `v*` tags, and the workflow pushes them with
+a dedicated deploy key; don't create, move or delete `v*` tags by hand.
+
+### Versions on running servers
+
+A server built from a release tag reports `X.Y.Z`; any other build (a branch, a commit, local development) reports
+`X.Y.Z-dev+<commit>`. Different code never shows the same version, which the CLI launcher relies on. Admins install a
+release by default (`install.sh --version X.Y.Z` or `--ref <branch|tag|commit>` to choose), and move with
+`sudo cubby-server upgrade` (`--version` to pin or roll back, `--ref` to follow a branch). The Admin tab shows when a
+newer release is out.
 
 ## Using AI coding agents
 

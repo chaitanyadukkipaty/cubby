@@ -1,17 +1,28 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { buildInfo, computeVersion } from './version.js';
 
 const root = resolve(import.meta.dirname, '../..');
 const env = (key, fallback) => process.env[key] ?? fallback;
+const pkgVersion = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version;
+const build = buildInfo(process.env, root);
 
 export const config = {
   port: Number(env('PORT', 8080)),
   baseDomain: env('BASE_DOMAIN', 'localhost:8080'),
   publicUrl: env('PUBLIC_URL', 'http://localhost:8080'),
   dataDir: resolve(root, env('DATA_DIR', './data')),
+  // "X.Y.Z" for a release build, "X.Y.Z-dev+<sha>" for anything else (see version.js).
   // CUBBY_VERSION_OVERRIDE is for tests and local development only: it makes this server report (and stamp its
   // /cli.tgz with) another version, so version-skew handling can be tested with two servers from one checkout.
-  version: env('CUBBY_VERSION_OVERRIDE') || JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version,
+  version: computeVersion({ pkgVersion, override: env('CUBBY_VERSION_OVERRIDE'), commit: build.commit, tag: build.tag }),
+  commit: build.commit,
+  // Daily check for a newer GitHub release: the only outbound request a server makes. CUBBY_UPDATE_CHECK=0 turns
+  // it off entirely; admins can also turn it off in the Admin tab.
+  updates: {
+    enabled: env('CUBBY_UPDATE_CHECK', '1') !== '0',
+    url: env('CUBBY_UPDATE_URL', 'https://api.github.com/repos/chaitanyadukkipaty/cubby/releases/latest'),
+  },
   // Only used on first boot; afterwards these live in cubby_settings and are edited in the admin tab.
   initial: {
     adminEmail: env('CUBBY_ADMIN_EMAIL'),

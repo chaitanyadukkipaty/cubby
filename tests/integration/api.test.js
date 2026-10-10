@@ -1,7 +1,9 @@
 // Control API ↔ PocketBase: accounts, tokens, projects, ownership, schema, gallery, admin, device login.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startServer, ADMIN, SIGNUP_CODE } from '../helpers/server.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { startServer, ADMIN, SIGNUP_CODE, ROOT } from '../helpers/server.js';
 import { api, signup, adminToken, deployTo } from '../helpers/integration.js';
 
 let srv, anon, adminCall, alice, aliceToken, bob, bobToken;
@@ -20,7 +22,10 @@ describe('bootstrap', () => {
   test('first boot creates the admin and settings; every response carries the version', async () => {
     const info = await anon('GET', '/api/info');
     assert.equal(info.status, 200);
-    assert.deepEqual(info.data, { name: 'Test Cubby', version: info.data.version, open_signup: false, https: false, base_domain: `localhost:${srv.port}` });
+    // Built without git info (tests/helpers/server.js), so the plain package.json version and no commit.
+    const pkgVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
+    assert.equal(info.data.version, pkgVersion);
+    assert.deepEqual(info.data, { name: 'Test Cubby', version: pkgVersion, commit: null, open_signup: false, https: false, base_domain: `localhost:${srv.port}` });
     assert.equal(info.headers.get('x-cubby-version'), info.data.version);
     const me = await adminCall('GET', '/api/me');
     assert.equal(me.data.email, ADMIN.email);

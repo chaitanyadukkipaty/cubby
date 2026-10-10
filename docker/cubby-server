@@ -1,16 +1,34 @@
 #!/usr/bin/env bash
 # Manage a Cubby install. Installed to /usr/local/bin/cubby-server by install.sh.
+# Everything runs inside main(), so bash has read the whole script before an upgrade replaces this file.
 set -euo pipefail
 
-CUBBY_HOME=/opt/cubby
+CUBBY_HOME="${CUBBY_HOME:-/opt/cubby}"
+CUBBY_BIN="${CUBBY_BIN:-/usr/local/bin/cubby-server}"
 ENV_FILE="$CUBBY_HOME/cubby.env"
 SRC="$CUBBY_HOME/src"
 IMAGE=cubby:local
 NAME=cubby
 VOLUME=cubby-data
 
-[[ $EUID -eq 0 ]] || { echo "Run with sudo." >&2; exit 1; }
-[[ -f "$ENV_FILE" ]] || { echo "Cubby isn't installed ($ENV_FILE missing)." >&2; exit 1; }
+die() { echo "error: $*" >&2; exit 1; }
+
+get_env() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1; }
+
+set_env() { # key value
+  local tmp
+  tmp="$(mktemp "$ENV_FILE.XXXXXX")"
+  grep -v "^$1=" "$ENV_FILE" > "$tmp" || true
+  printf '%s=%s\n' "$1" "$2" >> "$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$ENV_FILE"
+}
+
+build_image() {
+  local commit tag
+  read -r commit tag < <(cubby_build_info "$SRC")
+  docker build -q -t "$IMAGE" --build-arg "CUBBY_COMMIT=${commit:-}" --build-arg "CUBBY_TAG=${tag:-}" "$SRC" >/dev/null
+}
 
 start_container() {
   docker rm -f "$NAME" >/dev/null 2>&1 || true
@@ -19,71 +37,109 @@ start_container() {
     -v "$VOLUME":/data --env-file "$ENV_FILE" "$IMAGE" >/dev/null
 }
 
-set_env() { # key value
-  if grep -q "^$1=" "$ENV_FILE"; then sed -i "s#^$1=.*#$1=$2#" "$ENV_FILE"; else echo "$1=$2" >> "$ENV_FILE"; fi
+# /api/info of the running server ("" if it isn't answering).
+server_info() {
+  curl -fsS --max-time 5 -H "Host: $(get_env BASE_DOMAIN)" http://127.0.0.1/api/info 2>/dev/null || true
+}
+json_field() { sed -n "s/.*\"$1\":\"\\([^\"]*\\)\".*/\\1/p"; }
+
+wait_healthy() {
+  for _ in $(seq 1 "${CUBBY_HEALTH_TRIES:-60}"); do
+    [[ -n "$(server_info)" ]] && return 0
+    sleep "${CUBBY_HEALTH_SLEEP:-2}"
+  done
+  return 1
 }
 
-case "${1:-help}" in
-  status)
-    docker ps --filter "name=^${NAME}$" --format 'table {{.Status}}\t{{.Ports}}'
-    grep -E '^(PUBLIC_URL|BASE_DOMAIN)=' "$ENV_FILE"
-    ;;
-  logs) docker logs --tail "${2:-200}" -f "$NAME" ;;
-  restart) docker restart "$NAME" >/dev/null && echo "Restarted." ;;
-  rebuild)
-    docker build -q -t "$IMAGE" "$SRC" >/dev/null
-    start_container
-    ;;
-  upgrade)
-    git -C "$SRC" pull -q --ff-only
-    docker build -q -t "$IMAGE" "$SRC" >/dev/null
-    start_container
-    echo "Upgraded to $(git -C "$SRC" describe --always --tags). Data is untouched."
-    ;;
-  code) docker exec "$NAME" node /app/server/src/admin-tasks.js code ;;
-  reset-password)
-    [[ $# -eq 3 ]] || { echo "usage: cubby-server reset-password <email> <new-password>"; exit 1; }
-    docker exec "$NAME" node /app/server/src/admin-tasks.js reset-password "$2" "$3"
-    ;;
-  backup)
-    docker exec "$NAME" node /app/server/src/admin-tasks.js backup
-    docker run --rm -v "$VOLUME":/data "$IMAGE" sh -c 'ls -1 /data/pb_data/backups /data/backups 2>/dev/null'
-    ;;
-  backups)
-    docker run --rm -v "$VOLUME":/data "$IMAGE" sh -c 'ls -1 /data/pb_data/backups 2>/dev/null | sed -n "s/^cubby-\(.*\)\.zip$/\1/p"'
-    ;;
-  restore)
-    [[ $# -eq 2 ]] || { echo "usage: cubby-server restore <YYYY-MM-DD>   (see: cubby-server backups)"; exit 1; }
-    DATE="$2"
-    echo "This restores ALL apps and accounts to $DATE. Anything newer is lost."
-    read -r -p "Type 'restore' to continue: " ok </dev/tty
-    [[ "$ok" == "restore" ]] || exit 1
-    docker stop "$NAME" >/dev/null
-    docker run --rm -v "$VOLUME":/data "$IMAGE" bash -euc "
-      cd /data
-      test -f pb_data/backups/cubby-$DATE.zip || { echo 'No backup for $DATE'; exit 1; }
-      mkdir -p /tmp/restore && cd /tmp/restore && unzip -q /data/pb_data/backups/cubby-$DATE.zip
-      cd /data/pb_data && find . -mindepth 1 -maxdepth 1 ! -name backups -exec rm -rf {} +
-      cp -a /tmp/restore/. /data/pb_data/
-      if [ -f /data/backups/sites-$DATE.tar.gz ]; then rm -rf /data/sites && tar -xzf /data/backups/sites-$DATE.tar.gz -C /data; fi
-    "
-    docker start "$NAME" >/dev/null
-    echo "Restored $DATE."
-    ;;
-  set-domain)
-    [[ $# -eq 2 ]] || { echo "usage: cubby-server set-domain <domain>   (point <domain> and *.<domain> at this server first)"; exit 1; }
-    set_env BASE_DOMAIN "$2"
-    set_env PUBLIC_URL "https://$2"
-    set_env CUBBY_HTTPS 1
-    start_container
-    echo "Now serving https://$2 — app URLs changed to https://<app>.$2. Everyone must re-run:"
-    echo "  cubby login https://$2 --token <token>"
-    ;;
-  *)
-    cat <<USAGE
+# Channel and ref of this install. Installs from before channels existed followed a branch (main).
+install_channel() { get_env CUBBY_INSTALL_CHANNEL | grep . || echo ref; }
+install_ref() { get_env CUBBY_INSTALL_REF | grep . || echo main; }
+
+cmd_upgrade() {
+  local version="" ref="" backup=1
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --version) version="${2:-}"; shift 2 ;;
+      --version=*) version="${1#*=}"; shift ;;
+      --ref) ref="${2:-}"; shift 2 ;;
+      --ref=*) ref="${1#*=}"; shift ;;
+      --no-backup) backup=0; shift ;;
+      *) die "unknown option $1 (usage: cubby-server upgrade [--version X.Y.Z | --ref <branch|tag|commit>] [--no-backup])" ;;
+    esac
+  done
+  if [[ -z "$version" && -z "$ref" && "$(install_channel)" == "ref" ]]; then
+    ref="$(install_ref)" # stay on the branch this server follows
+  fi
+  cubby_resolve "$version" "$ref" || exit 1
+  [[ -z "$CUBBY_TARGET_NOTE" ]] || echo "note: $CUBBY_TARGET_NOTE"
+
+  local before_version before_commit
+  before_version="$(server_info | json_field version)"
+  before_commit="$(git -C "$SRC" rev-parse HEAD 2>/dev/null || true)"
+
+  cubby_checkout "$SRC" "$CUBBY_TARGET_REF" || exit 1
+  if [[ "$(git -C "$SRC" rev-parse HEAD)" == "$before_commit" && -n "$before_version" ]]; then
+    set_env CUBBY_INSTALL_CHANNEL "$CUBBY_TARGET_CHANNEL"
+    set_env CUBBY_INSTALL_REF "$CUBBY_TARGET_REF"
+    echo "Already on Cubby ${before_version} ($CUBBY_TARGET_REF). Nothing to do."
+    return 0
+  fi
+
+  if [[ "$backup" == 1 ]] && docker ps -q --filter "name=^${NAME}$" | grep -q .; then
+    echo "Backing up before upgrading…"
+    if ! docker exec "$NAME" node /app/server/src/admin-tasks.js backup >/dev/null; then
+      [[ -z "$before_commit" ]] || git -C "$SRC" -c advice.detachedHead=false checkout -q --detach "$before_commit"
+      die "The backup failed, so nothing was changed. Re-run with --no-backup to upgrade anyway."
+    fi
+  fi
+
+  echo "Building Cubby from $CUBBY_TARGET_REF (takes a minute)…"
+  build_image
+  start_container
+  set_env CUBBY_INSTALL_CHANNEL "$CUBBY_TARGET_CHANNEL"
+  set_env CUBBY_INSTALL_REF "$CUBBY_TARGET_REF"
+  if ! wait_healthy; then
+    echo "Cubby didn't come back up. Check: cubby-server logs" >&2
+    [[ -z "$before_version" ]] || echo "Roll back with: sudo cubby-server upgrade --version ${before_version%%[-+]*}" >&2
+    exit 1
+  fi
+  local after
+  after="$(server_info | json_field version)"
+  echo "Upgraded Cubby ${before_version:-?} → ${after:-?} ($CUBBY_TARGET_REF). Data is untouched."
+
+  # Install this version's cubby-server last, by rename, so the running copy is never edited in place.
+  if [[ -f "$SRC/docker/cubby-server" ]]; then
+    cp "$SRC/docker/cubby-server" "$CUBBY_BIN.new" && chmod 755 "$CUBBY_BIN.new" && mv "$CUBBY_BIN.new" "$CUBBY_BIN"
+  fi
+}
+
+cmd_version() {
+  local info current commit latest
+  info="$(server_info)"
+  current="$(printf '%s' "$info" | json_field version)"
+  commit="$(printf '%s' "$info" | json_field commit)"
+  [[ -n "$commit" ]] || commit="$(git -C "$SRC" rev-parse --short=7 HEAD 2>/dev/null || true)"
+  echo "Running:   ${current:-unknown (server not answering)}"
+  echo "Commit:    ${commit:-unknown}"
+  echo "Follows:   $(install_channel) $(install_ref)"
+  latest="$(cubby_latest_release)"
+  if [[ -z "$latest" ]]; then
+    echo "Latest:    unknown (no releases, or GitHub can't be reached)"
+  elif [[ -n "$current" ]] && cubby_newer "$latest" "$current"; then
+    echo "Latest:    $latest (update available: sudo cubby-server upgrade)"
+  else
+    echo "Latest:    $latest"
+  fi
+}
+
+usage() {
+  cat <<USAGE
 cubby-server — manage this Cubby install
   status | logs [lines] | restart
-  upgrade                     pull latest code, rebuild, restart (data kept)
+  version                     running version, commit, what it follows, latest release
+  upgrade                     latest release (or the branch you follow); backs up first, data kept
+  upgrade --version X.Y.Z     a specific release (also to roll back)
+  upgrade --ref <ref>         any branch, tag or commit (not a release)
   code                        show the signup code
   reset-password <email> <pw> reset any account's password
   backup                      run a backup now
@@ -91,5 +147,73 @@ cubby-server — manage this Cubby install
   restore <YYYY-MM-DD>        restore all data to a backup
   set-domain <domain>         switch from IP to a real domain with HTTPS
 USAGE
-    ;;
-esac
+}
+
+main() {
+  [[ $EUID -eq 0 || -n "${CUBBY_TEST_NONROOT:-}" ]] || { echo "Run with sudo." >&2; exit 1; }
+  [[ -f "$ENV_FILE" ]] || { echo "Cubby isn't installed ($ENV_FILE missing)." >&2; exit 1; }
+  if [[ -f "$SRC/docker/ref.sh" ]]; then
+    # shellcheck source=ref.sh
+    source "$SRC/docker/ref.sh"
+  else
+    die "$SRC/docker/ref.sh is missing; re-run the installer."
+  fi
+
+  case "${1:-help}" in
+    status)
+      docker ps --filter "name=^${NAME}$" --format 'table {{.Status}}\t{{.Ports}}'
+      grep -E '^(PUBLIC_URL|BASE_DOMAIN|CUBBY_INSTALL_CHANNEL|CUBBY_INSTALL_REF)=' "$ENV_FILE"
+      ;;
+    logs) docker logs --tail "${2:-200}" -f "$NAME" ;;
+    restart) docker restart "$NAME" >/dev/null && echo "Restarted." ;;
+    rebuild)
+      build_image
+      start_container
+      ;;
+    upgrade) shift; cmd_upgrade "$@" ;;
+    version) cmd_version ;;
+    code) docker exec "$NAME" node /app/server/src/admin-tasks.js code ;;
+    reset-password)
+      [[ $# -eq 3 ]] || { echo "usage: cubby-server reset-password <email> <new-password>"; exit 1; }
+      docker exec "$NAME" node /app/server/src/admin-tasks.js reset-password "$2" "$3"
+      ;;
+    backup)
+      docker exec "$NAME" node /app/server/src/admin-tasks.js backup
+      docker run --rm -v "$VOLUME":/data "$IMAGE" sh -c 'ls -1 /data/pb_data/backups /data/backups 2>/dev/null'
+      ;;
+    backups)
+      docker run --rm -v "$VOLUME":/data "$IMAGE" sh -c 'ls -1 /data/pb_data/backups 2>/dev/null | sed -n "s/^cubby-\(.*\)\.zip$/\1/p"'
+      ;;
+    restore)
+      [[ $# -eq 2 ]] || { echo "usage: cubby-server restore <YYYY-MM-DD>   (see: cubby-server backups)"; exit 1; }
+      local date="$2" ok
+      echo "This restores ALL apps and accounts to $date. Anything newer is lost."
+      read -r -p "Type 'restore' to continue: " ok </dev/tty
+      [[ "$ok" == "restore" ]] || exit 1
+      docker stop "$NAME" >/dev/null
+      docker run --rm -v "$VOLUME":/data "$IMAGE" bash -euc "
+        cd /data
+        test -f pb_data/backups/cubby-$date.zip || { echo 'No backup for $date'; exit 1; }
+        mkdir -p /tmp/restore && cd /tmp/restore && unzip -q /data/pb_data/backups/cubby-$date.zip
+        cd /data/pb_data && find . -mindepth 1 -maxdepth 1 ! -name backups -exec rm -rf {} +
+        cp -a /tmp/restore/. /data/pb_data/
+        if [ -f /data/backups/sites-$date.tar.gz ]; then rm -rf /data/sites && tar -xzf /data/backups/sites-$date.tar.gz -C /data; fi
+      "
+      docker start "$NAME" >/dev/null
+      echo "Restored $date."
+      ;;
+    set-domain)
+      [[ $# -eq 2 ]] || { echo "usage: cubby-server set-domain <domain>   (point <domain> and *.<domain> at this server first)"; exit 1; }
+      set_env BASE_DOMAIN "$2"
+      set_env PUBLIC_URL "https://$2"
+      set_env CUBBY_HTTPS 1
+      start_container
+      echo "Now serving https://$2 — app URLs changed to https://<app>.$2. Everyone must re-run:"
+      echo "  cubby login https://$2 --token <token>"
+      ;;
+    *) usage ;;
+  esac
+}
+
+main "$@"
+exit

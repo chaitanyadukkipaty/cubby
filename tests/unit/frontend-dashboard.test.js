@@ -132,3 +132,34 @@ describe('server names', () => {
   test('connectHeading names the server', () => assert.equal(f.connectHeading("Priya's Cubby"), "Connect your agent to Priya's Cubby?"));
   test('connectHeading without a name says "this server"', () => assert.equal(f.connectHeading(''), 'Connect your agent to this server?'));
 });
+
+describe('updateNotice', () => {
+  const ctx = vm.createContext({ Node, document: { createElement: (t) => new FakeElement(t) }, URLSearchParams, Date, String, Object });
+  vm.runInContext(block, ctx);
+  const g = vm.runInContext('({ updateNotice, UPGRADE_COMMAND })', ctx);
+  const on = { enabled: true, current: '0.1.1', checked_at: '2026-10-11T00:00:00Z', error: null };
+  test('a newer release shows the version, the release notes and the exact upgrade command', () => {
+    const n = g.updateNotice({ ...on, latest: 'v0.1.2', update_available: true, release_url: 'https://gh/r' });
+    assert.deepEqual({ ...n }, { kind: 'available', text: 'Update available: v0.1.2', command: 'sudo cubby-server upgrade', url: 'https://gh/r' });
+    assert.equal(g.UPGRADE_COMMAND, 'sudo cubby-server upgrade');
+  });
+  test('up to date, no releases yet, still checking, unreachable', () => {
+    assert.equal(g.updateNotice({ ...on, latest: 'v0.1.1', update_available: false }).text, "You're on the latest release (v0.1.1).");
+    assert.equal(g.updateNotice({ ...on, latest: null, update_available: false }).text, 'No releases published yet.');
+    assert.equal(g.updateNotice({ ...on, checked_at: null, latest: null }).kind, 'unknown');
+    assert.match(g.updateNotice({ ...on, latest: null, error: 'offline' }).text, /Couldn't reach GitHub/);
+    assert.equal(g.updateNotice({ ...on, latest: 'v0.1.1', error: 'offline' }).kind, 'current', 'a failed re-check keeps the last answer');
+  });
+  test('versionLabel marks development builds', () => {
+    const v = vm.runInContext('versionLabel', ctx);
+    assert.equal(v('0.1.1'), 'Cubby 0.1.1');
+    assert.equal(v('0.1.1-dev+abc1234'), 'Cubby 0.1.1 · development build abc1234');
+    assert.equal(v('0.0.9-rc1'), 'Cubby 0.0.9-rc1');
+    assert.equal(v(''), 'Cubby unknown version');
+  });
+  test('says why the check is off', () => {
+    assert.match(g.updateNotice({ enabled: false, reason: 'env' }).text, /CUBBY_UPDATE_CHECK=0/);
+    assert.equal(g.updateNotice({ enabled: false, reason: 'setting' }).text, 'Update checks are off.');
+    assert.equal(g.updateNotice(undefined).kind, 'unknown');
+  });
+});

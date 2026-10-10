@@ -18,7 +18,8 @@ What to expect:
 
 ## Supported versions
 
-Only the latest release receives security fixes. Upgrade servers with `sudo cubby-server upgrade`.
+Only the latest release receives security fixes. Check what a server runs with `sudo cubby-server version` (or the
+Admin tab), and upgrade with `sudo cubby-server upgrade`. The Admin tab shows when a newer release is out.
 
 ## Scope
 

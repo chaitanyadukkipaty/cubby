@@ -143,6 +143,8 @@ async function ensurePlatformCollections() {
       { name: 'open_signup', type: 'bool' },
       { name: 'max_apps_per_user', type: 'number', onlyInt: true },
       { name: 'max_deploy_mb', type: 'number', onlyInt: true },
+      // Stored inverted so settings rows created before this field existed (false) keep the check on.
+      { name: 'update_check_off', type: 'bool' },
       ...autodates,
     ],
   });

@@ -11,6 +11,10 @@ export class AdminSection {
     this.saveLimitsButton = page.getByRole('button', { name: 'Save limits' });
     this.serverName = page.getByLabel('Server name');
     this.saveNameButton = page.getByRole('button', { name: 'Save name' });
+    this.updates = page.getByRole('region', { name: 'Updates' });
+    this.releaseNotesLink = this.updates.getByRole('link', { name: /Release notes/ });
+    this.copyUpgradeButton = this.updates.getByRole('button', { name: 'Copy command' });
+    this.updateCheck = page.getByLabel(/Check for new Cubby releases/);
   }
 
   async renameServer(name) {

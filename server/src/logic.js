@@ -87,6 +87,7 @@ export function settingsPatch(body = {}, newCode) {
   const patch = {};
   if (body.server_name !== undefined) patch.server_name = checkServerName(body.server_name);
   if (typeof body.open_signup === 'boolean') patch.open_signup = body.open_signup;
+  if (typeof body.update_check === 'boolean') patch.update_check_off = !body.update_check;
   if (body.rotate_code) patch.signup_code = newCode();
   for (const key of ['max_apps_per_user', 'max_deploy_mb']) {
     if (body[key] !== undefined) {
@@ -98,7 +99,10 @@ export function settingsPatch(body = {}, newCode) {
   return patch;
 }
 
-export const settingsView = (s) => ({ server_name: serverName(s), signup_code: s.signup_code, open_signup: s.open_signup, max_apps_per_user: s.max_apps_per_user, max_deploy_mb: s.max_deploy_mb });
+export const settingsView = (s) => ({
+  server_name: serverName(s), signup_code: s.signup_code, open_signup: s.open_signup, max_apps_per_user: s.max_apps_per_user,
+  max_deploy_mb: s.max_deploy_mb, update_check: !s.update_check_off,
+});
 
 // Signup rules that don't need the database: required fields, password length, signup code.
 export function checkSignup({ email, password, code } = {}, settings) {
