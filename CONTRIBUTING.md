@@ -120,15 +120,31 @@ Rules of thumb:
 
 ## Documentation
 
-Docs ship in the same pull request as the change. Depending on what you touched:
+**A change isn't done until the README and the docs site describe it.** Docs ship in the same pull request as the
+code, and reviewers will ask for them. Adding a row to a table is rarely enough: update the parts people actually read.
 
 | You changed | Update |
 | --- | --- |
-| Anything users see or do | `docs/index.html` and, if it's headline material, `README.md` |
-| CLI commands or flags | The CLI `HELP` text, `docs/index.html#cli`, the README CLI table |
+| Anything users see or do | `README.md` **and** `docs/index.html` (see the checklist below) |
+| CLI commands or flags | The CLI `HELP` text, `docs/index.html#cli`, the README CLI reference |
 | How agents should behave | `cli/skill/cubby/SKILL.md` |
 | App template conventions | `cli/template/AGENTS.md` (also served as part of `/docs.md`) |
 | Server setup or management | `install.sh` prompts, `docker/cubby-server` help, `docs/index.html#install` and `#admin` |
+| Dashboard or app template UI | Retake the affected screenshots in `docs/assets/` (they're used by both the README and the docs site) |
+| Contributor workflow or repo rules | `CONTRIBUTING.md` and, for non-obvious traps, `AGENTS.md` |
+
+### README and docs checklist
+
+For any user-visible change, go through both `README.md` and `docs/index.html` and check:
+
+- **The story:** the opening example, "What it feels like", diagrams and step-by-step instructions still describe how
+  Cubby actually works. If your feature changes the typical flow, the example should show it.
+- **Reference:** CLI tables, flags, install questions and admin actions are complete.
+- **Screenshots:** they show the current UI. They're static PNGs, so they go stale silently. After retaking any,
+  run `npm run docs:stamp` so the README and docs site link to the new files (a content hash in the URL defeats
+  browser and GitHub image caches). `npm run test:unit` fails if you forget.
+- **Status lists:** move shipped items out of "Coming next" or "Not supported yet", and add new limitations.
+- **Search for the old behavior:** `grep -rn "<old command or wording>" README.md docs/` before you open the PR.
 
 Write plainly and from the user's side: name things by what people recognize, use active voice, keep sentences short.
 
