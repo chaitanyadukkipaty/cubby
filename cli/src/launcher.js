@@ -12,7 +12,7 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import * as tar from 'tar';
-import { readConfig, writeConfig, resolveTarget, readProject, serverId, normalizeUrl, updateHint } from './servers.js';
+import { readConfig, writeConfig, resolveTarget, readProject, serverId, normalizeUrl, updateHint, unsupportedServer } from './servers.js';
 import { installSkill, skillStatus, isNewerVersion, normalizeServerArg } from './lib.js';
 
 export const BUNDLED_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -139,6 +139,8 @@ export async function plan(argv, deps) {
     }
   }
   if (!version || version === bundledVersion) return { run: 'bundled', notes, version: bundledVersion, target };
+  const unsupported = unsupportedServer(version, { name: target.server?.name, url: target.url, bundledVersion });
+  if (unsupported) return { run: 'refuse', message: unsupported, notes };
 
   if (!existsSync(cliEntry(home, version))) {
     try {

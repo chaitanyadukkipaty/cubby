@@ -9,7 +9,19 @@ DEST="$HOME/.agents/skills/cubby"
 
 mkdir -p "$DEST"
 curl -fsSL "$SERVER/skill.md" -o "$DEST/SKILL.md.tmp"
-mv "$DEST/SKILL.md.tmp" "$DEST/SKILL.md"
+# The skill only moves forward: keep an installed skill from a newer Cubby (X.Y.Z compared numerically).
+skill_core() { sed -n 's/.*Skill version: \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' "$1" | head -n 1; }
+new_v=$(skill_core "$DEST/SKILL.md.tmp")
+old_v=""
+[ -f "$DEST/SKILL.md" ] && old_v=$(skill_core "$DEST/SKILL.md")
+kept=""
+if [ -n "$old_v" ] && [ -n "$new_v" ] && [ "$old_v" != "$new_v" ] \
+  && [ "$(printf '%s\n%s\n' "$old_v" "$new_v" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)" = "$old_v" ]; then
+  rm -f "$DEST/SKILL.md.tmp"
+  kept="$old_v"
+else
+  mv "$DEST/SKILL.md.tmp" "$DEST/SKILL.md"
+fi
 
 linked=""
 for root in "$HOME/.claude" "$HOME/.codex" "$HOME/.cursor" "$HOME/.config/opencode"; do
@@ -55,7 +67,11 @@ JS
 ) || added="no"
 fi
 
-echo "Installed the cubby skill for $SERVER"
+if [ -n "$kept" ]; then
+  echo "Kept your newer cubby skill (v$kept) for $SERVER"
+else
+  echo "Installed the cubby skill for $SERVER"
+fi
 if [ -n "$linked" ]; then echo "  agents:$linked"; else echo "  no agents found; skill is in $DEST"; fi
 case "$added" in
   yes) echo "  added this server to ~/.cubby/config.json" ;;

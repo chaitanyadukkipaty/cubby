@@ -80,6 +80,13 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   app commands) runs the CLI of the target server's version, downloaded into `~/.cubby/cli/<version>/`; only
   `LOCAL_COMMANDS` (servers, use, logout, skill, version) run in the launcher. Never pick a CLI by "newest". A new
   command must be put in one of the two sets deliberately (a unit test checks the classes).
+- The oldest supported server is `MIN_SERVER_VERSION` (cli/src/servers.js, 0.1.1, defined only there). The launcher
+  refuses older or unparseable server versions with one line asking the admin to upgrade; a server reporting the
+  launcher's own version always passes (same code, e.g. before a release bump). Raising the minimum is a maintainer
+  decision, like a minor bump.
+- Config compatibility: every CLI from 0.1.1 on reads config `format` 1. Changing the shape of `config.json` or
+  `cubby.json` needs a format bump plus a migration in the readers of every supported CLI version (and `/skill.sh`);
+  readers refuse unknown newer formats with a clear message instead of guessing.
 - Matched CLIs read and write the real `~/.cubby/config.json` themselves, so every CLI version must understand the
   current config format. The launcher pins app commands with `CUBBY_SERVER` (the server it resolved) and sets
   `CUBBY_LAUNCHED` so the child never dispatches again. Changing `config.json` or `cubby.json` shape means bumping
@@ -89,8 +96,8 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   server's `/docs.md`. Never add them to SKILL.md: one skill serves every server version, so it may only name the
   frozen core in cli/skill/core-commands.json (tests/unit/skill-core.test.js enforces it). Agents discover
   anything else with `cubby help --json`, which answers for the server they target.
-- The installed skill only moves forward: the launcher refreshes it from a newer CLI before running it and never
-  installs an older one (`installSkill` refuses to downgrade too).
+- The installed skill only moves forward: the launcher refreshes it from a newer CLI before running it, and neither
+  `installSkill` nor `/skill.sh` ever installs an older one.
 - Cached CLIs get a `node_modules` symlink to the launcher's own, so the CLI's runtime dependencies are shared
   across versions. Keep them few and backward compatible (today only `tar`).
 - `cubby.json` pins an app to its server URL and is never rewritten to follow another server; moving an app is an

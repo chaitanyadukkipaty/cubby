@@ -42,6 +42,17 @@ describe('migrateConfig', () => {
   });
   test('format 1 passes through', () => assert.deepEqual(s.migrateConfig(two()), two()));
   test('a newer format is refused with an update hint', () => err(() => s.migrateConfig({ format: 2, servers: {} }), /newer Cubby CLI \(format 2\)\. Update this one: npm i -g <server-url>\/cli\.tgz/));
+  test('the minimum supported server version is defined once, and checked by core version', () => {
+    assert.equal(s.MIN_SERVER_VERSION, '0.1.1');
+    const check = (v, over = {}) => s.unsupportedServer(v, { name: 'Acme', url: 'https://a.dev', bundledVersion: '9.9.9', ...over });
+    for (const ok of ['0.1.1', '0.1.2', '0.2.0', '1.0.0', '0.1.1-dev+abc', '0.1.2-rc.1']) assert.equal(check(ok), null, ok);
+    assert.match(check('0.1.0'), /^Acme runs Cubby 0\.1\.0, older than 0\.1\.1, the oldest this CLI supports\. Ask its admin to upgrade \(sudo cubby-server upgrade\)\.$/);
+    assert.match(check('0.0.99'), /older than 0\.1\.1/);
+    assert.match(check('0.1.0-dev+abc'), /older than/);
+    for (const bad of ['banana', '', '1.2', 'v0.1.2']) assert.match(check(bad), /unrecognized Cubby version/, bad);
+    assert.match(check('0.1.0', { name: null }), /^https:\/\/a\.dev runs/);
+    assert.equal(check('0.0.1', { bundledVersion: '0.0.1' }), null, 'the launcher\'s own version');
+  });
   test('lenient: a newer format is still readable, marked, and never rewritten', () => {
     const cfg = s.migrateConfig({ format: 2, default: 'a.dev', servers: { 'a.dev': { url: 'https://a.dev', token: 't' } } }, { lenient: true });
     assert.deepEqual(cfg, { format: 2, default: 'a.dev', servers: { 'a.dev': { url: 'https://a.dev', token: 't' } }, tooNew: true });

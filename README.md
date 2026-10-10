@@ -183,7 +183,8 @@ cubby servers
 - **The CLI always matches the server it's talking to; in an app folder, the server in `cubby.json`.** The `cubby`
   command is a small launcher. For every command that talks to a server, logging in included, it runs a CLI of that
   server's version, downloaded once into `~/.cubby/cli/<version>/`, so an older and a newer server work side by side.
-  If a server is unreachable, it falls back to the last version it saw.
+  If a server is unreachable, it falls back to the last version it saw. Servers older than Cubby 0.1.1 aren't
+  supported: the CLI says so and asks you to have the admin run `sudo cubby-server upgrade`.
 - **Agents ask, not guess.** The skill only names the commands every server supports. For anything else the agent
   runs `cubby help --json`, which answers for the server it's targeting (the same list is in each server's
   `/docs.md`). The installed skill only ever moves forward to newer versions.

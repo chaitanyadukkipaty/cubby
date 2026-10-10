@@ -29,7 +29,7 @@ const idOf = (srv) => `localhost:${srv.port}`;
 before(async () => {
   [alpha, beta] = await Promise.all([
     startServer({ CUBBY_SERVER_NAME: 'Alpha Cubby' }),
-    startServer({ CUBBY_SERVER_NAME: 'Beta Cubby', CUBBY_VERSION_OVERRIDE: '0.0.9' }),
+    startServer({ CUBBY_SERVER_NAME: 'Beta Cubby', CUBBY_VERSION_OVERRIDE: '0.1.2' }),
   ]);
   home = mkdtempSync(join(tmpdir(), 'cubby-multi-home-'));
   work = mkdtempSync(join(tmpdir(), 'cubby-multi-work-'));
@@ -74,15 +74,15 @@ describe('several servers on different versions', () => {
     ok(await cubby(['init', 'app-a', '--server', 'Alpha Cubby', '--no-install']));
     const b = ok(await cubby(['init', 'app-b', '--server', 'Beta Cubby', '--no-install', '--json']));
     assert.equal(b.json.server, beta.url);
-    assert.ok(existsSync(join(home, '.cubby/cli/0.0.9/package/src/index.js')), "Beta's CLI was cached");
+    assert.ok(existsSync(join(home, '.cubby/cli/0.1.2/package/src/index.js')), "Beta's CLI was cached");
     assert.ok(!existsSync(join(home, '.cubby/cli', BUNDLED)), 'the bundled version is never downloaded');
     assert.deepEqual(JSON.parse(readFileSync(join(work, 'app-b/cubby.json'), 'utf8')), { format: 1, project: 'app-b', server: beta.url });
 
     const va = ok(await cubby(['version', '--json'], { cwd: join(work, 'app-a') })).json;
     const vb = ok(await cubby(['version', '--json'], { cwd: join(work, 'app-b') })).json;
     assert.deepEqual([va.cli, va.server_version, va.server_name], [BUNDLED, BUNDLED, 'Alpha Cubby']);
-    assert.deepEqual([vb.cli, vb.server_version, vb.server_name], ['0.0.9', '0.0.9', 'Beta Cubby']);
-    assert.equal(config().servers[idOf(beta)].version, '0.0.9', 'version cached in config');
+    assert.deepEqual([vb.cli, vb.server_version, vb.server_name], ['0.1.2', '0.1.2', 'Beta Cubby']);
+    assert.equal(config().servers[idOf(beta)].version, '0.1.2', 'version cached in config');
   });
 
   test('deploys go to the server each app is pinned to, whatever the default', async () => {
@@ -102,11 +102,11 @@ describe('several servers on different versions', () => {
   test('every command, account ones included, runs the CLI matching the server it talks to', async () => {
     const helpVersion = async (args, cwd = work) => ok(await cubby(['help', '--json', ...args], { cwd })).json.version;
     // In an app folder: that app's server (cubby.json), for every command.
-    assert.equal(await helpVersion([], join(work, 'app-b')), '0.0.9');
+    assert.equal(await helpVersion([], join(work, 'app-b')), '0.1.2');
     assert.equal(await helpVersion([], join(work, 'app-a')), BUNDLED);
     assert.equal(ok(await cubby(['whoami', '--json'], { cwd: join(work, 'app-b') })).json.email, 'me@beta.dev');
     // Outside an app folder: the named server, else the default.
-    assert.equal(await helpVersion(['--server', 'Beta Cubby']), '0.0.9');
+    assert.equal(await helpVersion(['--server', 'Beta Cubby']), '0.1.2');
     assert.equal(await helpVersion([]), BUNDLED, 'default is Alpha');
     // help lists commands and flags, from the same table as /docs.md.
     const h = ok(await cubby(['help', 'deploy', '--json'], { cwd: join(work, 'app-b') })).json;
@@ -117,17 +117,21 @@ describe('several servers on different versions', () => {
   test('logging in to the older server through its own CLI stores a correct entry', async () => {
     ok(await cubby(['login', beta.url, '--token', tokenB, '--no-skill', '--json']));
     const entry = config().servers[idOf(beta)];
-    assert.deepEqual([entry.url, entry.email, entry.token, entry.name, entry.version], [beta.url, 'me@beta.dev', tokenB, 'Beta Cubby', '0.0.9']);
+    assert.deepEqual([entry.url, entry.email, entry.token, entry.name, entry.version], [beta.url, 'me@beta.dev', tokenB, 'Beta Cubby', '0.1.2']);
     assert.equal(config().default, idOf(alpha), 'the default stays');
     assert.deepEqual(Object.keys(config().servers).sort(), [idOf(alpha), idOf(beta)].sort());
   });
 
   test('the skill only moves forward: an older server\'s CLI never downgrades it', async () => {
-    ok(await cubby(['skill', 'install']));
     const skillVersion = () => readFileSync(join(home, '.agents/skills/cubby/SKILL.md'), 'utf8').match(/Skill version: ([^*]+)\*\*/)[1];
-    assert.equal(skillVersion(), BUNDLED);
-    ok(await cubby(['whoami'], { cwd: join(work, 'app-b') })); // runs the 0.0.9 CLI
-    assert.equal(skillVersion(), BUNDLED);
+    // The first test ran Alpha's skill.sh, then Beta's (0.1.2): the newest won.
+    assert.equal(skillVersion(), '0.1.2');
+    assert.match(ok(await cubby(['skill', 'install'])).stdout, /Kept the installed cubby skill 0\.1\.2/, 'the older bundled CLI keeps it');
+    ok(await cubby(['whoami'], { cwd: join(work, 'app-a') })); // runs the older bundled CLI
+    assert.equal(skillVersion(), '0.1.2');
+    const again = spawnSync('sh', ['-c', await (await fetch(`${alpha.url}/skill.sh`)).text()], { env: { ...process.env, HOME: home }, encoding: 'utf8' });
+    assert.match(again.stdout, /Kept your newer cubby skill \(v0\.1\.2\)/, "an older server's skill.sh never downgrades it");
+    assert.equal(skillVersion(), '0.1.2');
     const gamma = await startServer({ CUBBY_SERVER_NAME: 'Gamma Cubby', CUBBY_VERSION_OVERRIDE: '9.9.9' });
     try {
       ok(await cubby(['help', '--server', gamma.url])); // runs the 9.9.9 CLI: refreshes the skill forward
@@ -139,15 +143,31 @@ describe('several servers on different versions', () => {
     }
   });
 
+  test('a server older than the minimum (0.1.1) is refused with one clear line, before anything is downloaded', async () => {
+    // The bundled CLI here may itself be 0.1.0 until the release bump, so the old server reports 0.0.9.
+    const old = await startServer({ CUBBY_SERVER_NAME: 'Old Cubby', CUBBY_VERSION_OVERRIDE: '0.0.9' });
+    try {
+      for (const args of [['whoami', '--server', old.url], ['login', old.url, '--token', 'hk_x'], ['projects', '--server', old.url]]) {
+        const r = await cubby(args);
+        assert.equal(r.code, 1, args[0]);
+        assert.match(r.stderr, /runs Cubby 0\.0\.9, older than 0\.1\.1, the oldest this CLI supports\. Ask its admin to upgrade \(sudo cubby-server upgrade\)\./);
+      }
+      assert.ok(!existsSync(join(home, '.cubby/cli/0.0.9')), 'its CLI is never downloaded');
+      assert.ok(!(idOf(old) in config().servers), 'and no login is stored');
+    } finally {
+      await old.stop();
+    }
+  });
+
   test('when a server is unreachable, its last known CLI version is used with a note', async () => {
     const cfg = config();
     cfg.servers[idOf(beta)].version_checked_at = 0; // stale, so the launcher has to ask the server
     writeFileSync(join(home, '.cubby/config.json'), JSON.stringify(cfg));
     await beta.stop();
     const r = await cubby(['deploys'], { cwd: join(work, 'app-b') });
-    assert.match(r.stderr, /can't reach http:\/\/localhost:\d+; using the cached CLI for its last known version 0\.0\.9/);
+    assert.match(r.stderr, /can't reach http:\/\/localhost:\d+; using the cached CLI for its last known version 0\.1\.2/);
     const v = ok(await cubby(['version', '--json'], { cwd: join(work, 'app-b') })).json;
-    assert.equal(v.cli, '0.0.9');
+    assert.equal(v.cli, '0.1.2');
     assert.equal(v.server_version, null);
   });
 
