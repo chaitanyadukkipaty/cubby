@@ -10,7 +10,7 @@
   "scripts": {
     "setup": "node scripts/install-pocketbase.mjs && npm install",
     "dev": "npm run start -w server",
-    "cubby": "node cli/src/index.js",
+    "cubby": "node cli/src/launcher.js",
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "test:unit": "node --test tests/unit/*.test.js",
     "test:integration": "node --test --test-concurrency=1 tests/integration/*.test.js",

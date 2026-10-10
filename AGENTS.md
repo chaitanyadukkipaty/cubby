@@ -59,9 +59,27 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 
 ## Contracts between files that change together
 
-- Skill text: keep the exact `**Skill version: X**` and `{{SERVER}}` markers in cli/skill/cubby/SKILL.md. They're
-  rewritten by both server/src/cli-dist.js (served copy) and cli/src/lib.js (installed copy, also parsed by
-  `skill status`). `npx skills` copies keep the literal `{{SERVER}}`, so the skill text must handle it.
+- Skill text: keep the exact `**Skill version: X**` marker in cli/skill/cubby/SKILL.md; server/src/cli-dist.js and
+  cli/src/lib.js stamp it and `skill status` parses it. The skill is server-neutral on purpose (one skill, many
+  servers): don't put a server URL or `{{…}}` placeholder back in. Servers are registered by `/skill.sh` and
+  `cubby login` in `~/.cubby/config.json`.
+
+## Version skew between servers (the launcher)
+
+- The global `cubby` bin is cli/src/launcher.js. App commands (`SERVER_COMMANDS`) run the CLI matching the target
+  server's version, downloaded into `~/.cubby/cli/<version>/`; account commands always run the bundled CLI so an
+  old CLI never rewrites the config. A new command must be classified in `SERVER_COMMANDS` or not, deliberately.
+- What every CLI version must keep understanding: `CUBBY_SERVER` + `CUBBY_TOKEN` env (the launcher passes the
+  resolved server and token this way, and strips `--server`, because 0.1.0 CLIs only take URLs), `GET /api/info`
+  returning `version`, and `/cli.tgz` containing `package/src/index.js`. Changing `config.json` or `cubby.json`
+  shape means bumping `format` and adding a migration in cli/src/servers.js and `/skill.sh` (which edits
+  config.json itself); readers refuse a newer format instead of guessing.
+- Cached CLIs get a `node_modules` symlink to the launcher's own, so the CLI's runtime dependencies are shared
+  across versions. Keep them few and backward compatible (today only `tar`).
+- `cubby.json` pins an app to its server URL and is never rewritten to follow another server; moving an app is an
+  explicit `cubby link <app> --server <url>`.
+- `CUBBY_VERSION_OVERRIDE` makes a server report and stamp another version. It exists for two-version tests; don't
+  use it to paper over a real mismatch.
 - Backups are named `cubby-YYYY-MM-DD.zip` / `sites-YYYY-MM-DD.tar.gz` (server/src/backups.js); docker/cubby-server
   parses those names for `backups` and `restore`.
 - In the container PocketBase listens on `PB_LISTEN=0.0.0.0:8090` but is published only to host loopback

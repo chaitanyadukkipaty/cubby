@@ -9,7 +9,9 @@ export const config = {
   baseDomain: env('BASE_DOMAIN', 'localhost:8080'),
   publicUrl: env('PUBLIC_URL', 'http://localhost:8080'),
   dataDir: resolve(root, env('DATA_DIR', './data')),
-  version: JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version,
+  // CUBBY_VERSION_OVERRIDE is for tests and local development only: it makes this server report (and stamp its
+  // /cli.tgz with) another version, so version-skew handling can be tested with two servers from one checkout.
+  version: env('CUBBY_VERSION_OVERRIDE') || JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version,
   // Only used on first boot; afterwards these live in cubby_settings and are edited in the admin tab.
   initial: {
     adminEmail: env('CUBBY_ADMIN_EMAIL'),

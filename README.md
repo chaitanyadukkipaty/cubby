@@ -70,7 +70,8 @@ else's platform and you can't bring your own agent.
 - **Real backend for every app.** Collections, user accounts, file uploads and live updates from a shared [PocketBase](https://pocketbase.io). Each app is walled off by collection prefix, and its security comes from database rules.
 - **One-command deploys.** `cubby deploy` pushes schema changes, builds and publishes. The last 10 deploys are kept for instant rollback.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
-- **Made for groups.** Invite with a signup code, browse everyone's apps in a gallery, and manage users, limits and disk from an admin tab.
+- **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps in a gallery, and manage users, limits and disk from an admin tab.
+- **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
 - **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, one-command upgrades.
 
 <table>
@@ -124,6 +125,7 @@ Switch later with `sudo cubby-server set-domain example.com`. See the [full inst
 | `cubby schema push \| pull \| drop` | Manage the data model (push never deletes) |
 | `cubby projects` / `info` / `link` / `delete` | Manage apps |
 | `cubby skill install \| remove \| status` | Manage the agent skill |
+| `cubby servers` / `cubby use <name>` | List your servers, set the default (`--server <name>` works on every command) |
 
 </details>
 
@@ -195,4 +197,3 @@ Cubby is early. It's built for groups who trust each other, not as a hostile mul
 
 - All apps share one SQLite database, which suits a group of friends or a small team.
 - Not yet supported: server-side code, cron jobs, custom domains per app, single sign-on across apps, app emails.
-- Coming next: one CLI for several servers.

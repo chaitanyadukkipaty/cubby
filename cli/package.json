@@ -4,7 +4,7 @@
   "description": "Build and host full-stack apps on Cubby. Designed for coding agents.",
   "type": "module",
   "bin": {
-    "cubby": "src/index.js"
+    "cubby": "src/launcher.js"
   },
   "files": [
     "src",

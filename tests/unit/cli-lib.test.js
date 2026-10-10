@@ -8,16 +8,6 @@ import * as lib from '../../cli/src/lib.js';
 const SKILL_SRC = new URL('../../cli/skill/cubby/', import.meta.url).pathname;
 const TEMPLATE = new URL('../../cli/template/', import.meta.url).pathname;
 
-describe('resolveServerUrl precedence: flag > env > logged-in server > cubby.json > default', () => {
-  const all = { flag: 'https://flag', env: 'https://env', globalServer: 'https://global', projectServer: 'https://project' };
-  test('flag wins', () => assert.equal(lib.resolveServerUrl(all), 'https://flag'));
-  test('then env', () => assert.equal(lib.resolveServerUrl({ ...all, flag: undefined }), 'https://env'));
-  test('then the server you logged in to', () => assert.equal(lib.resolveServerUrl({ ...all, flag: '', env: undefined }), 'https://global'));
-  test('then cubby.json', () => assert.equal(lib.resolveServerUrl({ projectServer: 'https://project' }), 'https://project'));
-  test('then the default', () => { assert.equal(lib.resolveServerUrl(), lib.DEFAULT_SERVER); assert.equal(lib.resolveServerUrl({}), 'http://localhost:8080'); });
-  test('strips one trailing slash', () => assert.equal(lib.resolveServerUrl({ flag: 'https://x.dev/' }), 'https://x.dev'));
-});
-
 describe('normalizeServerArg', () => {
   test('keeps explicit schemes', () => { assert.equal(lib.normalizeServerArg('http://1-2-3-4.sslip.io'), 'http://1-2-3-4.sslip.io'); assert.equal(lib.normalizeServerArg('https://a.b'), 'https://a.b'); });
   test('defaults bare hosts to https', () => assert.equal(lib.normalizeServerArg('cubby.example.com'), 'https://cubby.example.com'));
@@ -133,7 +123,7 @@ describe('copyTemplate', () => {
 
 describe('agent skill install/remove/status', () => {
   let home;
-  const opts = () => ({ home, src: SKILL_SRC, version: '9.8.7', server: 'https://cubby.example.com' });
+  const opts = () => ({ home, src: SKILL_SRC, version: '9.8.7' });
   beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'cubby-home-')); });
   afterEach(() => rmSync(home, { recursive: true, force: true }));
 
@@ -143,15 +133,15 @@ describe('agent skill install/remove/status', () => {
     assert.equal(s.version, null);
     assert.ok(s.links.every((l) => l.state === 'agent not installed'));
   });
-  test('installs the canonical copy with server and version filled in, links only installed agents', () => {
+  test('installs the canonical server-neutral copy with the version stamped, links only installed agents', () => {
     mkdirSync(join(home, '.claude'));
     mkdirSync(join(home, '.config', 'opencode'), { recursive: true });
     const r = lib.installSkill(opts());
     assert.deepEqual(r.agents, ['claude-code', 'opencode']);
     const md = readFileSync(join(home, '.agents/skills/cubby/SKILL.md'), 'utf8');
     assert.match(md, /\*\*Skill version: 9\.8\.7\*\*/);
-    assert.match(md, /\*\*Server: `https:\/\/cubby\.example\.com`\*\*/);
-    assert.doesNotMatch(md, /\{\{SERVER\}\}/);
+    assert.doesNotMatch(md, /\{\{/);
+    assert.match(md, /cubby servers --json/, 'the skill finds servers through the CLI');
     const link = join(home, '.claude/skills/cubby');
     assert.ok(lstatSync(link).isSymbolicLink());
     assert.equal(readlinkSync(link), r.path);

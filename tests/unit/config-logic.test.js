@@ -97,6 +97,11 @@ describe('server names', () => {
     assert.equal(logic.serverName({ server_name: '' }), 'Cubby');
     assert.equal(logic.serverName(undefined), 'Cubby');
   });
+  test('renderSkillInstaller puts the URL in place and the name as a JSON literal (no shell injection)', () => {
+    const tpl = 'SERVER="{{PUBLIC_URL}}"\nconst name = {{SERVER_NAME_JSON}};\n# {{PUBLIC_URL}}';
+    const out = logic.renderSkillInstaller(tpl, { publicUrl: 'https://p.dev', name: `Priya's "$(rm -rf ~)" \`x\`` });
+    assert.equal(out, 'SERVER="https://p.dev"\nconst name = "Priya\'s \\"$(rm -rf ~)\\" `x`";\n# https://p.dev');
+  });
   test('settingsPatch validates server_name and leaves it out when absent', () => {
     assert.deepEqual(logic.settingsPatch({ server_name: ' Acme ' }, () => 'x'), { server_name: 'Acme' });
     assert.ok(!('server_name' in logic.settingsPatch({ open_signup: true }, () => 'x')));

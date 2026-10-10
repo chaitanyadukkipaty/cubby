@@ -228,8 +228,14 @@ describe('public pages and files', () => {
     const docs = await anon('GET', '/docs.md');
     assert.match(docs.text, new RegExp(`Server: ${srv.url}`));
     assert.doesNotMatch(docs.text, /\{\{/);
-    assert.match((await anon('GET', '/skill.md')).text, new RegExp(`Server: \`${srv.url}\``));
-    assert.match((await anon('GET', '/skill.sh')).text, new RegExp(`SERVER="${srv.url}"`));
+    const skill = (await anon('GET', '/skill.md')).text;
+    assert.match(skill, /^---\nname: cubby/);
+    assert.doesNotMatch(skill, /\{\{/);
+    const sh = (await anon('GET', '/skill.sh')).text;
+    assert.match(sh, new RegExp(`SERVER="${srv.url}"`));
+    const { name } = (await anon('GET', '/api/info')).data;
+    assert.ok(sh.includes(`const name = ${JSON.stringify(name)};`), 'the server name is embedded as a JSON literal');
+    assert.doesNotMatch(sh, /\{\{/);
     const tgz = await anon('GET', '/cli.tgz');
     assert.equal(tgz.status, 200);
     assert.equal(tgz.headers.get('content-type'), 'application/gzip');

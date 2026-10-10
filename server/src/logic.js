@@ -78,6 +78,11 @@ export function initialServerName(envName, adminEmail) {
 // Servers created before names existed have none stored.
 export const serverName = (s) => s?.server_name || 'Cubby';
 
+// /skill.sh: the URL goes into a double-quoted shell string, the name into a quoted heredoc as a JSON literal,
+// so neither can break out into shell code.
+export const renderSkillInstaller = (template, { publicUrl, name }) =>
+  template.replaceAll('{{PUBLIC_URL}}', publicUrl).replaceAll('{{SERVER_NAME_JSON}}', JSON.stringify(name));
+
 export function settingsPatch(body = {}, newCode) {
   const patch = {};
   if (body.server_name !== undefined) patch.server_name = checkServerName(body.server_name);
