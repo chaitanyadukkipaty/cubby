@@ -26,9 +26,8 @@ export async function buildCliTarball() {
 
 export const cliTarball = () => tarball;
 
-// The agent skill as served by this server, with the server URL filled in.
+// The agent skill as served by this server. It's server-neutral; skill.sh registers the server separately.
 export function skillMarkdown() {
   return readFileSync(join(cliDir, 'skill', 'cubby', 'SKILL.md'), 'utf8')
-    .replace(/\*\*Skill version: [^*]+\*\*/, `**Skill version: ${config.version}**`)
-    .replaceAll('{{SERVER}}', config.publicUrl);
+    .replace(/\*\*Skill version: [^*]+\*\*/, `**Skill version: ${config.version}**`);
 }

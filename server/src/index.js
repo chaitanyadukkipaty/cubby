@@ -265,7 +265,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === '/skill.sh' && req.method === 'GET') {
       res.writeHead(200, { 'content-type': 'text/x-shellscript; charset=utf-8', 'cache-control': 'no-cache' });
-      return res.end(skillInstaller.replaceAll('{{PUBLIC_URL}}', config.publicUrl));
+      return res.end(logic.renderSkillInstaller(skillInstaller, { publicUrl: config.publicUrl, name: logic.serverName(await getSettings()) }));
     }
     if ((url.pathname === '/' || url.pathname === '/connect') && req.method === 'GET') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });

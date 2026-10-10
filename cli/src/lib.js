@@ -7,14 +7,7 @@ export class CliError extends Error {
   constructor(message, details) { super(message); this.details = details; }
 }
 
-export const DEFAULT_SERVER = 'http://localhost:8080';
-
-// The server you logged in to wins over cubby.json, so `cubby-server set-domain` only needs a re-login.
-export function resolveServerUrl({ flag, env, globalServer, projectServer } = {}) {
-  return (flag || env || globalServer || projectServer || DEFAULT_SERVER).replace(/\/$/, '');
-}
-
-// `cubby login <url>`: bare hosts get https://.
+// `cubby login <url>`: bare hosts get https://. Choosing *which* server a command uses lives in servers.js.
 export const normalizeServerArg = (url) => (/^https?:\/\//.test(url) ? url : `https://${url}`);
 
 export const sha256 = (text) => createHash('sha256').update(text).digest('hex');
@@ -114,17 +107,15 @@ export function skillLinks(home) {
   });
 }
 
-export function installSkill({ home, src, version, server }) {
+// The skill is server-neutral (one skill for every server you use); only its version is stamped.
+export function installSkill({ home, src, version }) {
   const { skillHome } = skillPaths(home);
   if (!existsSync(join(src, 'SKILL.md'))) throw new CliError('Skill files missing from this CLI install');
   rmSync(skillHome, { recursive: true, force: true });
   mkdirSync(dirname(skillHome), { recursive: true });
   cpSync(src, skillHome, { recursive: true });
-  // Keep the advertised skill version in step with this CLI.
   const skillFile = join(skillHome, 'SKILL.md');
-  writeFileSync(skillFile, readFileSync(skillFile, 'utf8')
-    .replace(/\*\*Skill version: [^*]+\*\*/, `**Skill version: ${version}**`)
-    .replaceAll('{{SERVER}}', server));
+  writeFileSync(skillFile, readFileSync(skillFile, 'utf8').replace(/\*\*Skill version: [^*]+\*\*/, `**Skill version: ${version}**`));
   const linked = [];
   for (const l of skillLinks(home)) {
     if (l.state === 'agent not installed' || l.state === 'separate copy') continue;

@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { startServer, ROOT, SIGNUP_CODE } from '../helpers/server.js';
 import { api, signup } from '../helpers/integration.js';
 
-const CLI = join(ROOT, 'cli/src/index.js');
+// The real entry point: the launcher (same version as the server here, so it runs the bundled CLI in-process).
+const CLI = join(ROOT, 'cli/src/launcher.js');
 let srv, home, work, token;
 
 function cubby(args, { cwd = work, env = {}, home: h = home } = {}) {
@@ -61,9 +62,14 @@ describe('login', () => {
     assert.equal(r.json.status, 'logged_in');
     assert.deepEqual(r.json.skill.agents, ['claude-code']);
     const cfg = JSON.parse(readFileSync(join(home, '.cubby/config.json'), 'utf8'));
-    assert.deepEqual(cfg, { server: srv.url, token, email: 'cli@test.dev' });
+    const id = `localhost:${srv.port}`;
+    assert.equal(cfg.format, 1);
+    assert.equal(cfg.default, id);
+    const { version_checked_at, ...saved } = cfg.servers[id];
+    assert.deepEqual(saved, { name: "admin's Cubby", url: srv.url, email: 'cli@test.dev', token, version: r.json.skill.version });
+    assert.ok(version_checked_at > 0);
     assert.ok(lstatSync(join(home, '.claude/skills/cubby')).isSymbolicLink());
-    assert.match(readFileSync(join(home, '.agents/skills/cubby/SKILL.md'), 'utf8'), new RegExp(`Server: \`${srv.url}\``));
+    assert.doesNotMatch(readFileSync(join(home, '.agents/skills/cubby/SKILL.md'), 'utf8'), /\{\{/);
     assert.deepEqual(ok(await cubby(['whoami', '--json'])).json, { email: 'cli@test.dev', is_admin: false, server: srv.url, server_name: "admin's Cubby" });
     assert.ok(ok(await cubby(['whoami'])).stdout.includes(`cli@test.dev @ admin's Cubby (${srv.url})`));
     const st = ok(await cubby(['skill', 'status', '--json'])).json;
@@ -83,7 +89,7 @@ describe('login', () => {
       ok(done);
       assert.equal(done.json.email, 'cli@test.dev');
       assert.ok(!existsSync(join(h2, '.cubby/pending-login.json')), 'pending login cleaned up');
-      assert.equal(JSON.parse(readFileSync(join(h2, '.cubby/config.json'), 'utf8')).token, token);
+      assert.equal(JSON.parse(readFileSync(join(h2, '.cubby/config.json'), 'utf8')).servers[`localhost:${srv.port}`].token, token);
     } finally {
       rmSync(h2, { recursive: true, force: true });
     }
@@ -99,7 +105,11 @@ describe('login', () => {
       ok(await cubby(['signup', srv.url, '--email', 'new@test.dev', '--password', 'password1234', '--code', SIGNUP_CODE], { home: h4 }));
       const l = ok(await cubby(['login', srv.url, '--email', 'new@test.dev', '--password', 'password1234', '--no-skill', '--json'], { home: h4 }));
       assert.equal(l.json.email, 'new@test.dev');
-      ok(await cubby(['logout'], { home: h4 }));
+      assert.match(ok(await cubby(['logout'], { home: h4 })).stdout, /Logged out of admin's Cubby/);
+      assert.deepEqual(ok(await cubby(['servers', '--json'], { home: h4 })).json, []);
+      assert.equal((await cubby(['logout'], { home: h4 })).code, 1, 'nothing left to log out of');
+      ok(await cubby(['login', srv.url, '--email', 'new@test.dev', '--password', 'password1234', '--no-skill'], { home: h4 }));
+      assert.match(ok(await cubby(['logout', '--all'], { home: h4 })).stdout, /Logged out of every server/);
       assert.ok(!existsSync(join(h4, '.cubby/config.json')));
     } finally {
       rmSync(h4, { recursive: true, force: true });
@@ -114,7 +124,7 @@ describe('app lifecycle', () => {
   test('init scaffolds the template and creates the project', async () => {
     const r = ok(await cubby(['init', 'cli-app', '--no-install', '--json']));
     assert.equal(r.json.prefix, 'cli_app__');
-    assert.deepEqual(JSON.parse(readFileSync(join(dir(), 'cubby.json'), 'utf8')), { project: 'cli-app', server: srv.url });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir(), 'cubby.json'), 'utf8')), { format: 1, project: 'cli-app', server: srv.url });
     assert.match(readFileSync(join(dir(), 'AGENTS.md'), 'utf8'), /cli_app__/);
     assert.ok(existsSync(join(dir(), '.gitignore')));
     const again = await cubby(['init', 'cli-app', '--no-install']);
@@ -178,10 +188,17 @@ describe('app lifecycle', () => {
       rmSync(elsewhere, { recursive: true, force: true });
     }
   });
-  test('cubby.json follows the server you are logged in to', async () => {
+  test('cubby.json pins the app to its server: an unknown server is reported, never silently replaced', async () => {
+    const pinned = JSON.parse(readFileSync(join(dir(), 'cubby.json'), 'utf8'));
     writeFileSync(join(dir(), 'cubby.json'), JSON.stringify({ project: 'cli-app', server: 'http://old-server.invalid' }));
-    ok(await inApp(['info']));
-    assert.equal(JSON.parse(readFileSync(join(dir(), 'cubby.json'), 'utf8')).server, srv.url);
+    const r = await inApp(['info']);
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, /This app lives on http:\/\/old-server\.invalid .*cubby login.*cubby link cli-app --server/);
+    assert.equal(JSON.parse(readFileSync(join(dir(), 'cubby.json'), 'utf8')).server, 'http://old-server.invalid', 'not rewritten');
+    // The fix the message suggests: re-link to the server it lives on now.
+    ok(await inApp(['link', 'cli-app', '--server', srv.url]));
+    assert.deepEqual(JSON.parse(readFileSync(join(dir(), 'cubby.json'), 'utf8')), pinned);
+    assert.match(ok(await inApp(['info'])).stdout, /server: {2}admin's Cubby/);
   });
   test('delete needs --yes', async () => {
     const guard = await cubby(['delete', 'cli-app']);

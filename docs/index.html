@@ -305,7 +305,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
       <h2>Connect your agent</h2>
       <p>Each person runs one command on their own computer. It's shown on their dashboard with the right server URL filled in:</p>
       <div class="code"><pre>curl -fsSL https://cubby.example.com/skill.sh | sh</pre></div>
-      <p>This installs the <b>cubby skill</b>: instructions that teach your coding agent how to use this server. It goes in <code>~/.agents/skills/cubby</code> and is linked into every agent it finds:</p>
+      <p>This installs the <b>cubby skill</b>, instructions that teach your coding agent how to use Cubby, and adds this server to your list by name. The skill goes in <code>~/.agents/skills/cubby</code> and is linked into every agent it finds:</p>
       <div class="grid">
         <div class="card"><h4>Claude Code</h4><p><code>~/.claude/skills</code></p></div>
         <div class="card"><h4>Codex</h4><p><code>~/.codex/skills</code></p></div>
@@ -313,6 +313,10 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
         <div class="card"><h4>OpenCode</h4><p><code>~/.config/opencode/skills</code></p></div>
       </div>
       <p>The skill is short on purpose. It tells the agent to read the server's live <code>/docs.md</code> first, so limits and rules always match the server you're on.</p>
+
+      <h3>Belong to more than one cubby?</h3>
+      <p>Run each server's command once. They all share one skill and one <code>cubby</code> command, and your agent knows them by name: say <i>“build it on Acme Cubby”</i>, and if you have several and don't say, it asks once. Each app remembers which server it lives on, so later changes always go to the right place.</p>
+      <p>Servers can run different versions of Cubby. The <code>cubby</code> command handles that for you: for each server it uses a CLI that matches that server's version, downloading it once into <code>~/.cubby/cli/</code> when needed.</p>
 
       <h3>The first time your agent connects</h3>
       <div class="two">
@@ -351,7 +355,11 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
         <tbody>
           <tr><td><code>cubby login &lt;server&gt;</code></td><td>Log in by approving a link in the browser. <code>--no-wait</code> prints the link and exits; <code>--wait</code> finishes.</td></tr>
           <tr><td><code>cubby login &lt;server&gt; --token &lt;t&gt;</code></td><td>Log in with the token from the dashboard (scripts and CI). Or set <code>CUBBY_TOKEN</code>.</td></tr>
+          <tr><td><code>cubby servers</code></td><td>List the servers you've added, with the default marked.</td></tr>
+          <tr><td><code>cubby use &lt;name|url&gt;</code></td><td>Make a server the default for new apps.</td></tr>
           <tr><td><code>cubby whoami</code></td><td>Show the account and server you're using.</td></tr>
+          <tr><td><code>cubby logout [--server &lt;name&gt;] [--all]</code></td><td>Forget one server (the current one by default) or all of them.</td></tr>
+          <tr><td><code>cubby version</code></td><td>Show the CLI and server versions for the current server.</td></tr>
           <tr><td><code>cubby init &lt;app&gt;</code></td><td>Create an app: a folder from the template plus the app on the server.</td></tr>
           <tr><td><code>cubby deploy -m "…"</code></td><td>Push the schema if it changed, build, and publish. <code>--unlisted</code> / <code>--listed</code> control the gallery.</td></tr>
           <tr><td><code>cubby deploys</code></td><td>List the last 10 deploys of this app.</td></tr>
@@ -361,6 +369,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
           <tr><td><code>cubby projects</code> · <code>info</code> · <code>link &lt;app&gt;</code></td><td>List your apps, show the current one, or attach this folder to an existing app.</td></tr>
           <tr><td><code>cubby delete &lt;app&gt; --yes</code></td><td>Delete an app, its data and deploys.</td></tr>
           <tr><td><code>cubby skill install | remove | status</code></td><td>Manage the agent skill. <code>login</code> installs it too.</td></tr>
+          <tr><td><code>--server &lt;name|url&gt;</code></td><td>On any command: which server to use. Otherwise it's <code>CUBBY_SERVER</code>, then the app's <code>cubby.json</code>, then the default.</td></tr>
         </tbody>
       </table></div>
       <p>Installing the CLI by hand needs Node.js 20 or newer:</p>
@@ -455,6 +464,8 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
       <details class="faq"><summary>How big can it get?</summary><p>All apps share one SQLite database, which comfortably serves a group of friends or a small team. One very busy app slows the others. There's no per-app data quota yet; the Admin tab shows disk use so you can clean up.</p></details>
       <details class="faq"><summary>Which agents work?</summary><p>Any agent that supports skills (Claude Code, Codex, Cursor, OpenCode). Others can still use Cubby by reading <code>&lt;server&gt;/docs.md</code> and running the CLI.</p></details>
       <details class="faq"><summary>What's not supported yet?</summary><p>Server-side code, cron jobs, custom domains per app, single sign-on across apps, and app emails (verification, password reset).</p></details>
+      <details class="faq"><summary>Can I use several Cubby servers?</summary><p>Yes. Run each server's <code>skill.sh</code> command once; your agent then picks a server by its name, and asks if it isn't sure. <code>cubby servers</code> lists them and <code>cubby use</code> sets the default. Servers on different Cubby versions work side by side.</p></details>
+      <details class="faq"><summary>A server moved to a new address. How do I move my app?</summary><p>Each app's <code>cubby.json</code> remembers its server's address. Log in to the new address, then run <code>cubby link &lt;app&gt; --server &lt;new-url&gt;</code> in the app's folder.</p></details>
       <details class="faq"><summary>My agent's login link expired.</summary><p>Links last 10 minutes. Ask the agent to try again; it starts a fresh one.</p></details>
     </section>
 

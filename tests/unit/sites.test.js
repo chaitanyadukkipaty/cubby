@@ -164,12 +164,12 @@ describe('disk usage', () => {
 });
 
 describe('cli-dist', () => {
-  test('skillMarkdown fills the server URL and version', () => {
+  test('skillMarkdown stamps the version and stays server-neutral', () => {
     const md = cliDist.skillMarkdown();
     assert.match(md, /^---\nname: cubby/);
-    assert.match(md, /\*\*Server: `https:\/\/ex\.com`\*\*/);
     assert.match(md, /\*\*Skill version: \d+\.\d+\.\d+\*\*/);
-    assert.doesNotMatch(md, /\{\{SERVER\}\}/);
+    assert.doesNotMatch(md, /\{\{/);
+    assert.doesNotMatch(md, /https:\/\/ex\.com/, 'one skill serves every server; skill.sh registers the server');
   });
   test('buildCliTarball produces an npm package with src, template, skill and a versioned package.json', async () => {
     assert.equal(cliDist.cliTarball(), null);
@@ -181,12 +181,12 @@ describe('cli-dist', () => {
       if (e.path === 'package/package.json') { let s = ''; e.on('data', (d) => (s += d)); e.on('end', () => (pkg = JSON.parse(s))); } else e.resume();
     } });
     await new Promise((res) => { parser.on('end', res); parser.end(cliDist.cliTarball()); });
-    for (const want of ['package/package.json', 'package/src/index.js', 'package/src/lib.js', 'package/skill/cubby/SKILL.md', 'package/template/AGENTS.md', 'package/template/_gitignore'])
+    for (const want of ['package/package.json', 'package/src/index.js', 'package/src/launcher.js', 'package/src/servers.js', 'package/src/lib.js', 'package/skill/cubby/SKILL.md', 'package/template/AGENTS.md', 'package/template/_gitignore'])
       assert.ok(entries.includes(want), `missing ${want}`);
     assert.ok(entries.every((p) => p.startsWith('package/')));
     assert.ok(!entries.some((p) => p.includes('node_modules')));
     const rootPkg = JSON.parse((await import('node:fs')).readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
     assert.equal(pkg.version, rootPkg.version);
-    assert.deepEqual(pkg.bin, { cubby: 'src/index.js' });
+    assert.deepEqual(pkg.bin, { cubby: 'src/launcher.js' });
   });
 });

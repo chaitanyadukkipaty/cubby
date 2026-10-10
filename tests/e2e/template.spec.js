@@ -19,7 +19,7 @@ test.beforeAll(async () => {
   workDir = mkdtempSync(join(tmpdir(), 'cubby-e2e-work-'));
   const env = { ...process.env, HOME: homeDir, npm_config_cache: join(homedir(), '.npm') };
   delete env.CUBBY_TOKEN;
-  const cubby = (args, cwd) => execFileSync(process.execPath, [join(ROOT, 'cli/src/index.js'), ...args, '--json'], { cwd, env, encoding: 'utf8' });
+  const cubby = (args, cwd) => execFileSync(process.execPath, [join(ROOT, 'cli/src/launcher.js'), ...args, '--json'], { cwd, env, encoding: 'utf8' });
 
   const slug = uid('tpl');
   cubby(['login', serverUrl(), '--token', user.token, '--no-skill'], workDir);
