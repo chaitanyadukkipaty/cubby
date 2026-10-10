@@ -114,7 +114,17 @@ Rules of thumb:
 
 - **Every bug fix gets a test** that fails without the fix.
 - **Push edge cases down.** If something can be tested as a unit, don't test it in a browser.
-- **Coverage must not drop.** Check with `npm run coverage` (report in `coverage/`).
+- **Coverage can't drop: CI enforces it.** Two gates, both required checks on `main`:
+
+  | Gate | Command | Thresholds in |
+  | --- | --- | --- |
+  | Unit tests alone | `npm run coverage:unit` | `.c8rc.unit.json` |
+  | Unit + integration | `npm run coverage` (report in `coverage/`) | `.c8rc.json` |
+
+  Each gate checks lines, statements, functions and branches. Unit-only coverage is lower by design: server startup
+  and wiring are covered by integration tests. If a gate fails, add tests; **never lower a threshold** to get CI green.
+  When coverage goes up, raise the bar in the same PR: run both commands, then `npm run coverage:ratchet`. It sets each
+  threshold to the measured value, rounded down to one decimal minus a 0.2 margin, and never lowers one.
 - Use the helpers in `tests/helpers/server.js` to start a real server on free ports with a throwaway data directory. Never point tests at a shared or long-running server.
 - Tests must be deterministic: unique names and emails, explicit waits on state, no fixed sleeps.
 

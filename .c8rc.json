@@ -1,0 +1,10 @@
+{
+  "include": ["server/src/**", "cli/src/**"],
+  "reporter": ["text", "html", "lcov", "json-summary"],
+  "report-dir": "coverage",
+  "check-coverage": true,
+  "lines": 99.3,
+  "statements": 99.3,
+  "functions": 99.3,
+  "branches": 95
+}

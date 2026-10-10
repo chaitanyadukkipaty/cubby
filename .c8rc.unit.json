@@ -1,0 +1,10 @@
+{
+  "include": ["server/src/**", "cli/src/**"],
+  "reporter": ["text-summary", "json-summary"],
+  "report-dir": "coverage/unit",
+  "check-coverage": true,
+  "lines": 84.1,
+  "statements": 84.1,
+  "functions": 84.8,
+  "branches": 97.7
+}

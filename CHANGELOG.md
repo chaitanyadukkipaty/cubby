@@ -30,6 +30,9 @@ All notable changes to Cubby are documented here. The format follows
 - Releases are tagged and published automatically when a release PR is merged (see CONTRIBUTING.md "Releases").
 - `cubby help [<command>] [--json]`: every command and flag the targeted server supports. Each server's `/docs.md`
   includes the same list.
+- CI fails when test coverage drops: unit-only and unit + integration thresholds (`.c8rc.unit.json`, `.c8rc.json`),
+  with `npm run coverage:ratchet` to raise them.
+
 
 ### Changed
 

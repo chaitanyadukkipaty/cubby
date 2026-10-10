@@ -136,6 +136,10 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 
 ## Git and pull requests
 
+- Coverage thresholds live in `.c8rc.json` (unit + integration) and `.c8rc.unit.json` (unit only), and CI fails
+  below them. Never lower them, and don't exclude files from `include` to dodge them; add tests. After raising
+  coverage, run `npm run coverage && npm run coverage:unit && npm run coverage:ratchet` and commit the new thresholds.
+
 - A feature PR isn't done until `README.md` and `docs/index.html` tell its story, not just list it: update the
   opening example, step-by-step instructions, diagrams and status lists, and retake `docs/assets/*.png` when the UI
   changes (they're static and go stale silently), then run `npm run docs:stamp`: image links carry a `?v=<hash>` that
