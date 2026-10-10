@@ -1,0 +1,13 @@
+{
+  "about": "The frozen core: the only cubby commands and flags SKILL.md may name. One skill serves every server version, so it must never describe something a server's CLI might lack. Everything else is discovered with `cubby help --json` and each server's /docs.md. Adding to this list means every supported server version must already support it (tests/unit/skill-core.test.js enforces SKILL.md against this list).",
+  "commands": [
+    "login", "whoami", "servers", "use", "help", "version",
+    "init", "link", "projects", "info", "delete",
+    "schema push", "schema pull", "schema drop",
+    "deploy", "deploys", "rollback"
+  ],
+  "flags": [
+    "--json", "--server", "--client", "--no-wait", "--wait", "--token", "--yes",
+    "--message", "-m", "--unlisted", "--listed", "--no-install", "--dir", "--name"
+  ]
+}

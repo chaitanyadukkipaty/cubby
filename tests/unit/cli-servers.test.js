@@ -1,7 +1,7 @@
 // Several servers in ~/.cubby/config.json: migration, matching by name, and which server a command uses.
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as s from '../../cli/src/servers.js';
@@ -41,7 +41,15 @@ describe('migrateConfig', () => {
     assert.deepEqual(s.migrateConfig({}), { format: 1, default: null, servers: {} });
   });
   test('format 1 passes through', () => assert.deepEqual(s.migrateConfig(two()), two()));
-  test('a newer format is refused with an update hint', () => err(() => s.migrateConfig({ format: 2, servers: {} }), /format 2.*too old.*cli\.tgz/));
+  test('a newer format is refused with an update hint', () => err(() => s.migrateConfig({ format: 2, servers: {} }), /newer Cubby CLI \(format 2\)\. Update this one: npm i -g <server-url>\/cli\.tgz/));
+  test('lenient: a newer format is still readable, marked, and never rewritten', () => {
+    const cfg = s.migrateConfig({ format: 2, default: 'a.dev', servers: { 'a.dev': { url: 'https://a.dev', token: 't' } } }, { lenient: true });
+    assert.deepEqual(cfg, { format: 2, default: 'a.dev', servers: { 'a.dev': { url: 'https://a.dev', token: 't' } }, tooNew: true });
+    assert.deepEqual(s.migrateConfig({ format: 2, servers: 'junk' }, { lenient: true }).servers, {});
+    const tmp = mkdtempSync(join(tmpdir(), 'cubby-newer-'));
+    err(() => s.writeConfig(join(tmp, 'never.json'), cfg), /newer Cubby CLI \(format 2\)\. Update this one: npm i -g https:\/\/a\.dev\/cli\.tgz/);
+    assert.ok(!existsSync(join(tmp, 'never.json')));
+  });
 });
 
 describe('upsertServer / removeServer', () => {
@@ -151,7 +159,7 @@ describe('files', () => {
     writeFileSync(f, JSON.stringify(s.projectJson('a', 'https://x')));
     assert.deepEqual(s.readProject(f), { format: 1, project: 'a', server: 'https://x' });
     writeFileSync(f, JSON.stringify({ format: 9, project: 'a' }));
-    err(() => s.readProject(f), /cubby\.json uses format 9/);
+    err(() => s.readProject(f), /cubby\.json was written by a newer Cubby CLI \(format 9\)/);
     writeFileSync(f, '{');
     err(() => s.readProject(f), /not valid JSON/);
   });

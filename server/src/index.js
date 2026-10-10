@@ -12,6 +12,7 @@ import { scheduleBackups } from './backups.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
+import { commandsMarkdown } from '../../cli/src/commands.js';
 import { createUpdateChecker, fetchLatestRelease, scheduleUpdateChecks, updateView } from './updates.js';
 
 const updates = createUpdateChecker({ current: config.version, fetchLatest: () => fetchLatestRelease(config.updates.url) });
@@ -245,6 +246,8 @@ const agentsGuide = await readFile(new URL('../../cli/template/AGENTS.md', impor
 const docsMarkdown = async () => logic.renderDocs({
   guide: agentsGuide, settings: await getSettings(), publicUrl: config.publicUrl,
   baseDomain: config.baseDomain, version: config.version, keepDeploys: config.keepDeploys,
+  // Same table as this server's `cubby help`, so docs and CLI can't drift.
+  commands: commandsMarkdown(),
 });
 
 const server = http.createServer(async (req, res) => {

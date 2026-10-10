@@ -39,8 +39,35 @@ describe('basics', () => {
   test('help and unknown commands', async () => {
     const h = await cubby(['--help']);
     assert.equal(h.code, 0);
-    assert.match(h.stdout, /cubby — build and host apps/);
+    assert.match(h.stdout, /^cubby \S+: build and host apps/);
     assert.equal((await cubby(['frobnicate'])).code, 1);
+  });
+  test('help --json lists every command for the version that runs', async () => {
+    const h = ok(await cubby(['help', '--json', '--server', srv.url])).json;
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'cli/package.json'), 'utf8'));
+    assert.equal(h.version, pkg.version);
+    assert.ok(h.commands.some((c) => c.name === 'deploy'));
+    assert.equal(ok(await cubby(['help', 'rollback', '--json', '--server', srv.url])).json.command.name, 'rollback');
+    assert.match((await cubby(['help', 'nope', '--server', srv.url])).stderr, /No command "nope"/);
+  });
+  test('the CLI\'s own version command (what a matched CLI answers when launched)', async () => {
+    const r = ok(await cubby(['version', '--json'], { env: { CUBBY_LAUNCHED: '1', CUBBY_SERVER: srv.url } })).json;
+    assert.equal(r.server, srv.url);
+    assert.equal(r.server_version, r.cli);
+  });
+  test('a config written by a newer CLI is never rewritten: logins are refused with an update hint', async () => {
+    const h = mkdtempSync(join(tmpdir(), 'cubby-newer-'));
+    mkdirSync(join(h, '.cubby'));
+    const future = JSON.stringify({ format: 9, default: 'x', servers: { x: { url: srv.url, token: 'hk_x' } } });
+    writeFileSync(join(h, '.cubby/config.json'), future);
+    const r = await cubby(['login', srv.url, '--token', token], { home: h });
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, new RegExp(`written by a newer Cubby CLI\\. Update this one first: npm i -g ${srv.url}/cli\\.tgz`));
+    const use = await cubby(['use', 'x'], { home: h });
+    assert.equal(use.code, 1);
+    assert.match(use.stderr, /newer Cubby CLI \(format 9\)/);
+    assert.equal(readFileSync(join(h, '.cubby/config.json'), 'utf8'), future);
+    rmSync(h, { recursive: true, force: true });
   });
   test('commands that need a login say how to log in', async () => {
     const r = await cubby(['whoami']);

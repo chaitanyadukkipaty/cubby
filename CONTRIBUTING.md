@@ -126,8 +126,8 @@ code, and reviewers will ask for them. Adding a row to a table is rarely enough:
 | You changed | Update |
 | --- | --- |
 | Anything users see or do | `README.md` **and** `docs/index.html` (see the checklist below) |
-| CLI commands or flags | The CLI `HELP` text, `docs/index.html#cli`, the README CLI reference |
-| How agents should behave | `cli/skill/cubby/SKILL.md` |
+| CLI commands or flags | The command table in `cli/src/commands.js` (it drives `cubby help`, `help --json` and each server's `/docs.md`), `docs/index.html#cli`, the README CLI reference. **Not** the skill: new commands never go in `SKILL.md` |
+| How agents should behave | `cli/skill/cubby/SKILL.md`, naming only the frozen core in `cli/skill/core-commands.json` (one skill serves every server version; a test enforces it) |
 | App template conventions | `cli/template/AGENTS.md` (also served as part of `/docs.md`) |
 | Server setup or management | `install.sh` prompts, `docker/cubby-server` help, `docs/index.html#install` and `#admin` |
 | Dashboard or app template UI | Retake the affected screenshots in `docs/assets/` (they're used by both the README and the docs site) |

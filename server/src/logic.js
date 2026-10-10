@@ -131,7 +131,7 @@ export function matchRoute(routes, method, pathname) {
 }
 
 // Live docs for agents (the skill tells them to read this first): server facts + the app guide.
-export function renderDocs({ guide, settings: s, publicUrl, baseDomain, version, keepDeploys }) {
+export function renderDocs({ guide, settings: s, publicUrl, baseDomain, version, keepDeploys, commands }) {
   const scheme = new URL(publicUrl).protocol;
   const body = guide
     .replace(/^# .*\n/, '')
@@ -156,8 +156,13 @@ Signup: ${s.open_signup ? 'open' : 'requires a signup code from the server admin
 ## CLI
 
 Install or update: \`npm i -g ${publicUrl}/cli.tgz\` (Node.js 20+)
-Log in: \`cubby login ${publicUrl} --token <token from the dashboard>\`
+Log in: \`cubby login ${publicUrl}\` (approve in the browser), or \`--token <token from the dashboard>\`
 Agent skill: installed by \`cubby login\`, or \`cubby skill install\`
+The CLI always matches the server it talks to; in an app folder, the server in cubby.json.
+
+## Commands on this server (Cubby ${version})
+
+${commands || '(see `cubby help`)'}
 
 # Building apps
 ${body}`;

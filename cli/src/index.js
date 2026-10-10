@@ -15,42 +15,7 @@ import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
   listServers, formatServers, describeServer,
 } from './servers.js';
-
-const HELP = `cubby — build and host apps (Vite + React + Tailwind + PocketBase)
-
-Servers and account
-  cubby login <server-url>                      approve in the browser (link is printed)
-      --no-wait  print the link and exit;  then: cubby login --wait
-  cubby login <server-url> --token <token>      token from the dashboard (CI)
-  cubby signup <server-url> --email <e> --password <p> --code <signup-code>
-  cubby servers                                 servers you've added (* = default)
-  cubby use <name|url>                          make a server the default
-  cubby whoami                                  who you are on the current server
-  cubby logout [--server <name|url>] [--all]    forget one server (default: current) or all
-  cubby skill install | remove | status          agent skill (installed by login)
-  cubby version                                 CLI and server versions
-
-Projects
-  cubby init <slug> [--dir <path>] [--name <n>] [--no-install]
-  cubby link <slug>                             attach current dir to an existing project
-  cubby projects                                list your projects
-  cubby info                                    current project details
-  cubby delete <slug> --yes                     delete project, data and deploys
-
-Backend (PocketBase)
-  cubby schema push [--file cubby/schema.json]  never deletes anything
-  cubby schema pull [--file cubby/schema.json]
-  cubby schema drop <collection>[.<field>] --yes   deletes it and its data
-
-Hosting
-  cubby deploy [-m <message>] [--unlisted|--listed] [--no-build] [--dir dist]
-                                                pushes schema if changed, builds, uploads
-  cubby deploys                                 list deploys
-  cubby rollback <deploy-id>
-
-Which server: --server <name|url> → CUBBY_SERVER → the app's cubby.json → default → the only one.
-Global flags: --json (machine-readable output), --server <name|url>, --client <agent-name>
-Env: CUBBY_TOKEN (token), CUBBY_SERVER (server name or URL), CUBBY_CLIENT (agent name)`;
+import { helpJson, helpText } from './commands.js';
 
 const { values: flags, positionals } = parseArgs({
   allowPositionals: true,
@@ -72,7 +37,9 @@ const PROJECT_CONFIG = 'cubby.json';
 const readJsonFile = (p, fallback = {}) => (existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : fallback);
 const writeJsonFile = (p, data) => writeFileSync(p, JSON.stringify(data, null, 2) + '\n');
 
-const config = () => readConfig(GLOBAL_CONFIG);
+// Lenient: a config written by a newer CLI can still be read to find servers; writes to it are refused.
+// Under the launcher (CUBBY_LAUNCHED), HOME is a per-server sandbox, so this never sees the real config.
+const config = () => readConfig(GLOBAL_CONFIG, { lenient: true });
 const projectConfig = () => readProject(resolve(PROJECT_CONFIG));
 
 // The server this command talks to (see resolveTarget for the order).
@@ -183,7 +150,7 @@ const commands = {
       await saveSession(token, me.email);
       const skill = flags['no-skill'] ? null : installSkill();
       out(
-        `Logged in as ${me.email} on ${await where()}${skill ? `\nInstalled the cubby skill for: ${skill.agents.join(', ') || 'no agents found (copy is in ~/.agents/skills/cubby)'}` : ''}`,
+        `Logged in as ${me.email} on ${await where()}${skill && !skill.kept ? `\nInstalled the cubby skill for: ${skill.agents.join(', ') || 'no agents found (copy is in ~/.agents/skills/cubby)'}` : ''}`,
         { status: 'logged_in', email: me.email, server: serverUrl(), server_name: await serverName(), skill },
       );
     };
@@ -255,6 +222,7 @@ const commands = {
   async skill(sub) {
     if (sub === 'install') {
       const r = installSkill();
+      if (r.kept) return out(`Kept the installed cubby skill ${r.version}: it's newer than this CLI's (${CLI_VERSION}).`, r);
       return out(`Installed cubby skill ${r.version} to ${r.path}\n  linked for: ${r.agents.join(', ') || 'no agents found'}`, r);
     }
     if (sub === 'remove') {
@@ -269,6 +237,11 @@ const commands = {
       );
     }
     throw new CliError('Usage: cubby skill install|remove|status');
+  },
+  async help(name) {
+    const data = helpJson(CLI_VERSION, name);
+    if (!data) throw new CliError(`No command "${name}". Run \`cubby help\` for the list.`);
+    out(name ? `${data.command.usage}\n  ${data.command.summary}` : helpText(CLI_VERSION), data);
   },
   async whoami() {
     const me = await api('GET', '/api/me');
@@ -368,7 +341,7 @@ const commands = {
 
 const [cmd, ...rest] = positionals;
 if (!cmd || flags.help || !commands[cmd]) {
-  console.log(HELP);
+  console.log(helpText(CLI_VERSION));
   process.exit(cmd && !flags.help ? 1 : 0);
 }
 try {

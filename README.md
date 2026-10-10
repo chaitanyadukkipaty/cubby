@@ -157,7 +157,8 @@ automatically; see [Releases](CONTRIBUTING.md#releases).
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
 | `cubby skill install \| remove \| status` | Manage the agent skill |
-| `cubby version` | Show which CLI version is running for the current server |
+| `cubby version` | Show which CLI version runs for the current server, and the server's version |
+| `cubby help [<command>] [--json]` | Every command and flag the targeted server supports |
 
 `--server <name|url>` works on every command.
 
@@ -179,9 +180,13 @@ cubby servers
 - **New apps** go to the server you name ("host it on Acme Cubby"). With one server, the agent just uses it; if it's
   unclear, it asks once.
 - **Existing apps** are pinned to their server in `cubby.json`, so a redeploy can never land on the wrong one.
-- **Different Cubby versions are fine.** The `cubby` command is a small launcher. For each server it runs a CLI that
-  matches that server's version, downloaded once into `~/.cubby/cli/<version>/`, so an older and a newer server work
-  side by side. If a server is unreachable, it falls back to the last version it saw.
+- **The CLI always matches the server it's talking to; in an app folder, the server in `cubby.json`.** The `cubby`
+  command is a small launcher. For every command that talks to a server, logging in included, it runs a CLI of that
+  server's version, downloaded once into `~/.cubby/cli/<version>/`, so an older and a newer server work side by side.
+  If a server is unreachable, it falls back to the last version it saw.
+- **Agents ask, not guess.** The skill only names the commands every server supports. For anything else the agent
+  runs `cubby help --json`, which answers for the server it's targeting (the same list is in each server's
+  `/docs.md`). The installed skill only ever moves forward to newer versions.
 
 ```mermaid
 flowchart LR

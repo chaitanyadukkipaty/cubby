@@ -17,7 +17,8 @@ description: >
 Cubby runs on servers the user (or their friends or workplace) control, each with a name like
 "Priya's Cubby". Everyone with an account on a server can open everyone's apps there; only the owner
 can change or deploy one. You drive it through the `cubby` CLI. The user may belong to several
-servers, possibly on different Cubby versions; the CLI picks the right version for each server.
+servers, possibly on different Cubby versions; the CLI always runs the version that matches the
+server it's talking to.
 
 ## Working style: be like Lovable
 
@@ -55,8 +56,8 @@ Do this yourself before building. Never ask the user to run anything.
    3. Immediately run `cubby login --wait --json` (it waits up to 10 minutes for the approval).
    Never ask for passwords or tokens.
 4. Read `{url}/docs.md` once per conversation, for the server you're using: its version, limits,
-   URL scheme, schema format and frontend rules. Different servers may differ. If the docs and
-   live CLI output disagree, trust the CLI.
+   URL scheme, schema format, frontend rules and command list. Different servers may differ. If the
+   docs and live CLI output disagree, trust the CLI.
 
 ## Build a new app
 
@@ -123,7 +124,6 @@ removed from `schema.json` still exists (it's reported as "kept").
 | `You've reached the limit of N apps` | Tell the user; they can delete an app or ask the admin |
 | `Cannot change {c}.{f} from X to Y` | Use a new field name, or ask the user before dropping the old one |
 | `PocketBase rejected collection …` | Fix `cubby/schema.json` using the details shown |
-| `warning: CLI x differs from server y` | Run `npm i -g {url}/cli.tgz` (only seen with very old CLIs) |
 | `This account has been disabled` | Tell the user to contact the server admin |
 
 ## What to tell the user
@@ -137,15 +137,12 @@ removed from `schema.json` still exists (it's reported as "kept").
 
 ## Commands
 
-| Command | Purpose |
-| --- | --- |
-| `cubby servers --json` | Servers the user has (name, url, logged in, default) |
-| `cubby whoami [--server "{server}"] --json` | Check login on a server |
-| `cubby init {app} --server "{server}" --json` | Create an app (folder + server project) |
-| `cubby deploy -m "…" [--unlisted\|--listed] --json` | Schema + build + publish |
-| `cubby schema push \| pull` | Apply / fetch the schema (push is also part of deploy) |
-| `cubby deploys --json` / `cubby rollback {id}` | List / restore frontend versions |
-| `cubby projects --json` / `cubby info --json` | List apps / current app details |
-| `cubby link {app}` | Attach current folder to an existing app |
+This skill only names the core commands every Cubby server supports: `login`, `whoami`, `servers`,
+`use`, `init`, `link`, `projects`, `info`, `delete`, `schema push|pull|drop`, `deploy`, `deploys`,
+`rollback`, `help` and `version`. Add `--json` to any of them for machine-readable output; `--server`
+takes a server's name or URL.
 
-Add `--json` to any command for machine-readable output. `--server` accepts a server's name or URL.
+**For anything else, ask the CLI.** Run `cubby help --json` in the app folder (or with
+`--server "{server}"` outside one). It lists every command and flag that the server you're targeting
+supports, because the CLI always matches the server it talks to (in an app folder, the server in
+`cubby.json`). `{url}/docs.md` has the same list. Don't assume a command exists on every server.

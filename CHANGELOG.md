@@ -28,8 +28,16 @@ All notable changes to Cubby are documented here. The format follows
   for the latest release once a day (its only outbound request); admins can turn it off, and `CUBBY_UPDATE_CHECK=0`
   disables it entirely.
 - Releases are tagged and published automatically when a release PR is merged (see CONTRIBUTING.md "Releases").
+- `cubby help [<command>] [--json]`: every command and flag the targeted server supports. Each server's `/docs.md`
+  includes the same list.
 
 ### Changed
+
+- The CLI always matches the server it's talking to; in an app folder, the server in `cubby.json`. This now covers
+  every command that talks to a server, including `login`, `signup`, `whoami` and `help`, not just app commands.
+- The agent skill only names a fixed core of commands every server supports and tells agents to run
+  `cubby help --json` for the rest. The launcher refreshes the installed skill from newer CLIs and never downgrades it.
+- `cubby version` reports the CLI version that runs for the current server, the launcher's version and the server's.
 
 - Servers report exactly what they run: `X.Y.Z` for a release build, `X.Y.Z-dev+<commit>` for anything else, in
   `/api/info` (which also gains `commit`), the `x-cubby-version` header, the Admin tab, `/docs.md` and the CLI they
