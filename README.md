@@ -186,7 +186,8 @@ Contributions are welcome, from people and their agents. Read **[CONTRIBUTING.md
 1. Open an issue for anything bigger than a small fix, and agree on the approach.
 2. Branch from `main` (`feat/…`, `fix/…`, `docs/…`) and use [Conventional Commits](https://www.conventionalcommits.org/).
 3. Add tests at the right level of the pyramid, update the docs, and run `npm test`.
-4. Open a pull request using the template. CI must pass.
+4. Open a pull request using the template. `main` is protected: changes land only through pull requests with passing CI,
+   squash-merged.
 
 Please follow our [Code of Conduct](CODE_OF_CONDUCT.md), and report security problems privately as described in [SECURITY.md](SECURITY.md).
 Notable changes are listed in the [changelog](CHANGELOG.md).

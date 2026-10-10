@@ -63,6 +63,15 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   cli/src/lib.js stamp it and `skill status` parses it. The skill is server-neutral on purpose (one skill, many
   servers): don't put a server URL or `{{…}}` placeholder back in. Servers are registered by `/skill.sh` and
   `cubby login` in `~/.cubby/config.json`.
+- Backups are named `cubby-YYYY-MM-DD.zip` / `sites-YYYY-MM-DD.tar.gz` (server/src/backups.js); docker/cubby-server
+  parses those names for `backups` and `restore`.
+- In the container PocketBase listens on `PB_LISTEN=0.0.0.0:8090` but is published only to host loopback
+  (`-p 127.0.0.1:8090:8090`). Don't change the publish to `8090:8090`: it would expose the PocketBase admin UI.
+- The template's `<script src="/__cubby/config.js">` must stay a classic script before `main.tsx`: the file only
+  exists at runtime (served per app), so Vite must not try to bundle it. Its "can't be bundled without type=module"
+  warning is expected.
+- The dashboard's pure helpers live between the `BEGIN/END PURE HELPERS` markers in server/public/index.html; unit
+  tests load that block in a `vm`. Keep them pure (no DOM, no globals defined later) and inside the markers.
 
 ## Version skew between servers (the launcher)
 
@@ -80,15 +89,6 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   explicit `cubby link <app> --server <url>`.
 - `CUBBY_VERSION_OVERRIDE` makes a server report and stamp another version. It exists for two-version tests; don't
   use it to paper over a real mismatch.
-- Backups are named `cubby-YYYY-MM-DD.zip` / `sites-YYYY-MM-DD.tar.gz` (server/src/backups.js); docker/cubby-server
-  parses those names for `backups` and `restore`.
-- In the container PocketBase listens on `PB_LISTEN=0.0.0.0:8090` but is published only to host loopback
-  (`-p 127.0.0.1:8090:8090`). Don't change the publish to `8090:8090`: it would expose the PocketBase admin UI.
-- The template's `<script src="/__cubby/config.js">` must stay a classic script before `main.tsx`: the file only
-  exists at runtime (served per app), so Vite must not try to bundle it. Its "can't be bundled without type=module"
-  warning is expected.
-- The dashboard's pure helpers live between the `BEGIN/END PURE HELPERS` markers in server/public/index.html; unit
-  tests load that block in a `vm`. Keep them pure (no DOM, no globals defined later) and inside the markers.
 
 ## Tests
 
@@ -97,6 +97,16 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 - `fetch()` silently drops `Host`; use `hostRequest` for `<app>.localhost` routing.
 - c8 collects child-process coverage only if the server exits cleanly. Its SIGTERM handler is registered only when
   `PB_SPAWN=1` (server/src/pb.js), so keep that in tests.
+
+## Git and pull requests
+
+- `main` is protected: no direct pushes (admins included), PRs need the `test` check passing on an up-to-date branch,
+  and merges are squash-only. Never try to push to `main` or disable protection to get a change in; open a PR.
+- Stacked PRs: once the base PR is squash-merged, the stacked branch still carries the base's original commits and
+  conflicts. Rebase only its own commits: `git rebase --onto origin/main <last-commit-of-base> <branch>`, then
+  `git push --force-with-lease`. Don't merge `main` into it (linear history is required).
+- Commit with the repo-local git identity; never pass `--author` or change `user.email`. Merging with `gh` should
+  pass `--author-email` explicitly, or GitHub records the account's default email.
 
 ## Naming and CLI shape
 

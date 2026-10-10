@@ -161,8 +161,20 @@ We use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 - **Keep it reviewable.** Aim for under ~600 changed lines excluding tests and docs; split larger work into a series.
 - **CI must pass**: unit, integration, coverage and end-to-end tests run on every push.
 - **Draft PRs** are welcome for early feedback.
+- **Stacked PRs** (one PR building on another) are fine: open the second against the first's branch. After the first is
+  squash-merged, rebase only your own commits onto `main` (`git rebase --onto origin/main <base-branch-tip> <your-branch>`)
+  and force-push with `--force-with-lease`. GitHub retargets the PR to `main` for you.
 
 ## Review and merging
+
+`main` is protected, for everyone including maintainers:
+
+- Changes land **only through pull requests**. Direct pushes, force pushes and deleting `main` are blocked.
+- The **`test` check must pass** (unit, integration, coverage and end-to-end), and the branch must be **up to date**
+  with `main`. If it isn't, use GitHub's "Update branch" button or rebase.
+- History is **linear**: squash merges only.
+- **Open review conversations must be resolved** before merging.
+- Required approvals are currently 0 while the project has a single maintainer; this goes up as maintainers join.
 
 - A maintainer reviews within a few days. Reviews focus on correctness, safety (isolation, data loss), tests and docs.
 - Address feedback with new commits; don't force-push during review unless asked.
