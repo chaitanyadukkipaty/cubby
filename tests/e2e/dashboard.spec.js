@@ -29,6 +29,13 @@ test('a new user signs up with the signup code and lands on their dashboard', as
   await expect(authPage.createAccountButton).toBeVisible();
 });
 
+test('the log in tab has no stray text where the signup code field would be', async ({ page, authPage }) => {
+  await authPage.goto();
+  await authPage.logInTab.click();
+  await expect(authPage.signupCode).toHaveCount(0);
+  await expect(page.locator('form')).not.toContainText('null');
+});
+
 test('a stale session goes back to the sign-in card', async ({ page, authPage, dashboard }) => {
   await authPage.goto();
   await page.evaluate(() => localStorage.setItem('cubby_token', 'hk_not_a_real_token'));
