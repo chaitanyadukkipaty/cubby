@@ -5,6 +5,13 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-17
+
+### Fixed
+
+- The dashboard's Log in tab (and Sign up, when signup is open) no longer shows a stray "null" under the password
+  field.
+
 ## [0.1.2] - 2026-10-16
 
 ### Added
