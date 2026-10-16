@@ -90,7 +90,7 @@ else's platform and you can't bring your own agent.
 
 ## Install a server
 
-On a Linux VPS with ports 80 and 443 open:
+On a Linux VPS with ports 80 and 443 open (in IP mode, any free port works; see below):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/install.sh | sudo bash
@@ -107,6 +107,12 @@ Send both to your friends.
 
 Switch later with `sudo cubby-server set-domain example.com`. See the [full install guide](https://chaitanyadukkipaty.github.io/cubby/#install).
 
+**Port 80 already taken** (by nginx, another app…)? In IP mode the installer says what holds it and offers a free
+port, e.g. 8080, so your URL becomes `http://203-0-113-5.sslip.io:8080` and apps
+`http://<app>.203-0-113-5.sslip.io:8080`. Open that port in your cloud firewall. The port is kept for good, since it's
+part of every URL. A domain always needs 80 and 443, because Let's Encrypt only checks those; the installer and
+`set-domain` refuse, naming what holds them, until they're free.
+
 ### Choose a version, and upgrade
 
 The installer installs the **latest release**. To pick something else, pass options after `bash -s --`:
@@ -117,7 +123,8 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
 ```
 
 `--domain`, `--no-domain`, `--admin-email`, `--admin-password-file` and `--name` answer the questions up front, for an
-install with no prompts.
+install with no prompts. `--http-port <port>` (IP mode) and `--pb-port <port>` (PocketBase admin, loopback only,
+default 8090) pick the host ports; without a terminal, a busy port stops the install with the option to pass.
 
 When a new release is out, the Admin tab says so, with the release notes. On the server:
 

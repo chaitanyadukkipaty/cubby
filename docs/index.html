@@ -260,7 +260,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
     <section id="install">
       <p class="kicker">Admin · 5 minutes</p>
       <h2>Install a server</h2>
-      <p>You need a Linux VPS (Ubuntu or Debian work best) with ports 80 and 443 open. 1 vCPU and 1 GB of RAM is enough for a group of friends. Run:</p>
+      <p>You need a Linux VPS (Ubuntu or Debian work best) with ports 80 and 443 open (an IP-only install can use another port). 1 vCPU and 1 GB of RAM is enough for a group of friends. Run:</p>
       <div class="code"><pre>curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/install.sh | sudo bash</pre></div>
       <p>The installer asks four questions, then installs Docker if needed, builds the image and starts Cubby:</p>
       <div class="table"><table>
@@ -285,11 +285,15 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
       <p>For a domain, add two DNS <code>A</code> records pointing at the server before installing: one for <code>cubby.example.com</code> and a wildcard for <code>*.cubby.example.com</code>. Started on an IP? Switch any time:</p>
       <div class="code"><pre>sudo cubby-server set-domain cubby.example.com</pre></div>
 
+      <h3>Port 80 already in use?</h3>
+      <p>If another web server (nginx, Apache, another container) holds port 80, an IP-only install tells you what holds it and offers a free port instead, like <code>8080</code>. Press Enter to take it. Your URL becomes <code>http://203-0-113-5.sslip.io:8080</code> and apps <code>http://polls.203-0-113-5.sslip.io:8080</code>; open that port in your cloud provider's firewall. Pass <code>--http-port 8080</code> to choose it up front.</p>
+      <p>The port is part of every URL your friends and their agents have saved, so it never changes on its own: if something else takes it later, <code>cubby-server upgrade</code> and <code>rebuild</code> stop and say what to free. A domain always needs ports 80 and 443, because Let's Encrypt only checks those; the installer and <code>set-domain</code> refuse until they're free.</p>
+
       <h3>Which version gets installed?</h3>
       <p>The latest <a href="https://github.com/chaitanyadukkipaty/cubby/releases">release</a>, unless you choose. Pass options after <code>bash -s --</code>:</p>
       <div class="code"><pre>curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/install.sh | sudo bash -s -- --version 0.1.1   <span class="c"># a specific release</span>
 curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/install.sh | sudo bash -s -- --ref my-branch   <span class="c"># any branch, tag or commit</span></pre></div>
-      <p>A <code>--ref</code> install isn't a release, so it hasn't been through release testing; use it to try a fix early. To install without any prompts, answer the questions with <code>--domain</code> (or <code>--no-domain</code>), <code>--admin-email</code>, <code>--admin-password-file</code> and <code>--name</code>.</p>
+      <p>A <code>--ref</code> install isn't a release, so it hasn't been through release testing; use it to try a fix early. To install without any prompts, answer the questions with <code>--domain</code> (or <code>--no-domain</code>), <code>--admin-email</code>, <code>--admin-password-file</code> and <code>--name</code>. <code>--http-port</code> and <code>--pb-port</code> pick the host ports when the defaults (80 and 8090) are taken.</p>
     </section>
 
     <section id="invite">
@@ -451,7 +455,7 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
       <p><b>Updates.</b> Once a day the server asks GitHub for the latest Cubby release. When there's a newer one, the Admin tab shows <b>Update available</b> with a link to the release notes and the command to run. Turn the check off in the Admin tab, or set <code>CUBBY_UPDATE_CHECK=0</code> in <code>/opt/cubby/cubby.env</code> to disable it completely.</p>
       <p><b>Versions.</b> A server built from a release shows its version, like <code>0.1.1</code>. Anything else shows the commit too, like <code>0.1.1-dev+b2cb75c</code>, so you always know which code is running.</p>
       <p><b>Backups</b> run every night at 03:00: a full database backup plus all deployed sites. The last 7 are kept. Restoring rolls back every app on the server, so it's for real accidents.</p>
-      <p>The PocketBase admin UI is only reachable from the server itself: <code>ssh -L 8090:127.0.0.1:8090 you@server</code>, then open <code>http://localhost:8090/_/</code>.</p>
+      <p>The PocketBase admin UI is only reachable from the server itself: <code>ssh -L 8090:127.0.0.1:8090 you@server</code>, then open <code>http://localhost:8090/_/</code>. If 8090 was taken at install, the installer printed the port it used instead (<code>CUBBY_PB_PORT</code> in <code>/opt/cubby/cubby.env</code>).</p>
     </section>
 
     <section id="security">

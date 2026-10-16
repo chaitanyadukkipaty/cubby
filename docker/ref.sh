@@ -5,6 +5,8 @@
 #   cubby_checkout <dir> <ref>          fetches <ref> (tag, branch or commit) into <dir> and checks it out
 #   cubby_build_info <dir>              prints "<short commit> <release tag or empty>" for docker build args
 #   cubby_newer <a> <b>                 succeeds when version/tag <a> is newer than <b> (X.Y.Z cores only)
+#   cubby_port_holder <port> [<ours>]   prints what listens on host <port> ("" if free); container <ours> doesn't count
+#   cubby_free_port <from> <to> [<skip>…] prints the first free port in the range, or fails
 
 CUBBY_REPO="${CUBBY_REPO:-https://github.com/chaitanyadukkipaty/cubby.git}"
 CUBBY_RELEASES_API="${CUBBY_RELEASES_API:-https://api.github.com/repos/chaitanyadukkipaty/cubby/releases}"
@@ -97,4 +99,34 @@ cubby_newer() {
   a="$(cubby_version_core "$1")" || return 1
   b="$(cubby_version_core "$2")" || return 1
   [[ "$a" != "$b" && "$(printf '%s\n%s\n' "$a" "$b" | sort -V | tail -n 1)" == "$a" ]]
+}
+
+# Who holds a host TCP port: a container (by name), a process (from ss), or "another process". Ports published
+# by our own container <ours> count as free, since it is replaced on start. Without ss, a connect probe is used.
+cubby_port_holder() {
+  local port="$1" ours="${2:-}" line name
+  [[ -n "$ours" ]] && command -v docker >/dev/null \
+    && docker port "$ours" 2>/dev/null | grep -Eq ":${port}\$" && return 0
+  if command -v docker >/dev/null; then
+    name="$(docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null | grep -E ":${port}->" | cut -d'|' -f1 | grep -vx "${ours:-}" | head -n 1 || true)"
+    [[ -z "$name" ]] || { printf 'container %s\n' "$name"; return 0; }
+  fi
+  if command -v ss >/dev/null; then
+    line="$(ss -Hltnp "sport = :$port" 2>/dev/null | head -n 1 || true)"
+    [[ -n "$line" ]] || return 0
+    name="$(printf '%s' "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p')"
+    printf '%s\n' "${name:-another process}"
+  elif (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+    echo "another process"
+  fi
+}
+
+cubby_free_port() {
+  local from="$1" to="$2" p s
+  shift 2
+  for ((p = from; p <= to; p++)); do
+    for s in "$@"; do [[ "$p" == "$s" ]] && continue 2; done
+    [[ -z "$(cubby_port_holder "$p")" ]] && { echo "$p"; return 0; }
+  done
+  return 1
 }
