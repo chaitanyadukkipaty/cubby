@@ -30,16 +30,36 @@ build_image() {
   docker build -q -t "$IMAGE" --build-arg "CUBBY_COMMIT=${commit:-}" --build-arg "CUBBY_TAG=${tag:-}" "$SRC" >/dev/null
 }
 
+# Host ports, chosen once by install.sh. Installs from before they were stored use 80 and 8090.
+http_port() { get_env CUBBY_HTTP_PORT | grep . || echo 80; }
+pb_port() { get_env CUBBY_PB_PORT | grep . || echo 8090; }
+
+# Refuses if another process holds one of the ports. Never moves to another port: the port is part of every URL
+# the CLI and app folders have stored. Ports held by our own container don't count; it's about to be replaced.
+check_ports() {
+  local port holder
+  for port in "$@"; do
+    holder="$(cubby_port_holder "$port" "$NAME")"
+    [[ -z "$holder" ]] || die "Port $port is in use by $holder. Free it, then run: sudo cubby-server rebuild"
+  done
+}
+
 start_container() {
+  local http pb
+  http="$(http_port)"
+  pb="$(pb_port)"
+  local ports=(-p "$http:80" -p "127.0.0.1:$pb:8090") hostports=("$http" "$pb")
+  # Plain HTTP (IP mode) doesn't use 443, so a busy 443 doesn't block it.
+  if [[ "$(get_env CUBBY_HTTPS)" == 1 ]]; then ports+=(-p 443:443); hostports+=(443); fi
+  check_ports "${hostports[@]}"
   docker rm -f "$NAME" >/dev/null 2>&1 || true
-  docker run -d --name "$NAME" --restart unless-stopped \
-    -p 80:80 -p 443:443 -p 127.0.0.1:8090:8090 \
+  docker run -d --name "$NAME" --restart unless-stopped "${ports[@]}" \
     -v "$VOLUME":/data --env-file "$ENV_FILE" "$IMAGE" >/dev/null
 }
 
 # /api/info of the running server ("" if it isn't answering).
 server_info() {
-  curl -fsS --max-time 5 -H "Host: $(get_env BASE_DOMAIN)" http://127.0.0.1/api/info 2>/dev/null || true
+  curl -fsS --max-time 5 -H "Host: $(get_env BASE_DOMAIN)" "http://127.0.0.1:$(http_port)/api/info" 2>/dev/null || true
 }
 json_field() { sed -n "s/.*\"$1\":\"\\([^\"]*\\)\".*/\\1/p"; }
 
@@ -162,7 +182,7 @@ main() {
   case "${1:-help}" in
     status)
       docker ps --filter "name=^${NAME}$" --format 'table {{.Status}}\t{{.Ports}}'
-      grep -E '^(PUBLIC_URL|BASE_DOMAIN|CUBBY_INSTALL_CHANNEL|CUBBY_INSTALL_REF)=' "$ENV_FILE"
+      grep -E '^(PUBLIC_URL|BASE_DOMAIN|CUBBY_HTTP_PORT|CUBBY_PB_PORT|CUBBY_INSTALL_CHANNEL|CUBBY_INSTALL_REF)=' "$ENV_FILE"
       ;;
     logs) docker logs --tail "${2:-200}" -f "$NAME" ;;
     restart) docker restart "$NAME" >/dev/null && echo "Restarted." ;;
@@ -204,9 +224,16 @@ main() {
       ;;
     set-domain)
       [[ $# -eq 2 ]] || { echo "usage: cubby-server set-domain <domain>   (point <domain> and *.<domain> at this server first)"; exit 1; }
+      # Let's Encrypt only checks ports 80 and 443, so HTTPS can't move to other ports.
+      local port holder
+      for port in 80 443; do
+        holder="$(cubby_port_holder "$port" "$NAME")"
+        [[ -z "$holder" ]] || die "Port $port is in use by $holder. A domain with HTTPS needs ports 80 and 443 (Let's Encrypt checks them); free them and re-run."
+      done
       set_env BASE_DOMAIN "$2"
       set_env PUBLIC_URL "https://$2"
       set_env CUBBY_HTTPS 1
+      set_env CUBBY_HTTP_PORT 80
       start_container
       echo "Now serving https://$2 — app URLs changed to https://<app>.$2. Everyone must re-run:"
       echo "  cubby login https://$2 --token <token>"

@@ -10,18 +10,22 @@
 #   --admin-email <email>      skip the admin email question
 #   --admin-password-file <f>  read the admin password from a file (or set CUBBY_ADMIN_PASSWORD)
 #   --name "<server name>"     skip the server name question
-# With all four answered, the install runs without any prompts.
+#   --http-port <port>         IP mode only: serve on this port instead of 80 (asked when 80 is busy)
+#   --pb-port <port>           host port for the PocketBase admin UI, loopback only (default 8090)
+# With all four answered, the install runs without any prompts (unless port 80 or 8090 is busy).
 set -euo pipefail
 
 CUBBY_HOME="${CUBBY_HOME:-/opt/cubby}"
 ENV_FILE="$CUBBY_HOME/cubby.env"
+CUBBY_BIN="${CUBBY_BIN:-/usr/local/bin/cubby-server}"
+TTY="${CUBBY_TTY:-/dev/tty}" # tests answer prompts from a file
 CUBBY_RAW="${CUBBY_RAW:-https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main}"
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
-ask() { local prompt="$1" var; read -r -p "$prompt" var </dev/tty || die "No terminal to ask \"$prompt\"; pass the answer as an option (see the top of install.sh)."; printf '%s' "$var"; }
-ask_secret() { local prompt="$1" var; read -r -s -p "$prompt" var </dev/tty || die "No terminal to ask for the admin password; use --admin-password-file or CUBBY_ADMIN_PASSWORD."; echo >/dev/tty; printf '%s' "$var"; }
+ask() { local prompt="$1" var; read -r -p "$prompt" var <"$TTY" || die "No terminal to ask \"$prompt\"; pass the answer as an option (see the top of install.sh)."; printf '%s' "$var"; }
+ask_secret() { local prompt="$1" var; read -r -s -p "$prompt" var <"$TTY" || die "No terminal to ask for the admin password; use --admin-password-file or CUBBY_ADMIN_PASSWORD."; echo >&2; printf '%s' "$var"; }
 
 WANT_VERSION="${CUBBY_VERSION:-}"
 WANT_REF="${CUBBY_REF:-}"
@@ -29,6 +33,8 @@ DOMAIN="${CUBBY_DOMAIN-__ask__}"
 ADMIN_EMAIL="${CUBBY_ADMIN_EMAIL:-}"
 ADMIN_PASSWORD="${CUBBY_ADMIN_PASSWORD:-}"
 SERVER_NAME="${CUBBY_SERVER_NAME:-}"
+HTTP_PORT="${CUBBY_HTTP_PORT:-}"
+PB_PORT="${CUBBY_PB_PORT:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version) WANT_VERSION="${2:-}"; shift 2 ;;
@@ -38,13 +44,15 @@ while [[ $# -gt 0 ]]; do
     --admin-email) ADMIN_EMAIL="${2:-}"; shift 2 ;;
     --admin-password-file) ADMIN_PASSWORD="$(head -n 1 "${2:-/dev/null}")"; shift 2 ;;
     --name) SERVER_NAME="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,15p' "$0" 2>/dev/null || echo "See https://chaitanyadukkipaty.github.io/cubby/#install"; exit 0 ;;
+    --http-port) HTTP_PORT="${2:-}"; shift 2 ;;
+    --pb-port) PB_PORT="${2:-}"; shift 2 ;;
+    -h|--help) sed -n '2,17p' "$0" 2>/dev/null || echo "See https://chaitanyadukkipaty.github.io/cubby/#install"; exit 0 ;;
     *) die "Unknown option: $1" ;;
   esac
 done
 
 [[ "$(uname -s)" == "Linux" ]] || die "Cubby installs on Linux servers only."
-[[ $EUID -eq 0 ]] || die "Run as root: curl -fsSL ... | sudo bash"
+[[ $EUID -eq 0 || -n "${CUBBY_TEST_NONROOT:-}" ]] || die "Run as root: curl -fsSL ... | sudo bash"
 if [[ -f "$ENV_FILE" ]]; then
   die "Cubby is already installed ($ENV_FILE). Use: cubby-server upgrade | version | status | set-domain"
 fi
@@ -113,6 +121,51 @@ SERVER_NAME="$(printf '%s' "$SERVER_NAME" | tr -d '\000-\037' | sed 's/^ *//; s/
 SERVER_NAME="${SERVER_NAME:-$DEFAULT_NAME}"
 SERVER_NAME="${SERVER_NAME:0:60}"
 
+# --- Ports -------------------------------------------------------------------------------------
+# choose_port <var> <wanted> <default> <flag> <from> <to> [<skip>]: a port given with <flag> must be free; otherwise
+# the default, or (when it's busy) a free port from <from>-<to> that the user confirms. The choice is permanent:
+# it becomes part of the server's URL, so cubby-server never moves it.
+choose_port() {
+  local var="$1" want="$2" default="$3" flag="$4" from="$5" to="$6" skip="${7:-}" holder free
+  if [[ -n "$want" ]]; then
+    [[ "$want" =~ ^[1-9][0-9]{0,4}$ && "$want" -le 65535 ]] || die "$flag needs a port number (1-65535), not \"$want\"."
+    holder="$(cubby_port_holder "$want" cubby)"
+    [[ -z "$holder" ]] || die "Port $want is in use by $holder. Pick another with $flag <port>."
+    printf -v "$var" '%s' "$want"
+    return
+  fi
+  holder="$(cubby_port_holder "$default" cubby)"
+  if [[ -z "$holder" ]]; then printf -v "$var" '%s' "$default"; return; fi
+  # shellcheck disable=SC2086 # $skip is a single port or empty
+  free="$(cubby_free_port "$from" "$to" $skip)" || die "Port $default is in use by $holder, and so are $from-$to. Free one, or pass $flag <port>."
+  { true <"$TTY"; } 2>/dev/null || die "Port $default is in use by $holder. Free it, or re-run with $flag $free."
+  echo "Port $default is in use by $holder."
+  while true; do
+    want="$(ask "Use port [$free]: ")"
+    want="${want:-$free}"
+    if [[ ! "$want" =~ ^[1-9][0-9]{0,4}$ || "$want" -gt 65535 ]]; then echo "That isn't a port number."; continue; fi
+    [[ "$want" != "$skip" ]] || { echo "Port $want is taken by Cubby's other port."; continue; }
+    holder="$(cubby_port_holder "$want" cubby)"
+    [[ -z "$holder" ]] || { echo "Port $want is in use by $holder."; continue; }
+    printf -v "$var" '%s' "$want"
+    return
+  done
+}
+
+if [[ -n "$DOMAIN" ]]; then
+  # Let's Encrypt only checks ports 80 and 443, so HTTPS can't move to other ports.
+  [[ -z "$HTTP_PORT" || "$HTTP_PORT" == 80 ]] || die "--http-port only works without a domain: HTTPS needs ports 80 and 443 (Let's Encrypt checks them)."
+  for port in 80 443; do
+    holder="$(cubby_port_holder "$port" cubby)"
+    [[ -z "$holder" ]] || die "Port $port is in use by $holder. A domain with HTTPS needs ports 80 and 443 (Let's Encrypt checks them). Free them, or install without a domain (--no-domain) on another port."
+  done
+  HTTP_PORT=80
+else
+  choose_port HTTP_PORT "$HTTP_PORT" 80 --http-port 8080 8099 "${PB_PORT:-8090}"
+fi
+choose_port PB_PORT "$PB_PORT" 8090 --pb-port 8091 8110 "$HTTP_PORT"
+[[ "$PB_PORT" != "$HTTP_PORT" ]] || die "--http-port and --pb-port must differ."
+
 if [[ -n "$DOMAIN" ]]; then
   BASE_DOMAIN="$DOMAIN"
   PUBLIC_URL="https://$DOMAIN"
@@ -123,6 +176,8 @@ if [[ -n "$DOMAIN" ]]; then
   [[ "$WILDCARD" == "$PUBLIC_IP" ]] || echo "  ! *.$DOMAIN doesn't resolve to $PUBLIC_IP yet. Apps will fail until you add a wildcard A record."
 else
   BASE_DOMAIN="${PUBLIC_IP//./-}.sslip.io"
+  # The port is part of the domain, so app URLs (<app>.<ip>.sslip.io:<port>) carry it too.
+  [[ "$HTTP_PORT" == 80 ]] || BASE_DOMAIN="$BASE_DOMAIN:$HTTP_PORT"
   PUBLIC_URL="http://$BASE_DOMAIN"
   CUBBY_HTTPS=0
 fi
@@ -155,24 +210,26 @@ CUBBY_SIGNUP_CODE=$SIGNUP_CODE
 CUBBY_SERVER_NAME=$SERVER_NAME
 CUBBY_INSTALL_CHANNEL=$CUBBY_TARGET_CHANNEL
 CUBBY_INSTALL_REF=$CUBBY_TARGET_REF
+CUBBY_HTTP_PORT=$HTTP_PORT
+CUBBY_PB_PORT=$PB_PORT
 PB_SUPERUSER_EMAIL=superuser@cubby.internal
 PB_SUPERUSER_PASSWORD=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)
 ENV
 
-install -m 755 "$CUBBY_HOME/src/docker/cubby-server" /usr/local/bin/cubby-server
+install -m 755 "$CUBBY_HOME/src/docker/cubby-server" "$CUBBY_BIN"
 info "Building image (takes a minute)…"
-cubby-server rebuild >/dev/null
+CUBBY_HOME="$CUBBY_HOME" CUBBY_BIN="$CUBBY_BIN" "$CUBBY_BIN" rebuild >/dev/null
 
 info "Waiting for Cubby to start…"
 for _ in $(seq 1 60); do
-  if curl -fsS -H "Host: $BASE_DOMAIN" http://127.0.0.1/api/info >/dev/null 2>&1; then STARTED=1; break; fi
+  if curl -fsS -H "Host: $BASE_DOMAIN" "http://127.0.0.1:$HTTP_PORT/api/info" >/dev/null 2>&1; then STARTED=1; break; fi
   sleep 2
 done
 [[ "${STARTED:-}" == "1" ]] || die "Cubby didn't start. Check: cubby-server logs"
 
 # The admin account exists now; don't keep its password on disk.
-sed -i '/^CUBBY_ADMIN_PASSWORD=/d' "$ENV_FILE"
-RUNNING="$(curl -fsS -H "Host: $BASE_DOMAIN" http://127.0.0.1/api/info | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
+sed -i.bak '/^CUBBY_ADMIN_PASSWORD=/d' "$ENV_FILE" && rm -f "$ENV_FILE.bak"
+RUNNING="$(curl -fsS -H "Host: $BASE_DOMAIN" "http://127.0.0.1:$HTTP_PORT/api/info" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
 
 echo
 bold "Cubby is running 🎉"
@@ -184,5 +241,7 @@ info "Admin:        $ADMIN_EMAIL"
 info "Signup code:  $SIGNUP_CODE"
 echo
 info "Send your friends the URL and the signup code."
+[[ "$HTTP_PORT" == 80 ]] || info "Open port $HTTP_PORT (TCP) in your cloud provider's firewall, or the URL won't load."
+info "PocketBase admin UI: ssh -L $PB_PORT:127.0.0.1:$PB_PORT you@$PUBLIC_IP, then http://localhost:$PB_PORT/_/"
 [[ "$CUBBY_HTTPS" == "1" ]] || info "Running on plain HTTP. Add a domain later with: cubby-server set-domain <domain>"
 info "Manage it with: cubby-server status | version | upgrade | backup | restore | code"

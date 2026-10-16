@@ -5,6 +5,17 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- IP-only installs work when port 80 is taken. The installer names what holds the port and offers a free one (or
+  take one with `--http-port`); it becomes part of the URL, like `http://203-0-113-5.sslip.io:8080`. `--pb-port` does
+  the same for the PocketBase admin port (8090), and IP mode no longer publishes 443.
+
+### Changed
+
+- The installer, `cubby-server rebuild`/`upgrade` and `set-domain` check the ports they need first and refuse, naming
+  the process or container holding one, instead of failing in `docker run`. A domain needs 80 and 443.
+
 ## [0.1.1] - 2026-10-10
 
 ### Added
