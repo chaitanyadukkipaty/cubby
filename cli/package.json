@@ -1,6 +1,6 @@
 {
   "name": "cubby-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Build and host full-stack apps on Cubby. Designed for coding agents.",
   "type": "module",
   "bin": {
