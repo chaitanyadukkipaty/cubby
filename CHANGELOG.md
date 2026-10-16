@@ -5,6 +5,8 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-16
+
 ### Added
 
 - IP-only installs work when port 80 is taken. The installer names what holds the port and offers a free one (or
