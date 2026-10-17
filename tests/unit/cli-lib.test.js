@@ -8,6 +8,22 @@ import * as lib from '../../cli/src/lib.js';
 const SKILL_SRC = new URL('../../cli/skill/cubby/', import.meta.url).pathname;
 const TEMPLATE = new URL('../../cli/template/', import.meta.url).pathname;
 
+describe('agent login hint', () => {
+  test('detectTool names the agent from its environment, else Terminal', () => {
+    assert.equal(lib.detectTool({ CLAUDECODE: '1' }), 'Claude Code');
+    assert.equal(lib.detectTool({ CODEX_SANDBOX: 'seatbelt' }), 'Codex');
+    assert.equal(lib.detectTool({ CURSOR_TRACE_ID: 'x' }), 'Cursor');
+    assert.equal(lib.detectTool({ CLAUDECODE: '1', CURSOR_TRACE_ID: 'x' }), 'Claude Code', 'an agent running inside an editor wins');
+    assert.equal(lib.detectTool({ CLAUDECODE: '' }), 'Terminal');
+    assert.equal(lib.detectTool({}), 'Terminal');
+  });
+  test('loginHint sends the tool (--client / CUBBY_CLIENT win over detection) and the short hostname', () => {
+    assert.deepEqual(lib.loginHint({ env: { CLAUDECODE: '1' }, hostname: 'chaitanya-mbp.local' }), { tool: 'Claude Code', machine: 'chaitanya-mbp' });
+    assert.deepEqual(lib.loginHint({ client: 'my-bot', env: { CLAUDECODE: '1' }, hostname: 'box' }), { tool: 'my-bot', machine: 'box' });
+    assert.deepEqual(lib.loginHint({ env: { CUBBY_CLIENT: 'ci' }, hostname: 'runner.LOCAL' }), { tool: 'ci', machine: 'runner' });
+  });
+});
+
 describe('normalizeServerArg', () => {
   test('keeps explicit schemes', () => { assert.equal(lib.normalizeServerArg('http://1-2-3-4.sslip.io'), 'http://1-2-3-4.sslip.io'); assert.equal(lib.normalizeServerArg('https://a.b'), 'https://a.b'); });
   test('defaults bare hosts to https', () => assert.equal(lib.normalizeServerArg('cubby.example.com'), 'https://cubby.example.com'));
@@ -59,6 +75,50 @@ describe('formatters', () => {
     ]);
     assert.equal(t, '* d2  t2  3 files  [claude-code] two\n  d1  t1  1 files  one');
     assert.equal(lib.formatDeploys([]), 'No deploys');
+  });
+  test('formatAgents lists id, name, tool, machine, created date and last seen, and marks this agent', () => {
+    const now = Date.parse('2026-10-17T12:00:00Z');
+    const t = lib.formatAgents([
+      { id: 'k0', name: 'Manual token', tool: null, machine: null, created: '2026-10-01 10:00:00.000Z', last_used_at: '2026-10-15 09:00:00.000Z', current: false },
+      { id: 'a1', name: 'Claude Code · mbp', tool: 'Claude Code', machine: 'mbp', created: '2026-10-17 09:00:00.000Z', last_used_at: '2026-10-17 11:59:30.000Z', current: true },
+      { id: 'a2', name: 'Codex', tool: 'Codex', machine: null, created: '2026-10-17 09:00:00.000Z', last_used_at: null, current: false },
+    ], now);
+    const w = 'Claude Code · mbp'.length + 2;
+    assert.equal(t, [
+      `  ${'ID'.padEnd(4)}${'NAME'.padEnd(w)}${'TOOL'.padEnd(13)}${'MACHINE'.padEnd(9)}${'CREATED'.padEnd(12)}LAST SEEN`,
+      `  ${'k0'.padEnd(4)}${'Manual token'.padEnd(w)}${'-'.padEnd(13)}${'-'.padEnd(9)}${'2026-10-01'.padEnd(12)}2 days ago`,
+      `* ${'a1'.padEnd(4)}${'Claude Code · mbp'.padEnd(w)}${'Claude Code'.padEnd(13)}${'mbp'.padEnd(9)}${'2026-10-17'.padEnd(12)}just now`,
+      `  ${'a2'.padEnd(4)}${'Codex'.padEnd(w)}${'Codex'.padEnd(13)}${'-'.padEnd(9)}${'2026-10-17'.padEnd(12)}never`,
+      '* = this agent. Rename one with `cubby agents rename <id> <name>`, revoke it with `cubby agents revoke <id> --yes`.',
+    ].join('\n'));
+    assert.equal(lib.formatAgents([]), 'No agents yet. Connect one with `cubby login <server-url>`.');
+  });
+  test('lastSeen says how long ago a key was used, in rough units', () => {
+    const now = Date.parse('2026-10-17T12:00:00Z');
+    const at = (ms) => new Date(now - ms).toISOString();
+    assert.equal(lib.lastSeen(null, now), 'never');
+    assert.equal(lib.lastSeen(at(59_000), now), 'just now');
+    assert.equal(lib.lastSeen(at(60_000), now), '1 min ago');
+    assert.equal(lib.lastSeen(at(59 * 60_000), now), '59 min ago');
+    assert.equal(lib.lastSeen(at(60 * 60_000), now), '1 hour ago');
+    assert.equal(lib.lastSeen(at(5 * 3600_000), now), '5 hours ago');
+    assert.equal(lib.lastSeen(at(24 * 3600_000), now), '1 day ago');
+    assert.equal(lib.lastSeen(at(40 * 24 * 3600_000), now), '40 days ago');
+    assert.equal(lib.lastSeen(at(-5000), now), 'just now', 'a server clock slightly ahead');
+    assert.equal(lib.lastSeen('garbage', now), 'never');
+  });
+
+  test('formatActivity shows when, which app, who (agent or dashboard) and what, newest first as given', () => {
+    const rows = [
+      { at: '2026-10-17 09:30:12.000Z', app: 'todo', via: 'agent', agent: { id: 'k1', name: 'Claude Code · mbp' }, user: 'a@x.dev', summary: 'Deployed d2 (3 files)' },
+      { at: '2026-10-16 08:00:00.000Z', app: null, via: 'dashboard', agent: null, user: 'a@x.dev', summary: 'Disabled user b@x.dev' },
+    ];
+    assert.equal(lib.formatActivity(rows), [
+      '2026-10-17 09:30  todo  Claude Code · mbp  Deployed d2 (3 files)',
+      '2026-10-16 08:00  -     dashboard          Disabled user b@x.dev',
+    ].join('\n'));
+    assert.equal(lib.formatActivity(rows, { users: true }).split('\n')[0], '2026-10-17 09:30  a@x.dev  todo  Claude Code · mbp  Deployed d2 (3 files)');
+    assert.equal(lib.formatActivity([]), 'No activity in the last 30 days');
   });
   test('formatProjects flags undeployed apps', () => {
     assert.equal(lib.formatProjects([{ slug: 'a', url: 'u1', current_deploy: 'd' }, { slug: 'b', url: 'u2' }]),
@@ -122,6 +182,32 @@ describe('jobs and env helpers', () => {
     assert.match(lib.formatRun({ job: 'a', id: 'r1', status: 'ok', trigger: 'cron', started: 'S', duration_ms: 0 }), /\(no output\)$/);
     assert.match(lib.formatEnv([{ key: 'API_KEY', updated: 'U' }]), /^API_KEY\s+set U$/);
     assert.match(lib.formatEnv([]), /No secrets/);
+  });
+  test('formatMetrics: totals for the range, live and API numbers, accounts, then each UTC day', () => {
+    const text = lib.formatMetrics({
+      app: 'polls', range: '24h', views: 1234, visitors: 3,
+      active_now: 2, peak_active: 7, api_requests: 1500, api_errors: 3, api_error_rate: 0.002,
+      days: [{ start: '2026-10-16T00:00:00.000Z', views: 4, visitors: 1 }, { start: '2026-10-17T00:00:00.000Z', views: 1230, visitors: 2 }],
+      accounts: { total: 42, new: 5, days: [{ start: '2026-10-16T00:00:00.000Z', signups: 1 }, { start: '2026-10-17T00:00:00.000Z', signups: 4 }] },
+    });
+    assert.equal(text, [
+      'polls: 1234 views, 3 visitors in the last 24h',
+      '  Active now 2, peak 7',
+      '  API: 1500 requests, 3 errors (0.2%)',
+      '  Accounts: 42, 5 new',
+      '  2026-10-16      4 views     1 visitors     1 signups',
+      '  2026-10-17   1230 views     2 visitors     4 signups',
+    ].join('\n'));
+  });
+  test('formatMetricsList: one line per app', () => {
+    const text = lib.formatMetricsList([
+      { app: 'polls', range: '7d', views: 12, visitors: 5, active_now: 1, api_errors: 2 },
+      { app: 'a-much-longer-app-name', range: '7d', views: 0, visitors: 0, active_now: 0, api_errors: 0 },
+    ]);
+    assert.match(text, /^Last 7d\n/);
+    assert.match(text, /\n {2}polls\s+12 views\s+5 visitors\s+1 active\s+2 API errors\n/);
+    assert.match(text, /a-much-longer-app-name\s+0 views\s+0 visitors\s+0 active\s+0 API errors$/);
+    assert.match(lib.formatMetricsList([]), /No apps yet/);
   });
   test('parseEnvAssignment splits at the first =', () => {
     assert.deepEqual(lib.parseEnvAssignment('API_KEY=a=b'), { key: 'API_KEY', value: 'a=b' });

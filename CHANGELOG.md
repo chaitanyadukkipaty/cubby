@@ -33,10 +33,46 @@ All notable changes to Cubby are documented here. The format follows
   `prune [--keep <n>] --yes` deletes them oldest first (sparing the newest n), `delete <id> --yes` deletes one. Their
   jobs folders go too and they leave the app's rollback list. API: `GET /api/admin/apps/<app>/deploys`,
   `POST /api/admin/apps/<app>/deploys/prune`, `DELETE /api/admin/apps/<app>/deploys/<id>`.
+- Every approved `cubby login` becomes its own named agent with its own key, instead of handing out your one token.
+  The CLI tells the server which agent tool it runs under (Claude Code, Codex, Cursor, otherwise "Terminal";
+  `--client` overrides it) and the machine's name, so agents are named like "Claude Code · chaitanya-mbp". Logins
+  from older CLIs still work and get a dated name ("Agent · 2026-10-17"). Once you sign in, the approval page says which agent is
+  asking. `cubby agents` (and `GET /api/agents`) lists your agents and marks the current one; the dashboard's token,
+  and tokens from before this release, show up as "Manual token" and keep working. API keys gain an empty `scopes`
+  field, reserved for limiting keys later.
+- Rename and revoke agents one at a time: `cubby agents rename <id> <name>` and `cubby agents revoke <id> --yes`
+  (`PATCH` / `DELETE /api/agents/:id`). A revoked key gets 401 on its next request while your other agents keep
+  working; an agent may revoke itself, which logs it out like `cubby logout`. You can only see and change your own
+  agents. `cubby agents` shows each agent's ID and when it was last seen.
+- An activity log of who changed what: app create, update and delete, deploys (deploy id and file count),
+  rollbacks, schema pushes (created, updated and kept) and drops, secrets set and removed (key names only, never
+  values), jobs run now, paused and resumed, agent logins, and admin actions on users, apps and backups
+  (`cubby admin backups create|delete`). Each entry names the agent that made it, or "dashboard" for the dashboard
+  and the manual token. Reads aren't logged. `cubby activity [app] [--agent <id>|dashboard] [--limit n]` (and
+  `GET /api/activity`) shows your own entries; admins see everyone's with `--all` (`GET /api/admin/activity`).
+  Entries older than 30 days are pruned before every backup (nightly, `cubby admin backups create` and
+  `cubby-server backup`). An app's entries outlive the app until they age out; deleting a user deletes theirs.
+  Stored in a new platform collection, `cubby_activity`, closed to apps like the others.
+- Page views and unique visitors per app, counted by the server as it serves an app's pages: no script in the app,
+  no cookies. Assets, `/pb` calls, HEAD requests, prefetches and obvious bots don't count. A visitor is a hash of IP
+  address and browser with a salt that lives only in memory and changes every UTC day; IPs are never stored. Counts
+  are flushed to the database every minute (and on shutdown): views per hour, views and visitors per UTC day.
+  `cubby metrics <app>` shows one app, `cubby metrics` all of yours, `--range` up to 90d (default 24h). Owners see
+  their apps; admins see any. `/api/info` lists `metrics` in `features`.
+- Live and backend metrics in `cubby metrics`: active now (visitors seen on a page or a `/pb` call in the last 5
+  minutes, in memory only, no heartbeat) and its peak per hour; `/pb` API requests and 5xx errors per hour with the
+  error rate; and the app's accounts with signups per day, read from PocketBase when asked. `cubby metrics` without
+  an app also shows each app's active now and API errors.
+- A command palette in the dashboard: ⌘K (Ctrl+K), or Search in the sidebar, jumps to a page or one of your apps
+  and copies the setup prompt or a common command (`cubby deploy`, `cubby login`), switches theme or logs out.
+  Fuzzy search, fully keyboard-driven.
 
 ### Changed
 
 - `cubby rollback` restores the jobs a deploy shipped, not just the frontend.
+- Regenerate on the dashboard replaces only the manual token (for scripts and CI). Agents keep their own keys; revoke
+  them one at a time with `cubby agents revoke`.
+- A key's last use is now written at most once a minute instead of on every request.
 
 ### Fixed
 
@@ -44,6 +80,13 @@ All notable changes to Cubby are documented here. The format follows
   pairs behind. It now deletes whole pairs by date.
 - A backup on a server with no deploys and no secrets yet failed (`no paths specified to add to archive`); it now
   writes an empty sites tarball so every backup is a whole pair.
+- The dashboard has a sidebar (a bottom bar on phones) and its own page per link: Home (`/`, the setup prompt and
+  your apps), Apps (`/apps`, and `/apps/<app>` for one app), Agents (`/agents`, a placeholder for now), Explore
+  (`/explore`, everyone's apps, formerly the gallery tab) and Admin (`/admin`). Links can be bookmarked and survive a
+  reload; signing in from a deep link lands on that page. A crisp light theme and a near-black dark theme follow the
+  system, and a toggle under your email overrides it (remembered in the browser).
+- The dashboard is now an HTML shell, a stylesheet and ES modules served with hashed URLs (still no build step and
+  no dependencies), instead of one HTML file.
 
 ## [0.1.4] - 2026-10-17
 

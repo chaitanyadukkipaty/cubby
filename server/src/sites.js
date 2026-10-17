@@ -115,21 +115,23 @@ const MIME = {
 
 const exists = (p) => stat(p).then((s) => s.isFile(), () => false);
 
+// Resolves to true when it served one of the app's HTML pages (what metrics count as a view), false otherwise.
 export async function serveSite(req, res, project, pathname) {
-  if (!project.current_deploy) return sendPage(res, 404, `${project.slug} has no deploys yet`, 'Run <code>cubby deploy</code> from the project directory.');
+  const fail = (...page) => (sendPage(res, ...page), false);
+  if (!project.current_deploy) return fail(404, `${project.slug} has no deploys yet`, 'Run <code>cubby deploy</code> from the project directory.');
   const root = join(sitesDir(project.slug), project.current_deploy);
   let rel;
   try {
     rel = normalize(decodeURIComponent(pathname)).replace(/^([/\\])+/, '');
   } catch {
-    return sendPage(res, 400, 'Bad request');
+    return fail(400, 'Bad request');
   }
   let file = join(root, rel);
-  if (!file.startsWith(root + sep) && file !== root) return sendPage(res, 400, 'Bad request');
+  if (!file.startsWith(root + sep) && file !== root) return fail(400, 'Bad request');
 
   if (!(await exists(file))) {
     if (await exists(join(file, 'index.html'))) file = join(file, 'index.html');
-    else if (extname(rel)) return sendPage(res, 404, 'Not found');
+    else if (extname(rel)) return fail(404, 'Not found');
     else file = join(root, 'index.html'); // SPA fallback for client-side routes
   }
   const isHtml = extname(file) === '.html';
@@ -138,8 +140,9 @@ export async function serveSite(req, res, project, pathname) {
     'cache-control': isHtml ? 'no-cache' : rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=300',
     'x-content-type-options': 'nosniff',
   });
-  if (req.method === 'HEAD') return res.end();
+  if (req.method === 'HEAD') return (res.end(), isHtml);
   createReadStream(file).pipe(res);
+  return isHtml;
 }
 
 export function sendPage(res, status, title, body = '') {

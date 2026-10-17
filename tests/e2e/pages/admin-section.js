@@ -1,4 +1,4 @@
-// Admin tab: invites, limits, users and all apps.
+// Admin page (/admin): invites, limits, users and all apps.
 export class AdminSection {
   constructor(page) {
     this.page = page;

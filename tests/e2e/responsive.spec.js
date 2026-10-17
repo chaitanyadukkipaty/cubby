@@ -22,3 +22,38 @@ test('dashboard and admin fit a phone screen without sideways scrolling, in ligh
   }
   expect(backgrounds.dark).not.toBe(backgrounds.light);
 });
+
+test('phones get a bottom bar instead of the sidebar', async ({ browser, baseURL, api }) => {
+  const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  const dashboard = new DashboardPage(page);
+  await dashboard.openAs(await api.adminToken());
+  const nav = await dashboard.nav.boundingBox();
+  expect(nav.y + nav.height).toBeCloseTo(844, 0);
+  expect(nav.width).toBe(390);
+  await dashboard.openAdmin();
+  await expect(dashboard.currentPage).toHaveText('Admin');
+  await context.close();
+});
+
+test('the theme toggle overrides the system preference and is remembered', async ({ browser, baseURL, api }) => {
+  const context = await browser.newContext({ baseURL, colorScheme: 'light' });
+  const page = await context.newPage();
+  const dashboard = new DashboardPage(page);
+  const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await dashboard.openAs(await api.adminToken());
+  const light = await background();
+
+  await expect(dashboard.themeButton).toHaveAccessibleName('Switch to dark theme');
+  await dashboard.themeButton.click();
+  await expect(dashboard.themeButton).toHaveAccessibleName('Switch to light theme');
+  const dark = await background();
+  expect(dark).not.toBe(light);
+
+  await page.reload();
+  await dashboard.logOutButton.waitFor();
+  expect(await background()).toBe(dark);
+  await dashboard.themeButton.click();
+  expect(await background()).toBe(light);
+  await context.close();
+});

@@ -1,4 +1,4 @@
-// "Everyone's apps" tab.
+// Explore (/explore): everyone's listed apps.
 export class GallerySection {
   constructor(page) {
     this.page = page;

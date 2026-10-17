@@ -118,8 +118,9 @@ export class Api {
     return this.as(token)('GET', `/api/projects/${slug}`);
   }
 
-  async startDeviceLogin() {
-    return ok(await this.as()('POST', '/api/device/start'), 'device start');
+  // `hint` is what a CLI says about itself ({ tool, machine }); older CLIs send none.
+  async startDeviceLogin(hint) {
+    return ok(await this.as()('POST', '/api/device/start', { body: hint }), 'device start');
   }
 
   async pollDeviceLogin(deviceId) {

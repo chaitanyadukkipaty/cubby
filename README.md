@@ -47,7 +47,7 @@ sequenceDiagram
     Agent->>Agent: cubby servers → picks "Priya's Cubby"
     Agent->>Cubby: install CLI, start login
     Agent-->>You: "Open this link and click Approve"
-    You->>Cubby: Approve
+    You->>Cubby: Approve "Claude Code on your laptop"
     Agent->>Cubby: cubby init → schema → build → cubby deploy
     Cubby-->>Agent: https://friend-polls.priyas-server.com
     Agent-->>You: "Here's your app, and what to add next"
@@ -59,6 +59,25 @@ A week later you ask for more, and it doesn't have to happen in anyone's browser
 
 The agent stores the email service's API key as a secret, writes two **scheduled jobs** next to the app, deploys,
 runs each one once to check it works, and tells you when they'll run next.
+
+And when something changed and you're not sure who did it, ask: *"what happened to friend-polls this week?"*
+
+```sh
+cubby activity friend-polls
+# 2026-10-17 09:31  friend-polls  Claude Code · laptop  Ran job "weekly-digest" now (ok)
+# 2026-10-17 09:30  friend-polls  Claude Code · laptop  Deployed k3x9q2 (14 files)
+# 2026-10-17 09:29  friend-polls  Claude Code · laptop  Added secret EMAIL_API_KEY
+# 2026-10-16 18:02  friend-polls  dashboard             Updated "friend-polls": made it unlisted
+```
+
+And when you wonder whether anyone uses it:
+
+> How many people used the polls app this week?
+
+The agent runs `cubby metrics friend-polls --range 7d` and tells you the page views and unique visitors per day,
+how many people are on it right now and the busiest moment of the week, how many accounts signed up, and whether
+its database calls are failing. Cubby counts all of it itself as it serves the app, so there's no tracking script,
+cookie banner or analytics account.
 
 ## Why Cubby
 
@@ -76,23 +95,30 @@ else's platform and you can't bring your own agent.
 
 ## Features
 
-- **Agent-native.** A skill teaches Claude Code, Codex, Cursor and OpenCode to set up, build and deploy by themselves. They log in through a browser approval, so nobody pastes passwords or tokens into a chat.
+- **Agent-native.** A skill teaches Claude Code, Codex, Cursor and OpenCode to set up, build and deploy by themselves. They log in through a browser approval, so nobody pastes passwords or tokens into a chat, and each login becomes its own named agent ("Claude Code · your-laptop") with its own key.
 - **Real backend for every app.** Collections, user accounts, file uploads and live updates from a shared [PocketBase](https://pocketbase.io). Each app is walled off by collection prefix, and its security comes from database rules.
 - **One-command deploys.** `cubby deploy` pushes schema changes, builds and publishes. The last 10 deploys are kept for instant rollback.
 - **Scheduled jobs.** Apps can run code on a cron schedule (digests, reminders, cleanups, syncing from an API) with encrypted secrets. Each run is sandboxed and can only reach its own app's data and the public internet.
+- **Know who did what.** Every change (deploys, rollbacks, schema, secrets, jobs, logins, admin actions on users, apps and backups) is logged
+  for 30 days with the agent that made it, or "dashboard". `cubby activity` shows yours; admins can see everyone's.
+- **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), API requests and errors, and accounts and signups per app, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
-- **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps in a gallery, and manage users, limits and disk from an admin tab.
+- **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps on Explore, and manage users, limits and disk from the Admin page.
+- **Quick to get around.** Press ⌘K (Ctrl+K) anywhere in the dashboard to jump to a page or one of your apps, copy the setup prompt or a common command, switch theme or log out.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
-- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin tab tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins (or their agent) see where the disk goes and manage backups and older deploys with `cubby admin storage`, `cubby admin backups` and `cubby admin deploys`.
+- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin page tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins (or their agent) see where the disk goes and manage backups and older deploys with `cubby admin storage`, `cubby admin backups` and `cubby admin deploys`.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=e4b08ff1" alt="Dashboard with the Copy prompt for agent button and an app's scheduled jobs"><p align="center"><sub>Your dashboard on Priya's Cubby: connect your agent, see your apps and their jobs</sub></p></td>
-<td width="50%"><img src="docs/assets/connect-approve.png?v=fd35d280" alt="Approval page for connecting an AI agent"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=2b0656a2" alt="Dashboard Home with a sidebar, the Copy prompt for agent button and a list of the user's apps"><p align="center"><sub>Home on Priya's Cubby: connect your agent, see your apps</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-apps.png?v=3e327a57" alt="The Apps page with app cards and an app's scheduled jobs"><p align="center"><sub>Apps: visibility, delete, and each app's scheduled jobs</sub></p></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-gallery.png?v=9cdf21ee" alt="Gallery of everyone's apps"><p align="center"><sub>Everyone's apps</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-admin.png?v=3453ddb1" alt="Admin tab with users, apps, limits, scheduled jobs, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, jobs, users, disk, updates</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-gallery.png?v=616041f6" alt="Explore page listing everyone's apps"><p align="center"><sub>Explore: everyone's apps</sub></p></td>
+<td width="50%"><img src="docs/assets/connect-approve.png?v=f807a051" alt="Approval page naming the agent that wants access"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
+</tr>
+<tr>
+<td colspan="2" align="center"><img src="docs/assets/dashboard-admin.png?v=93cf03fc" width="640" alt="Admin page with users, apps, limits, scheduled jobs, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, jobs, users, disk, updates</sub></p></td>
 </tr>
 </table>
 
@@ -134,7 +160,7 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
 install with no prompts. `--http-port <port>` (IP mode) and `--pb-port <port>` (PocketBase admin, loopback only,
 default 8090) pick the host ports; without a terminal, a busy port stops the install with the option to pass.
 
-When a new release is out, the Admin tab says so, with the release notes. On the server:
+When a new release is out, the Admin page says so, with the release notes. On the server:
 
 | Command | Does |
 | --- | --- |
@@ -183,7 +209,7 @@ account" error.
 ## Connect your agent and build
 
 1. Open the server URL and **sign up** with the signup code.
-2. Copy the setup prompt from your dashboard and paste it into your agent (Claude Code, Codex, Cursor or OpenCode),
+2. Copy the setup prompt from your dashboard's Home page and paste it into your agent (Claude Code, Codex, Cursor or OpenCode),
    once per server. It has your server's name and URL filled in:
    ```text
    I'd like you to set up Cubby: Priya's Cubby at https://your-server.com, a self-hosted server where you build and host web apps for me.
@@ -196,14 +222,38 @@ account" error.
    bare `curl … | sh` so the agent knows what you're asking for: pasted on its own, agents rightly flag a pipe-to-shell
    from an unfamiliar domain as suspicious. You can also just give your agent the server's URL: fetched by anything that
    isn't a browser (curl, an agent's fetch tool), the root page answers with these setup steps as plain text.
+
+   The approval page says which agent is asking ("Claude Code on chaitanya-mbp wants access"): the CLI tells the
+   server which agent tool it runs under (Claude Code, Codex, Cursor, otherwise "Terminal"; `--client` overrides it)
+   and the machine's name. Each approved login becomes its own **agent** with its own key, so your laptop's Claude
+   Code and your desktop's Codex are two agents, not one shared token. `cubby agents` lists them with when each was
+   last seen and marks the one asking. The token on your dashboard (for scripts and CI) is listed as "Manual token".
+
+   Lost a laptop, or done with an agent? Ask any of your agents to revoke it, or run it yourself:
+
+   ```sh
+   cubby agents                                      # ID, name, tool, machine, created, last seen
+   cubby agents rename p3n7w9s2t5u8v1y "Old laptop"
+   cubby agents revoke p3n7w9s2t5u8v1y --yes         # that key stops working on its next request
+   ```
+
+   Your other agents keep working. An agent can revoke itself too, which logs it out like `cubby logout`.
+   **Regenerate** on the dashboard replaces only the manual token; agents keep their own keys.
 3. Ask your agent for an app in plain words, naming the server if you have more than one. That's it.
+4. Later, `cubby activity` answers "which agent deployed this?": every change to your apps and agents from the
+   last 30 days, newest first, with the agent that made it. Changes made from the dashboard (or with the manual
+   token) say "dashboard". Filter with `cubby activity <app>`, `--agent <id>` (from `cubby agents --json`) or
+   `--agent dashboard`, and `--limit`. Reads aren't logged, and secrets show up by name only, never their values.
 
 <details>
 <summary><b>CLI reference</b> (your agent runs these; every command takes <code>--json</code>)</summary>
 
 | Command | What it does |
 | --- | --- |
-| `cubby login <server>` | Log in by approving a link in the browser (`--token` for CI). Adds the server to your list. |
+| `cubby login <server>` | Log in by approving a link in the browser (`--token` for CI). Adds the server to your list. Each approved login is a new named agent. |
+| `cubby agents` | Your agents: one per approved login, with tool, machine, date and last seen; `*` marks this one |
+| `cubby agents rename <id> <name>` / `cubby agents revoke <id> --yes` | Rename an agent, or revoke its key at once (revoking this agent logs it out here) |
+| `cubby activity [app] [--agent <id>] [--limit n]` | What changed in the last 30 days and which agent (or the dashboard) did it; `--all` for admins |
 | `cubby servers` / `cubby use <name>` | List your servers with their names and versions, set the default |
 | `cubby logout [--server <name>] [--all]` | Forget one server (the current one by default) or all of them |
 | `cubby init <app>` | Create an app from the template |
@@ -211,6 +261,7 @@ account" error.
 | `cubby deploys` / `cubby rollback <id>` | List deploys, restore one instantly (with the jobs it shipped) |
 | `cubby jobs [run \| logs \| pause \| resume <job>]` | List scheduled jobs with their next and last run; run one now and print its log |
 | `cubby env list \| set NAME=value \| unset NAME --yes` | Secrets for jobs (`--from-stdin` keeps a value out of shell history) |
+| `cubby metrics [<app>] [--range 7d]` | Views, visitors, active now and peak, API requests and errors, accounts and signups of one app, or a summary of all yours (last 24h by default) |
 | `cubby schema push \| pull \| drop` | Manage the data model (push never deletes) |
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
@@ -268,8 +319,8 @@ flowchart LR
     C --> S
     subgraph S[Cubby server]
       D[Dashboard + API]
-      H["App hosting<br/>&lt;app&gt;.your-server.com"]
-      P["Database proxy<br/>&lt;app&gt;/pb/* → own data only"]
+      H["App hosting<br/>&lt;app&gt;.your-server.com<br/>counts views"]
+      P["Database proxy<br/>&lt;app&gt;/pb/* → own data only<br/>counts requests, errors"]
       J["Job runner<br/>cron · sandboxed · own data only"]
     end
     P --> DB[(Shared PocketBase<br/>one prefix per app)]
@@ -285,6 +336,20 @@ flowchart LR
   bundles them with the frontend. Each run is a separate Node.js process with no access to the server's files,
   environment or local network: its database client reaches only that app's collections (as admin, past the rules),
   checked by the same code as the proxy. Runs have a time limit, a memory cap and logs (`cubby jobs logs`).
+- **Metrics** are counted as the server hands out an app's pages: each HTML page load by a browser is a view
+  (assets, `/pb` calls and obvious bots don't count). A visitor is a hash of the IP address and browser with a salt
+  that only lives in memory and changes every day (UTC), so the same person counts once a day and can't be followed
+  across days; the IP itself is never stored. Counts are kept in memory and written to the database every minute
+  (views per hour; views and unique visitors per day). A crash loses at most that minute, and a restart may count
+  some of that day's visitors twice. Only the app's owner (and admins) can see them.
+  - **Active now** is the number of visitors who loaded a page or made a `/pb` call in the last 5 minutes, kept only
+    in memory (no heartbeat, nothing added to the app); the highest it reached each hour is stored as that hour's
+    **peak**. Someone reading a page for more than 5 minutes without any database call drops out, so it's a floor.
+    Memory stays small: about 70 bytes per active visitor, capped at 50,000 per app (3.5 MB).
+  - **API health**: every `/pb` response counts as a request per hour, and 5xx responses (from PocketBase or the
+    proxy) as errors. Counting never changes what the proxy allows. A realtime connection counts when it closes.
+  - **Accounts** are the records of the app's own auth collections (its `users`), counted from the database when
+    you ask, with signups per day over the range. Nothing extra is stored.
 - One Docker container runs Caddy, the Cubby server (Node.js) and PocketBase, with a single data volume.
 - Each server serves its own CLI (`/cli.tgz`), agent docs (`/docs.md`) and skill installer (`/skill.sh`), so agents
   always follow the rules of the server they're deploying to.
@@ -301,7 +366,7 @@ npm run dev       # http://localhost:8080 · apps at http://<app>.localhost:8080
 ```
 
 ```
-server/    control API, app hosting, database proxy, dashboard (public/)
+server/    control API, app hosting, database proxy, dashboard (public/: an HTML shell, a stylesheet and ES modules)
 cli/       the cubby CLI, the app template (template/) and the agent skill (skill/)
 docker/    container entrypoint and the cubby-server management script
 docs/      this project's documentation site (GitHub Pages)
@@ -341,5 +406,10 @@ for groups who trust each other, not as a hostile multi-tenant cloud.
 - All apps share one SQLite database, which suits a group of friends or a small team.
 - Jobs are for groups who trust each other too: the sandbox stops accidents and snooping between apps, not a
   determined attacker with an account. At most two run at once per server.
+- Agents are managed from the CLI (`cubby agents`); the dashboard doesn't list them yet. "Last seen" is updated at
+  most once a minute per agent.
+- The activity log keeps 30 days (pruned nightly) and shows your own actions. An admin's actions on your app (like
+  deleting it) are in the admin's log, not yours. An app's history stays after the app is deleted, until it ages
+  out; deleting a user deletes their history.
 - Not yet supported: server code that runs per request (API endpoints, hooks), custom domains per app, single sign-on
   across apps, app emails.

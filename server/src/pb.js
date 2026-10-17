@@ -9,6 +9,10 @@ export const admin = new PocketBase(config.pb.url);
 admin.autoCancellation(false);
 
 let child;
+const shutdownHooks = [];
+
+// Work to finish on SIGINT/SIGTERM before PocketBase stops (only when this process runs PocketBase).
+export const onShutdown = (fn) => { shutdownHooks.push(fn); };
 
 export async function startPocketBase() {
   if (config.pb.spawn) {
@@ -21,7 +25,14 @@ export async function startPocketBase() {
       console.error(`PocketBase exited with code ${code}`);
       process.exit(1);
     });
-    for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { child.kill(); process.exit(0); });
+    for (const sig of ['SIGINT', 'SIGTERM']) {
+      process.on(sig, async () => {
+        // Hooks (the metrics flush) still need PocketBase, so they run first, for a few seconds at most.
+        await Promise.race([Promise.allSettled(shutdownHooks.map((fn) => fn())), new Promise((r) => setTimeout(r, 3000))]);
+        child.kill();
+        process.exit(0);
+      });
+    }
   }
   await connectAdmin();
   await ensurePlatformCollections();
@@ -104,7 +115,8 @@ async function ensurePlatformCollections() {
     indexes: ['CREATE UNIQUE INDEX idx_cubby_projects_slug ON cubby_projects (slug)'],
   });
 
-  // One token per user. Stored in plain text (superuser-only collection) so the dashboard can show it again.
+  // A user's manual token (empty kind) plus one key per agent (kind "agent", one per approved `cubby login`).
+  // Stored in plain text (superuser-only collection) so the dashboard can show the manual token again.
   await upsertCollection({
     name: 'cubby_api_keys',
     type: 'base',
@@ -112,6 +124,11 @@ async function ensurePlatformCollections() {
     fields: [
       { name: 'owner', type: 'relation', collectionId: users.id, maxSelect: 1, required: true, cascadeDelete: true },
       { name: 'label', type: 'text', max: 100 },
+      { name: 'kind', type: 'text', max: 20 },
+      { name: 'tool', type: 'text', max: 40 },
+      { name: 'machine', type: 'text', max: 60 },
+      // Reserved for limiting what a key may do; empty means full access. Nothing reads it yet.
+      { name: 'scopes', type: 'json' },
       { name: 'key', type: 'text' },
       { name: 'key_hash', type: 'text', required: true },
       { name: 'last_used', type: 'date' },
@@ -175,6 +192,27 @@ async function ensurePlatformCollections() {
     indexes: ['CREATE INDEX idx_cubby_job_runs_job ON cubby_job_runs (project, job, started)'],
   });
 
+  // App metrics (metrics.js): per-app counts merged on every flush. "hour" buckets have views, /pb requests and 5xx
+  // errors (added up) and the peak of visitors active at once (a max); "day" (UTC) buckets have views and unique
+  // visitors. Fields a period doesn't use stay 0. Never holds IPs.
+  await upsertCollection({
+    name: 'cubby_metrics',
+    type: 'base',
+    ...LOCKED,
+    fields: [
+      { name: 'project', type: 'relation', collectionId: projects.id, maxSelect: 1, required: true, cascadeDelete: true },
+      { name: 'period', type: 'text', required: true, max: 10 },
+      { name: 'start', type: 'date', required: true },
+      { name: 'views', type: 'number', onlyInt: true },
+      { name: 'visitors', type: 'number', onlyInt: true },
+      { name: 'peak_active', type: 'number', onlyInt: true },
+      { name: 'api_requests', type: 'number', onlyInt: true },
+      { name: 'api_errors', type: 'number', onlyInt: true },
+      ...autodates,
+    ],
+    indexes: ['CREATE UNIQUE INDEX idx_cubby_metrics_bucket ON cubby_metrics (project, period, start)'],
+  });
+
   // App secrets for jobs (secrets.js), encrypted with the server key.
   await upsertCollection({
     name: 'cubby_app_env',
@@ -187,5 +225,27 @@ async function ensurePlatformCollections() {
       ...autodates,
     ],
     indexes: ['CREATE UNIQUE INDEX idx_cubby_app_env_key ON cubby_app_env (project, `key`)'],
+  });
+
+  // Activity log (activity.js): one small row per mutation, pruned after 30 days. `app` is a slug, not a relation,
+  // so an app's history outlives it; `agent` is a key id plus its name at the time, so it outlives the key too.
+  // Empty agent = the manual token (the dashboard, or `cubby login --token`). `at` is set by the server.
+  await upsertCollection({
+    name: 'cubby_activity',
+    type: 'base',
+    ...LOCKED,
+    fields: [
+      { name: 'user', type: 'relation', collectionId: users.id, maxSelect: 1, required: true, cascadeDelete: true },
+      { name: 'agent', type: 'text', max: 40 },
+      { name: 'agent_name', type: 'text', max: 100 },
+      { name: 'app', type: 'text', max: 40 },
+      { name: 'action', type: 'text', required: true, max: 40 },
+      { name: 'summary', type: 'text', max: 300 },
+      { name: 'at', type: 'date', required: true },
+    ],
+    indexes: [
+      'CREATE INDEX idx_cubby_activity_user ON cubby_activity (user, at)',
+      'CREATE INDEX idx_cubby_activity_at ON cubby_activity (at)',
+    ],
   });
 }

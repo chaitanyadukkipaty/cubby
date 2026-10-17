@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { startServer, ADMIN, SIGNUP_CODE, ROOT } from '../helpers/server.js';
 import { api, signup, adminToken, deployTo } from '../helpers/integration.js';
 
-let srv, anon, adminCall, alice, aliceToken, bob, bobToken;
+let srv, anon, adminCall, alice, aliceToken, bob, bobToken, erin, fay, gus;
 before(async () => {
   srv = await startServer({ CUBBY_SERVER_NAME: '  Test   Cubby ' });
   anon = api(srv.url);
@@ -15,6 +15,10 @@ before(async () => {
   alice = api(srv.url, aliceToken);
   bobToken = await signup(srv.url, 'bob@test.dev');
   bob = api(srv.url, bobToken);
+  // For the agents tests, which run after the admin tests rotate the signup code.
+  erin = await signup(srv.url, 'erin@test.dev');
+  fay = await signup(srv.url, 'fay@test.dev');
+  gus = await signup(srv.url, 'gus@test.dev');
 });
 after(() => srv?.stop());
 
@@ -25,7 +29,7 @@ describe('bootstrap', () => {
     // Built without git info (tests/helpers/server.js), so the plain package.json version and no commit.
     const pkgVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
     assert.equal(info.data.version, pkgVersion);
-    assert.deepEqual(info.data, { name: 'Test Cubby', version: pkgVersion, commit: null, open_signup: false, https: false, base_domain: `localhost:${srv.port}`, features: ['jobs'] });
+    assert.deepEqual(info.data, { name: 'Test Cubby', version: pkgVersion, commit: null, open_signup: false, https: false, base_domain: `localhost:${srv.port}`, features: ['jobs', 'metrics'] });
     assert.equal(info.headers.get('x-cubby-version'), info.data.version);
     const me = await adminCall('GET', '/api/me');
     assert.equal(me.data.email, ADMIN.email);
@@ -207,7 +211,14 @@ describe('admin', () => {
 });
 
 describe('browser-approval login', () => {
-  test('start → approve as a user → poll returns that user\'s token, once', async () => {
+  // Start → approve as `user` → poll; returns the token the CLI would get.
+  async function deviceLogin(user, body) {
+    const d = (await anon('POST', '/api/device/start', { body })).data;
+    assert.equal((await user('POST', '/api/device/approve', { body: { code: d.user_code } })).status, 200);
+    return (await anon('POST', '/api/device/poll', { body: { device_id: d.device_id } })).data.token;
+  }
+
+  test('start → approve as a user → poll returns a new key for that agent, once', async () => {
     const d = (await anon('POST', '/api/device/start')).data;
     assert.match(d.verify_url, new RegExp(`^${srv.url}/connect\\?code=`));
     assert.equal((await anon('GET', `/api/device/${d.user_code}`)).status, 200);
@@ -215,9 +226,111 @@ describe('browser-approval login', () => {
     assert.equal((await anon('POST', '/api/device/approve', { body: { code: d.user_code } })).status, 401, 'approval needs a logged-in user');
     assert.equal((await alice('POST', '/api/device/approve', { body: { code: d.user_code } })).status, 200);
     const p = (await anon('POST', '/api/device/poll', { body: { device_id: d.device_id } })).data;
-    assert.deepEqual(p, { status: 'approved', token: aliceToken });
+    assert.equal(p.status, 'approved');
+    assert.match(p.token, /^hk_/);
+    assert.notEqual(p.token, aliceToken, 'an agent gets its own key, not the manual token');
+    assert.equal((await api(srv.url, p.token)('GET', '/api/me')).data.email, 'alice@test.dev');
     assert.equal((await anon('POST', '/api/device/poll', { body: { device_id: d.device_id } })).status, 410);
     assert.equal((await anon('GET', '/api/device/ZZZZ-ZZZZ')).status, 404);
+  });
+  test('/connect learns which agent is asking from the hint the CLI sent', async () => {
+    const d = (await anon('POST', '/api/device/start', { body: { tool: 'Claude Code', machine: 'chaitanya-mbp' } })).data;
+    const info = await alice('GET', `/api/device/${d.user_code}`);
+    assert.deepEqual(info.data, { ok: true, agent: { name: 'Claude Code · chaitanya-mbp', tool: 'Claude Code', machine: 'chaitanya-mbp' } });
+    assert.deepEqual((await anon('GET', `/api/device/${d.user_code}`)).data, { ok: true }, 'no hostname for anyone without an account');
+    assert.deepEqual((await api(srv.url, 'hk_not_a_real_token')('GET', `/api/device/${d.user_code}`)).data, { ok: true }, 'an invalid token is just anonymous');
+    const old = (await anon('POST', '/api/device/start')).data;
+    assert.equal((await alice('GET', `/api/device/${old.user_code}`)).data.agent, null, 'older CLIs send no hint');
+  });
+  test('two logins from two machines are two agents with distinct, working keys; the manual token stays put', async () => {
+    const asErin = api(srv.url, erin);
+    const one = await deviceLogin(asErin, { tool: 'Claude Code', machine: 'laptop' });
+    const two = await deviceLogin(asErin, { tool: 'Codex', machine: 'desktop' });
+    const legacy = await deviceLogin(asErin);
+    assert.equal(new Set([erin, one, two, legacy]).size, 4);
+    for (const t of [erin, one, two, legacy]) assert.equal((await api(srv.url, t)('GET', '/api/me')).status, 200);
+    // Dashboard login still hands back the manual token, not the newest agent's key.
+    assert.equal((await anon('POST', '/api/login', { body: { email: 'erin@test.dev', password: 'password1234' } })).data.key, erin);
+
+    const list = await api(srv.url, two)('GET', '/api/agents');
+    assert.equal(list.status, 200);
+    const today = new Date().toISOString().slice(0, 10);
+    assert.deepEqual(list.data.map(({ name, tool, machine, manual, current }) => ({ name, tool, machine, manual, current })), [
+      { name: 'Manual token', tool: null, machine: null, manual: true, current: false },
+      { name: 'Claude Code · laptop', tool: 'Claude Code', machine: 'laptop', manual: false, current: false },
+      { name: 'Codex · desktop', tool: 'Codex', machine: 'desktop', manual: false, current: true },
+      { name: `Agent · ${today}`, tool: null, machine: null, manual: false, current: false },
+    ]);
+    assert.ok(list.data.every((a) => a.id && a.created && !('key' in a)), 'keys are never listed');
+    assert.equal((await asErin('GET', '/api/agents')).data[0].current, true, 'the manual token is current when used');
+    assert.equal((await alice('GET', '/api/agents')).data.filter((a) => a.name === 'Codex · desktop').length, 0, 'only your own agents');
+    assert.equal((await anon('GET', '/api/agents')).status, 401);
+  });
+  test('an agent\'s last use is recorded, but at most once a minute', async () => {
+    const asGus = api(srv.url, gus);
+    const agent = await deviceLogin(asGus, { tool: 'Codex', machine: 'seen' });
+    const seen = async () => (await asGus('GET', '/api/agents')).data.find((a) => a.name === 'Codex · seen').last_used_at;
+    assert.equal(await seen(), null, 'never used yet');
+    assert.equal((await api(srv.url, agent)('GET', '/api/me')).status, 200);
+    const first = await seen();
+    assert.ok(first && Math.abs(Date.parse(first) - Date.now()) < 60_000, `recorded on use: ${first}`);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal((await api(srv.url, agent)('GET', '/api/me')).status, 200);
+    assert.equal(await seen(), first, 'not written again within the minute');
+  });
+  test('an agent can be renamed by its owner, never by anyone else', async () => {
+    const asGus = api(srv.url, gus);
+    const agent = await deviceLogin(asGus, { tool: 'Codex', machine: 'ci-box' });
+    const id = (await asGus('GET', '/api/agents')).data.find((a) => a.name === 'Codex · ci-box').id;
+    const r = await api(srv.url, agent)('PATCH', `/api/agents/${id}`, { body: { name: '  Nightly  CI ' } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.name, 'Nightly CI');
+    assert.equal((await asGus('GET', '/api/agents')).data.find((a) => a.id === id).name, 'Nightly CI');
+    assert.equal((await asGus('PATCH', `/api/agents/${id}`, { body: { name: ' ' } })).status, 400);
+    assert.equal((await alice('PATCH', `/api/agents/${id}`, { body: { name: 'mine now' } })).status, 404, "someone else's agent looks like it doesn't exist");
+    assert.equal((await asGus('PATCH', '/api/agents/nosuchid1234567', { body: { name: 'x' } })).status, 404);
+    const manual = (await asGus('GET', '/api/agents')).data.find((a) => a.manual).id;
+    assert.equal((await asGus('PATCH', `/api/agents/${manual}`, { body: { name: 'x' } })).status, 400, 'the manual token is not an agent');
+    assert.equal((await asGus('GET', '/api/agents')).data.find((a) => a.id === id).name, 'Nightly CI');
+  });
+  test('revoking an agent cuts off its key at once; the owner\'s other agents keep working', async () => {
+    const asGus = api(srv.url, gus);
+    const laptop = await deviceLogin(asGus, { tool: 'Claude Code', machine: 'laptop' });
+    const desktop = await deviceLogin(asGus, { tool: 'Cursor', machine: 'desktop' });
+    const idOf = async (name) => (await asGus('GET', '/api/agents')).data.find((a) => a.name === name)?.id;
+    const laptopId = await idOf('Claude Code · laptop');
+
+    assert.equal((await alice('DELETE', `/api/agents/${laptopId}`)).status, 404, "can't revoke someone else's agent");
+    assert.equal((await api(srv.url, laptop)('GET', '/api/me')).status, 200);
+
+    const r = await api(srv.url, desktop)('DELETE', `/api/agents/${laptopId}`);
+    assert.equal(r.status, 200, 'an agent may revoke another agent of the same person');
+    assert.deepEqual(r.data, { ok: true, id: laptopId, current: false });
+    assert.equal((await api(srv.url, laptop)('GET', '/api/me')).status, 401, 'revoked immediately');
+    assert.equal((await api(srv.url, desktop)('GET', '/api/me')).status, 200);
+    assert.equal((await asGus('GET', '/api/me')).status, 200, 'the manual token keeps working');
+    assert.equal(await idOf('Claude Code · laptop'), undefined);
+    assert.equal((await asGus('DELETE', `/api/agents/${laptopId}`)).status, 404, 'already gone');
+
+    const desktopId = await idOf('Cursor · desktop');
+    assert.deepEqual((await api(srv.url, desktop)('DELETE', `/api/agents/${desktopId}`)).data, { ok: true, id: desktopId, current: true }, 'an agent may revoke itself');
+    assert.equal((await api(srv.url, desktop)('GET', '/api/me')).status, 401);
+
+    const manual = (await asGus('GET', '/api/agents')).data.find((a) => a.manual).id;
+    const refused = await asGus('DELETE', `/api/agents/${manual}`);
+    assert.equal(refused.status, 400, 'the manual token is replaced with Regenerate, not revoked');
+    assert.match(refused.data.error, /Regenerate/);
+    assert.equal((await asGus('GET', '/api/me')).status, 200);
+  });
+  test('regenerating rotates only the manual token; agents keep their own keys', async () => {
+    const agent = await deviceLogin(api(srv.url, fay), { tool: 'Cursor', machine: 'box' });
+    const r = await api(srv.url, fay)('POST', '/api/token/regenerate');
+    assert.match(r.data.token, /^hk_/);
+    assert.notEqual(r.data.token, fay);
+    assert.equal((await api(srv.url, fay)('GET', '/api/me')).status, 401, 'the old manual token stops working');
+    assert.equal((await api(srv.url, agent)('GET', '/api/me')).status, 200, 'agents are revoked one at a time instead');
+    assert.deepEqual((await api(srv.url, r.data.token)('GET', '/api/agents')).data.map((a) => a.name), ['Cursor · box', 'Manual token']);
+    assert.equal((await anon('POST', '/api/login', { body: { email: 'fay@test.dev', password: 'password1234' } })).data.key, r.data.token);
   });
 });
 
@@ -234,6 +347,29 @@ describe('public pages and files', () => {
     assert.ok(r.text.includes(`curl -fsSL ${srv.url}/skill.sh | sh`));
     assert.ok(r.text.includes(`Docs:  ${srv.url}/docs.md`));
     assert.match((await anon('GET', '/connect', { headers: { 'user-agent': 'curl/8.7.1' } })).headers.get('content-type'), /text\/html/, '/connect is only ever opened in a browser');
+  });
+  test('every dashboard page is the same shell, so deep links reload; its stylesheet and modules are cached forever', async () => {
+    const shell = await anon('GET', '/', { headers: { 'user-agent': BROWSER_UA } });
+    for (const p of ['/apps', '/apps/', '/apps/some-app', '/agents', '/explore', '/admin']) {
+      const r = await anon('GET', p, { headers: { 'user-agent': 'curl/8.7.1' } });
+      assert.equal(r.status, 200, p);
+      assert.match(r.headers.get('content-type'), /^text\/html/, p);
+      assert.equal(r.text, shell.text, p);
+    }
+    const assets = [...shell.text.matchAll(/(?:href|src)="(\/static\/[0-9a-f]+\/[^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(assets.map((a) => a.split('/').slice(3).join('/')).sort(), ['app.css', 'js/main.js']);
+    for (const a of assets) {
+      const r = await anon('GET', a);
+      assert.equal(r.status, 200, a);
+      assert.match(r.headers.get('content-type'), a.endsWith('.css') ? /^text\/css/ : /^text\/javascript/);
+      assert.match(r.headers.get('cache-control'), /immutable/);
+    }
+    const main = assets.find((a) => a.endsWith('main.js'));
+    const sibling = main.replace(/main\.js$/, 'helpers.js');
+    assert.equal((await anon('GET', sibling)).status, 200, 'modules import each other by relative URL under the same prefix');
+    assert.equal((await anon('GET', main.replace(/\/static\/[0-9a-f]+\//, '/static/000000000000/'))).status, 404, 'an old prefix is gone');
+    for (const p of ['/apps/Bad_Slug', '/apps/a/b', '/static/x', '/index.html', '/app.css']) assert.equal((await anon('GET', p)).status, 404, p);
+    assert.equal((await anon('POST', '/apps')).status, 404, 'pages are GET only');
   });
   test('dashboard, connect page, docs, skill, CLI tarball', async () => {
     for (const p of ['/', '/connect']) {

@@ -47,6 +47,63 @@ export function deployParams({ message, unlisted, listed, description } = {}) {
 export const formatDeploys = (list) =>
   list.map((d) => `${d.current ? '*' : ' '} ${d.id}  ${d.created}  ${d.files} files  ${d.client ? `[${d.client}] ` : ''}${d.message}`).join('\n') || 'No deploys';
 
+// --- Agents: each `cubby login` becomes its own named key on the server ---
+// The agent tool running this CLI, from the environment it sets.
+export function detectTool(env) {
+  const has = (prefix) => Object.keys(env).some((k) => k.startsWith(prefix) && env[k]);
+  if (env.CLAUDECODE) return 'Claude Code';
+  if (has('CODEX_')) return 'Codex';
+  if (has('CURSOR_')) return 'Cursor';
+  return 'Terminal';
+}
+
+// What `cubby login` tells the server about itself, so it can name the agent ("Claude Code · chaitanya-mbp").
+// An explicit --client / CUBBY_CLIENT (the name recorded on deploys) wins over detection.
+export const loginHint = ({ client, env, hostname }) => ({
+  tool: client || env.CUBBY_CLIENT || detectTool(env),
+  machine: hostname.replace(/\.local$/i, ''),
+});
+
+// "5 min ago" from a key's last_used_at (the server writes it at most once a minute, hence "just now").
+export function lastSeen(at, now = Date.now()) {
+  const t = Date.parse(at ?? '');
+  if (Number.isNaN(t)) return 'never';
+  const units = [['day', 86_400_000], ['hour', 3_600_000], ['min', 60_000]];
+  for (const [unit, ms] of units) {
+    const n = Math.floor((now - t) / ms);
+    if (n >= 1) return `${n} ${unit}${n > 1 && unit !== 'min' ? 's' : ''} ago`;
+  }
+  return 'just now';
+}
+
+export function formatAgents(list, now = Date.now()) {
+  if (!list.length) return 'No agents yet. Connect one with `cubby login <server-url>`.';
+  const cols = [
+    ['ID', (a) => a.id], ['NAME', (a) => a.name], ['TOOL', (a) => a.tool ?? '-'], ['MACHINE', (a) => a.machine ?? '-'],
+    ['CREATED', (a) => String(a.created).slice(0, 10)],
+  ];
+  const widths = cols.map(([head, get]) => Math.max(head.length, ...list.map((a) => get(a).length)) + 2);
+  const row = (mark, cells) => `${mark} ${cells.map((c, i) => c.padEnd(widths[i])).join('')}`;
+  return [
+    row(' ', cols.map(([head]) => head)) + 'LAST SEEN',
+    ...list.map((a) => row(a.current ? '*' : ' ', cols.map(([, get]) => get(a))) + lastSeen(a.last_used_at, now)),
+    '* = this agent. Rename one with `cubby agents rename <id> <name>`, revoke it with `cubby agents revoke <id> --yes`.',
+  ].join('\n');
+}
+
+// --- Activity: who did what, newest first. `users` adds an email column (admins see everyone's) ---
+export function formatActivity(list, { users = false } = {}) {
+  if (!list.length) return 'No activity in the last 30 days';
+  const cols = [
+    (r) => String(r.at).replace('T', ' ').slice(0, 16),
+    ...(users ? [(r) => r.user ?? '-'] : []),
+    (r) => r.app ?? '-',
+    (r) => r.agent?.name ?? 'dashboard',
+  ];
+  const widths = cols.map((get) => Math.max(...list.map((r) => get(r).length)) + 2);
+  return list.map((r) => cols.map((get, i) => get(r).padEnd(widths[i])).join('') + r.summary).join('\n');
+}
+
 export const formatProjects = (list) =>
   list.map((p) => `${p.slug.padEnd(24)} ${p.url}${p.current_deploy ? '' : '  (not deployed)'}`).join('\n') || 'No projects yet';
 
@@ -258,6 +315,27 @@ export const formatJobs = (list) =>
 export const formatRun = (r) => `${r.job} ${r.id}  ${r.status}  ${r.trigger}  ${r.started}  ${duration(r.duration_ms)}\n${r.log?.trimEnd() || '(no output)'}`;
 
 export const formatEnv = (list) => list.map((e) => `${e.key.padEnd(32)} set ${e.updated}`).join('\n') || 'No secrets. Add one with: cubby env set NAME=value';
+
+const counts = (b) => `${String(b.views).padStart(6)} views  ${String(b.visitors).padStart(4)} visitors`;
+
+// `cubby metrics <app>`: visitors are unique per UTC day, so each day is listed with its own count (and signups: the same days).
+export function formatMetrics(r) {
+  const signups = new Map(r.accounts.days.map((d) => [d.start, d.signups]));
+  return [
+    `${r.app}: ${r.views} views, ${r.visitors} visitors in the last ${r.range}`,
+    `  Active now ${r.active_now}, peak ${r.peak_active}`,
+    `  API: ${r.api_requests} requests, ${r.api_errors} errors (${(r.api_error_rate * 100).toFixed(1)}%)`,
+    `  Accounts: ${r.accounts.total}, ${r.accounts.new} new`,
+    ...r.days.map((d) => `  ${d.start.slice(0, 10)} ${counts(d)}  ${String(signups.get(d.start)).padStart(4)} signups`),
+  ].join('\n');
+}
+
+// `cubby metrics`: every app of yours.
+export function formatMetricsList(list) {
+  if (!list.length) return 'No apps yet. Create one with `cubby init <app>`.';
+  const width = Math.max(...list.map((a) => a.app.length));
+  return [`Last ${list[0].range}`, ...list.map((a) => `  ${a.app.padEnd(width)} ${counts(a)}  ${String(a.active_now).padStart(3)} active  ${String(a.api_errors).padStart(4)} API errors`)].join('\n');
+}
 
 // `cubby env set NAME=value`
 export function parseEnvAssignment(text) {

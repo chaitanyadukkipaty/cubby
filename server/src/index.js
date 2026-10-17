@@ -1,20 +1,25 @@
 import http from 'node:http';
+import { fileURLToPath } from 'node:url';
 import { readFile, statfs } from 'node:fs/promises';
 import { config, SLUG_RE, prefixFor } from './config.js';
-import { HttpError, sendJson, readJson, readBody, rateLimiter } from './http.js';
-import { admin, startPocketBase } from './pb.js';
-import { signup, login, authenticate, tokenFor, regenerateToken } from './auth.js';
+import { HttpError, sendJson, readJson, readBody, rateLimiter, clientIp } from './http.js';
+import { admin, startPocketBase, onShutdown } from './pb.js';
+import { signup, login, authenticate, regenerateToken, listAgents, renameAgent, revokeAgent } from './auth.js';
 import { applySchema, readSchema, dropFromSchema, projectCollections, deleteCollections } from './schema.js';
 import { createDeploy, listDeploys, oldDeploys, deleteDeploys, rollback, removeSite, serveSite, sendPage, appDiskUsage, dirSize } from './sites.js';
 import { proxyPocketBase } from './proxy.js';
 import { bootstrap, getSettings, updateSettings, newSignupCode } from './settings.js';
-import { scheduleBackups, createBackupRunner, runBackup } from './backups.js';
+import { scheduleBackups, createBackupRunner, runMaintenance } from './backups.js';
 import { scanStorage, createTtlCache, listBackups, checkBackupDelete, planRetention, deleteBackup } from './storage.js';
 import { listJobs, runNow, jobRuns, setPaused, allJobs, scheduleJobs, recoverRuns, deployJobs } from './jobs.js';
 import { listEnv, setEnv, unsetEnv } from './secrets.js';
+import { createMetrics, pocketbaseStore, countsAsView, isPerson, parseRange, metricsClock, appAccounts } from './metrics.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
+import { recordActivity, listActivity } from './activity.js';
+import { loadDashboard } from './dashboard.js';
+import { matchRoute } from '../public/js/routes.js';
 import { commandsMarkdown } from '../../cli/src/commands.js';
 import { createUpdateChecker, fetchLatestRelease, scheduleUpdateChecks, updateView } from './updates.js';
 
@@ -52,6 +57,17 @@ function requireAdmin(user) {
   if (!user.is_admin) throw new HttpError(403, 'Admins only');
 }
 
+// Page views, visitors, active now and /pb health per app: counted in memory, flushed to cubby_metrics every minute.
+const metrics = createMetrics({ store: pocketbaseStore(admin), now: metricsClock(process.env.CUBBY_TEST_CLOCK_FILE) });
+
+// Owners see their apps' metrics; admins see any app's.
+async function metricsProject(user, slug) {
+  if (!user.is_admin) return ownedProject(user, slug);
+  const project = await findProject(slug);
+  if (!project) throw new HttpError(404, `App "${slug}" not found`);
+  return project;
+}
+
 const authLimit = rateLimiter(10, 60_000);
 const deviceLimit = rateLimiter(20, 60_000);
 
@@ -64,11 +80,15 @@ const routes = [
   }],
   ['POST', '/api/signup', 'public', async (req) => (authLimit(req), signup(await readJson(req)))],
   ['POST', '/api/login', 'public', async (req) => (authLimit(req), login(await readJson(req)))],
-  ['POST', '/api/device/start', 'public', async (req) => (deviceLimit(req), startDevice(config.publicUrl))],
+  ['POST', '/api/device/start', 'public', async (req) => (deviceLimit(req), startDevice(config.publicUrl, Date.now(), logic.agentHint(await readJson(req, 4096))))],
   ['POST', '/api/device/poll', 'public', async (req) => pollDevice((await readJson(req)).device_id)],
-  ['GET', '/api/device/:code', 'public', async (req, user, { code }) => deviceInfo(code)],
+  ['GET', '/api/device/:code', 'optional', async (req, user, { code }) => deviceInfo(code, Date.now(), user)],
   ['POST', '/api/device/approve', 'user', async (req, user) => approveDevice(user, (await readJson(req)).code)],
-  ['GET', '/api/me', 'user', async (req, user) => ({ ...user, key: undefined, token: user.key })],
+  ['GET', '/api/me', 'user', async (req, user) => ({ ...user, key: undefined, keyId: undefined, agent: undefined, token: user.key })],
+  ['GET', '/api/agents', 'user', async (req, user) => listAgents(user)],
+  ['PATCH', '/api/agents/:id', 'user', async (req, user, { id }) => renameAgent(user, id, (await readJson(req)).name)],
+  ['DELETE', '/api/agents/:id', 'user', async (req, user, { id }) => revokeAgent(user, id)],
+  ['GET', '/api/activity', 'user', async (req, user, params, url) => listActivity(user, Object.fromEntries(url.searchParams))],
   ['POST', '/api/token/regenerate', 'user', async (req, user) => ({ token: await regenerateToken(user.id) })],
 
   ['GET', '/api/projects', 'user', async (req, user) => {
@@ -82,15 +102,23 @@ const routes = [
     const count = (await admin.collection('cubby_projects').getList(1, 1, { filter: admin.filter('owner = {:u}', { u: user.id }) })).totalItems;
     if (count >= max_apps_per_user) throw new HttpError(403, `You've reached the limit of ${max_apps_per_user} apps. Delete one or ask the admin.`);
     if (await findProject(slug)) throw new HttpError(409, `"${slug}" is taken`);
-    return projectView(await admin.collection('cubby_projects').create({ slug, name: name || slug, description: description ?? '', owner: user.id }));
+    const project = await admin.collection('cubby_projects').create({ slug, name: name || slug, description: description ?? '', owner: user.id });
+    await recordActivity(user, { action: 'app.create', app: slug, summary: `Created app "${slug}"` });
+    return projectView(project);
   }],
   ['GET', '/api/projects/:slug', 'user', async (req, user, { slug }) => projectView(await ownedProject(user, slug))],
   ['PATCH', '/api/projects/:slug', 'user', async (req, user, { slug }) => {
     const project = await ownedProject(user, slug);
     const patch = logic.projectPatch(await readJson(req));
-    return projectView(await admin.collection('cubby_projects').update(project.id, patch));
+    const updated = await admin.collection('cubby_projects').update(project.id, patch);
+    if (Object.keys(patch).length) await recordActivity(user, { action: 'app.update', app: slug, summary: logic.patchSummary(slug, patch) });
+    return projectView(updated);
   }],
-  ['DELETE', '/api/projects/:slug', 'user', async (req, user, { slug }) => (await removeProject(await ownedProject(user, slug)), { ok: true })],
+  ['DELETE', '/api/projects/:slug', 'user', async (req, user, { slug }) => {
+    await removeProject(await ownedProject(user, slug));
+    await recordActivity(user, { action: 'app.delete', app: slug, summary: `Deleted app "${slug}"` });
+    return { ok: true };
+  }],
 
   ['GET', '/api/projects/:slug/schema', 'user', async (req, user, { slug }) => (await ownedProject(user, slug), readSchema(slug))],
   ['PUT', '/api/projects/:slug/schema', 'user', async (req, user, { slug }) => {
@@ -98,12 +126,14 @@ const routes = [
     const body = await readJson(req, 2 * 1024 * 1024);
     const changes = await applySchema(slug, body);
     if (typeof body.hash === 'string') await admin.collection('cubby_projects').update(project.id, { schema_hash: body.hash });
+    await recordActivity(user, { action: 'schema.push', app: slug, summary: logic.schemaSummary(changes) });
     return changes;
   }],
   ['DELETE', '/api/projects/:slug/schema/:target', 'user', async (req, user, { slug, target }) => {
     const project = await ownedProject(user, slug);
     const result = await dropFromSchema(slug, target);
     await admin.collection('cubby_projects').update(project.id, { schema_hash: '' });
+    await recordActivity(user, { action: 'schema.drop', app: slug, summary: `Dropped ${target} and its data` });
     return result;
   }],
 
@@ -115,17 +145,23 @@ const routes = [
     const deploy = await createDeploy(project, body, url.searchParams.get('message') ?? '', logic.deployClient(req.headers['x-cubby-client']));
     const patch = logic.deployPatch(url.searchParams);
     if (Object.keys(patch).length) await admin.collection('cubby_projects').update(project.id, patch);
+    await recordActivity(user, { action: 'deploy', app: slug, summary: `Deployed ${deploy.id} (${deploy.files} files)` });
     return { ...deploy, url: appUrl(slug) };
   }],
   ['POST', '/api/projects/:slug/rollback', 'user', async (req, user, { slug }) => {
     const project = await ownedProject(user, slug);
     const { deploy } = await readJson(req);
     await rollback(project, deploy);
+    await recordActivity(user, { action: 'rollback', app: slug, summary: `Rolled back to ${deploy}` });
     return { ok: true, current_deploy: deploy, url: appUrl(slug) };
   }],
 
   ['GET', '/api/projects/:slug/jobs', 'user', async (req, user, { slug }) => listJobs(await ownedProject(user, slug))],
-  ['POST', '/api/projects/:slug/jobs/:name/run', 'user', async (req, user, { slug, name }) => runNow(await ownedProject(user, slug), name)],
+  ['POST', '/api/projects/:slug/jobs/:name/run', 'user', async (req, user, { slug, name }) => {
+    const run = await runNow(await ownedProject(user, slug), name);
+    await recordActivity(user, { action: 'job.run', app: slug, summary: `Ran job "${name}" now (${run.status})` });
+    return run;
+  }],
   ['GET', '/api/projects/:slug/jobs/:name/runs', 'user', async (req, user, { slug, name }, url) => (
     jobRuns(await ownedProject(user, slug), name, { limit: url.searchParams.get('limit'), id: url.searchParams.get('run') })
   )],
@@ -133,12 +169,42 @@ const routes = [
     const project = await ownedProject(user, slug);
     const { paused } = await readJson(req);
     if (typeof paused !== 'boolean') throw new HttpError(400, 'Body must be { "paused": true | false }');
-    return setPaused(project, name, paused);
+    const result = await setPaused(project, name, paused);
+    await recordActivity(user, { action: paused ? 'job.pause' : 'job.resume', app: slug, summary: `${paused ? 'Paused' : 'Resumed'} job "${name}"` });
+    return result;
   }],
 
   ['GET', '/api/projects/:slug/env', 'user', async (req, user, { slug }) => listEnv(await ownedProject(user, slug))],
-  ['PUT', '/api/projects/:slug/env/:key', 'user', async (req, user, { slug, key }) => setEnv(await ownedProject(user, slug), key, (await readJson(req, 64 * 1024)).value)],
-  ['DELETE', '/api/projects/:slug/env/:key', 'user', async (req, user, { slug, key }) => unsetEnv(await ownedProject(user, slug), key)],
+  // The activity log gets the key name only: secret values must never be logged.
+  ['PUT', '/api/projects/:slug/env/:key', 'user', async (req, user, { slug, key }) => {
+    const result = await setEnv(await ownedProject(user, slug), key, (await readJson(req, 64 * 1024)).value);
+    await recordActivity(user, { action: 'env.set', app: slug, summary: `${result.created ? 'Added' : 'Changed'} secret ${key}` });
+    return result;
+  }],
+  ['DELETE', '/api/projects/:slug/env/:key', 'user', async (req, user, { slug, key }) => {
+    const result = await unsetEnv(await ownedProject(user, slug), key);
+    await recordActivity(user, { action: 'env.unset', app: slug, summary: `Removed secret ${key}` });
+    return result;
+  }],
+
+  ['GET', '/api/projects/:slug/metrics', 'user', async (req, user, { slug }, url) => {
+    const range = url.searchParams.get('range') || '24h';
+    const hours = parseRange(range);
+    const project = await metricsProject(user, slug);
+    const report = (await metrics.report([project.id], hours))[project.id];
+    const accounts = await appAccounts(admin, prefixFor(project.slug), Date.parse(report.from), Date.parse(report.to));
+    return { app: project.slug, range, ...report, accounts };
+  }],
+  ['GET', '/api/metrics', 'user', async (req, user, params, url) => {
+    const range = url.searchParams.get('range') || '24h';
+    const hours = parseRange(range);
+    const list = await admin.collection('cubby_projects').getFullList({ filter: admin.filter('owner = {:u}', { u: user.id }), sort: 'slug' });
+    const report = await metrics.report(list.map((p) => p.id), hours);
+    return list.map((p) => {
+      const { from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate } = report[p.id];
+      return { app: p.slug, name: p.name, range, from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate };
+    });
+  }],
 
   ['GET', '/api/gallery', 'user', async () => {
     const list = await admin.collection('cubby_projects').getFullList({ filter: 'unlisted = false && current_deploy != ""', sort: '-last_deployed', expand: 'owner' });
@@ -189,14 +255,17 @@ const routes = [
     if (id === user.id) throw new HttpError(400, "You can't disable your own account");
     const { disabled } = await readJson(req);
     const u = await admin.collection('users').update(id, { disabled: Boolean(disabled) }).catch(orNotFound('User'));
+    await recordActivity(user, { action: u.disabled ? 'admin.user.disable' : 'admin.user.enable', summary: `${u.disabled ? 'Disabled' : 'Enabled'} user ${u.email}` });
     return { id: u.id, disabled: u.disabled };
   }],
   ['DELETE', '/api/admin/users/:id', 'admin', async (req, user, { id }) => {
     if (id === user.id) throw new HttpError(400, "You can't delete your own account");
-    await admin.collection('users').getOne(id).catch(orNotFound('User'));
+    const target = await admin.collection('users').getOne(id).catch(orNotFound('User'));
     const projects = await admin.collection('cubby_projects').getFullList({ filter: admin.filter('owner = {:u}', { u: id }) });
     for (const p of projects) await removeProject(p);
     await admin.collection('users').delete(id);
+    const apps = projects.map((p) => p.slug).join(', ');
+    await recordActivity(user, { action: 'admin.user.delete', summary: `Deleted user ${target.email}${apps ? ` and their apps: ${apps}` : ''}` });
     return { ok: true, deleted_apps: projects.map((p) => p.slug) };
   }],
   ['GET', '/api/admin/apps', 'admin', async () => {
@@ -214,9 +283,10 @@ const routes = [
     const estimate = planRetention(list, asked === null ? keep : logic.settingsPatch({ backup_keep: asked }).backup_keep);
     return { backups: list, ...backups.state(), keep, estimate };
   }],
-  ['POST', '/api/admin/backups', 'admin', async () => {
+  ['POST', '/api/admin/backups', 'admin', async (req, user) => {
     const { promise, ...run } = backups.start();
     promise.catch((err) => console.error('backup failed:', err.message));
+    await recordActivity(user, { action: 'admin.backup.create', summary: `Started a backup (${run.date})` });
     return { started: true, ...run };
   }],
   // Always both files of the pair. The only backup needs ?leave_none=1. Restore stays `cubby-server restore`.
@@ -225,8 +295,10 @@ const routes = [
     const { warning } = checkBackupDelete(list, date, { leaveNone: url.searchParams.get('leave_none') === '1', running: Boolean(backups.state().running) });
     const files = await deleteBackup(admin, config.dataDir, list.find((b) => b.date === date));
     storageCache.clear();
+    await recordActivity(user, { action: 'admin.backup.delete', summary: `Deleted backup ${date}` });
     return { ok: true, deleted: date, files, warning };
   }],
+  ['GET', '/api/admin/activity', 'admin', async (req, user, params, url) => listActivity(user, Object.fromEntries(url.searchParams), { all: true })],
   // Older deploys of any app (kept for rollback), oldest first; never the current one.
   ['GET', '/api/admin/apps/:slug/deploys', 'admin', async (req, user, { slug }) => listDeploys(await adminProject(slug))],
   ['POST', '/api/admin/apps/:slug/deploys/prune', 'admin', async (req, user, { slug }) => {
@@ -238,7 +310,10 @@ const routes = [
     return removeDeploys(project, oldDeploys(await listDeploys(project), { id }));
   }],
   ['DELETE', '/api/admin/apps/:slug', 'admin', async (req, user, { slug }) => {
-    await removeProject(await adminProject(slug));
+    const project = await adminProject(slug);
+    const owner = await admin.collection('users').getOne(project.owner).catch(() => null);
+    await removeProject(project);
+    await recordActivity(user, { action: 'admin.app.delete', app: slug, summary: `Deleted app "${slug}" (owned by ${owner?.email ?? 'unknown'})` });
     return { ok: true };
   }],
 ];
@@ -260,7 +335,8 @@ async function removeDeploys(project, picked) {
 const storageCache = createTtlCache(5 * 60_000);
 // One backup at a time, whether started by an admin or the nightly schedule. A finished backup changes the
 // breakdown, so it drops the cached one. (`cubby-server backup` runs in another process and isn't guarded.)
-const backups = createBackupRunner({ run: () => runBackup().finally(() => storageCache.clear()) });
+// Every backup (nightly or "Back up now") is the nightly maintenance: prune old activity, then back up.
+const backups = createBackupRunner({ run: () => runMaintenance().finally(() => storageCache.clear()) });
 async function computeStorage() {
   const [projects, cols, fs] = await Promise.all([
     admin.collection('cubby_projects').getFullList({ expand: 'owner' }),
@@ -292,7 +368,10 @@ async function handleApi(req, res, url) {
   const match = logic.matchRoute(compiledRoutes, req.method, url.pathname);
   if (!match) throw new HttpError(404, 'Not found');
   const { route, params } = match;
-  const user = route.access === 'public' ? null : await authenticate(req);
+  // 'optional' routes answer everyone but tell a signed-in user more; a bad token there is just anonymous.
+  const user = route.access === 'public' ? null
+    : route.access === 'optional' ? await authenticate(req).catch(() => null)
+    : await authenticate(req);
   if (route.access === 'admin') requireAdmin(user);
   return sendJson(res, 200, await route.handler(req, user, params, url));
 }
@@ -304,14 +383,20 @@ const appSlugFromHost = (host) => logic.appSlugFromHost(host, config.baseDomain)
 async function handleApp(req, res, slug, url) {
   const project = await findProject(slug);
   if (!project) return sendPage(res, 404, 'No app here', `Nothing is deployed at <b>${slug}</b>.`);
-  if (url.pathname.startsWith('/pb/')) return proxyPocketBase(req, res, slug, url);
+  if (url.pathname.startsWith('/pb/')) {
+    // Counted around the proxy, never changing what it decides. A realtime stream counts when it ends.
+    if (isPerson(req.headers)) metrics.seen(project.id, { ip: clientIp(req), ua: req.headers['user-agent'] });
+    res.once('close', () => metrics.apiResponse(project.id, res.statusCode));
+    return proxyPocketBase(req, res, slug, url);
+  }
   if (url.pathname === '/__cubby/config.js') {
     const cfg = { project: slug, prefix: prefixFor(slug), pbUrl: '/pb' };
     res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' });
     return res.end(`window.__CUBBY__=${JSON.stringify(cfg)};`);
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') return sendPage(res, 405, 'Method not allowed');
-  return serveSite(req, res, project, url.pathname);
+  const page = await serveSite(req, res, project, url.pathname);
+  if (page && countsAsView(req)) metrics.record(project.id, { ip: clientIp(req), ua: req.headers['user-agent'] });
 }
 
 // Caddy asks before issuing an on-demand certificate; only the root domain and real apps qualify.
@@ -323,7 +408,7 @@ async function tlsCheck(req, res, url) {
   res.end();
 }
 
-const dashboard = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+const dashboard = await loadDashboard(fileURLToPath(new URL('../public/', import.meta.url)));
 const skillInstaller = await readFile(new URL('../public/skill.sh', import.meta.url), 'utf8');
 const agentsGuide = await readFile(new URL('../../cli/template/AGENTS.md', import.meta.url), 'utf8');
 
@@ -366,9 +451,15 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache', vary: 'User-Agent' });
       return res.end(logic.agentLanding({ publicUrl: config.publicUrl, name: logic.serverName(await getSettings()) }));
     }
-    if ((url.pathname === '/' || url.pathname === '/connect') && req.method === 'GET') {
+    // Every dashboard page (/, /apps/:slug, /admin, …) is the same shell; the browser's router draws the page.
+    if (matchRoute(url.pathname) && req.method === 'GET') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', vary: 'User-Agent' });
-      return res.end(dashboard.replaceAll('{{PUBLIC_URL}}', config.publicUrl).replaceAll('{{VERSION}}', config.version));
+      return res.end(dashboard.page({ publicUrl: config.publicUrl, version: config.version }));
+    }
+    const asset = req.method === 'GET' && dashboard.asset(url.pathname);
+    if (asset) {
+      res.writeHead(200, { 'content-type': asset.type, 'content-length': asset.body.length, 'cache-control': 'public, max-age=31536000, immutable' });
+      return res.end(asset.body);
     }
     sendPage(res, 404, 'Not found');
   } catch (err) {
@@ -385,6 +476,8 @@ await buildCliTarball();
 scheduleBackups({ run: async () => backups.start().promise });
 await recoverRuns();
 scheduleJobs();
+metrics.start();
+onShutdown(() => metrics.flush());
 scheduleUpdateChecks({ checker: updates, isEnabled: updatesOn });
 server.listen(config.port, () => {
   console.log(`cubby ${config.version} on ${config.publicUrl}`);

@@ -82,6 +82,22 @@ describe('admin tasks', () => {
     assert.equal(listed.keep, 3);
     assert.deepEqual(listed.backups.map((b) => b.date), [today, '2000-01-06', '2000-01-05']);
   });
+
+  test('the nightly maintenance (backup) prunes activity older than 30 days and keeps the rest', async () => {
+    const pb = new PocketBase(srv.pbUrl);
+    await pb.collection('_superusers').authWithPassword(srv.env.PB_SUPERUSER_EMAIL, srv.env.PB_SUPERUSER_PASSWORD);
+    const owner = await pb.collection('users').getFirstListItem('email = "owner@test.dev"');
+    const day = 24 * 60 * 60 * 1000;
+    const row = (summary, ago) => pb.collection('cubby_activity').create({ user: owner.id, action: 'deploy', app: 'kept-app', summary, at: new Date(Date.now() - ago).toISOString() });
+    await row('ancient', 31 * day);
+    await row('recent', 29 * day);
+    const r = await task(['backup']);
+    assert.equal(r.code, 0, r.stderr);
+    const left = (await pb.collection('cubby_activity').getFullList()).map((x) => x.summary);
+    assert.ok(!left.includes('ancient'), 'older than 30 days: pruned');
+    assert.ok(left.includes('recent'));
+    assert.ok(left.some((s) => /^Deployed /.test(s)), 'today\'s rows stay');
+  });
   test('reset-password lets the user log in with the new password', async () => {
     const r = await task(['reset-password', 'owner@test.dev', 'brand-new-pass']);
     assert.equal(r.code, 0, r.stderr);

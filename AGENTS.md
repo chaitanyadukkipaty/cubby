@@ -67,6 +67,12 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 - Device-login codes, rate-limit counters and the settings row (`getSettings` cache) are per-process. Cubby assumes one
   server process; anything multi-process needs shared storage first. Settings edited directly in PocketBase aren't seen
   until restart; go through `updateSettings`.
+- App metrics (server/src/metrics.js) count in memory and add to `cubby_metrics` buckets on each flush (every 60s,
+  before each metrics read, and on SIGTERM via `onShutdown`). Flushes must stay serialized, or two can create the
+  same bucket. The visitor salt lives only in memory and rotates per UTC day; never persist it or store raw IPs.
+  Hourly `peak_active` merges as a max (`MAXES`), everything else adds up (`COUNTERS`): a new field must go in one.
+  `/pb` traffic is counted in `handleApp` around `proxyPocketBase`, never inside its checks.
+  `CUBBY_TEST_CLOCK_FILE` shifts the metrics clock for integration tests only; don't set it anywhere else.
 - `/cli.tgz` is packed once at boot from `cli/` (src, template, skill) and stamped with the version the server
   reports (`config.version`), not `cli/package.json`'s. CLI, template or skill edits need a server restart to be served.
 
@@ -77,7 +83,7 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 - install.sh deletes `CUBBY_ADMIN_PASSWORD` from the env file after first boot, and `bootstrap` only *creates* the admin.
   Changing admin credentials via env later does nothing; use `cubby-server reset-password`.
 - The same goes for every first-boot setting (`CUBBY_SIGNUP_CODE`, `CUBBY_SERVER_NAME`, `MAX_*`): `bootstrap` only reads
-  them when the settings row doesn't exist yet. After that, change them through the Admin tab / `/api/admin/settings`.
+  them when the settings row doesn't exist yet. After that, change them through the Admin page / `/api/admin/settings`.
 
 ## Contracts between files that change together
 
@@ -92,8 +98,16 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 - The template's `<script src="/__cubby/config.js">` must stay a classic script before `main.tsx`: the file only
   exists at runtime (served per app), so Vite must not try to bundle it. Its "can't be bundled without type=module"
   warning is expected.
-- The dashboard's pure helpers live between the `BEGIN/END PURE HELPERS` markers in server/public/index.html; unit
-  tests load that block in a `vm`. Keep them pure (no DOM, no globals defined later) and inside the markers.
+- The dashboard is server/public: an HTML shell, `app.css` and ES modules in `js/`, served as-is (no build, no
+  framework, no CDN). server/src/dashboard.js reads them at boot and serves them under `/static/<hash>/`, a hash of
+  every file, so they're cached forever: edits need a server restart, and modules must import each other by
+  relative path (an absolute `/static/...` URL would pin an old hash).
+- js/routes.js is imported by both the browser and the server (which serves the shell for exactly those paths), so
+  keep it free of DOM and Node APIs. A new page goes there, not as a server special case. `/` still answers
+  non-browser user agents with plain text first.
+- js/helpers.js is imported directly by unit tests: keep it pure (no imports, no DOM state, no network; `h()` only
+  calls `document.createElement` when used). The same goes for js/palette.js (the ⌘K palette's matching and items;
+  it imports only routes.js and helpers.js); js/command-palette.js is its DOM side.
 
 ## Version skew between servers (the launcher)
 

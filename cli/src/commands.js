@@ -7,6 +7,8 @@ export const COMMANDS = [
   { name: 'login', usage: 'cubby login <server-url> [--no-wait | --wait | --token <token>]', summary: 'Log in by approving a link in the browser; --no-wait prints the link and exits, --wait finishes. --token for CI.', flags: ['--no-wait', '--wait', '--token', '--email', '--password', '--no-skill'] },
   { name: 'signup', usage: 'cubby signup <server-url> --email <e> --password <p> --code <signup-code>', summary: 'Create an account with the signup code from the admin.', flags: ['--email', '--password', '--code'] },
   { name: 'whoami', usage: 'cubby whoami', summary: 'Who you are on the server.', flags: [] },
+  { name: 'agents', usage: 'cubby agents [rename <id> <name> | revoke <id> --yes]', summary: 'Your agents: one per approved `cubby login`, named after the tool and machine, with when each was last seen (* = this agent). Rename one, or revoke its key (revoking this agent logs it out here).', flags: ['--yes'] },
+  { name: 'activity', usage: 'cubby activity [app] [--agent <id>|dashboard] [--limit n] [--all]', summary: 'What you (and your agents) changed in the last 30 days, newest first: deploys, rollbacks, schema, secrets (names only), jobs, logins. --all: everyone\'s (admins).', flags: ['--agent', '--limit', '--all'] },
   { name: 'servers', usage: 'cubby servers', summary: "Servers you've added (* = default).", flags: [] },
   { name: 'use', usage: 'cubby use <name|url>', summary: 'Make a server the default for new apps.', flags: [] },
   { name: 'logout', usage: 'cubby logout [--server <name|url>] [--all]', summary: 'Forget one server (the current one by default) or all of them.', flags: ['--all'] },
@@ -23,6 +25,7 @@ export const COMMANDS = [
   { name: 'deploy', usage: 'cubby deploy [-m <message>] [--unlisted | --listed] [--no-build] [--dir dist]', summary: 'Push the schema if it changed, build (with the jobs in cubby/jobs/), and publish.', flags: ['--message', '--unlisted', '--listed', '--no-build', '--dir', '--file'] },
   { name: 'deploys', usage: 'cubby deploys', summary: 'The last 10 deploys of this app.', flags: [] },
   { name: 'rollback', usage: 'cubby rollback <deploy-id>', summary: 'Serve an earlier deploy again, with the jobs it shipped (data and secrets are not rolled back).', flags: [] },
+  { name: 'metrics', usage: 'cubby metrics [<app>] [--range 24h | 7d]', summary: 'Page views and unique visitors (per UTC day, bots excluded), active now (last 5 min) and peak, /pb API requests and 5xx errors, and app accounts and signups, of one app; or a summary of all your apps. Default range 24h, at most 90d.', flags: ['--range'] },
   // Scheduled jobs
   { name: 'jobs', usage: 'cubby jobs [run | logs | pause | resume <job>] [--limit <n>] [--run <id>]', summary: 'Scheduled jobs from cubby/jobs/: list them with next and last run; run one now and print its log (exits 1 if it fails); show past logs; pause or resume.', flags: ['--limit', '--run'] },
   { name: 'env', usage: 'cubby env list | set <NAME>=<value> | set <NAME> --from-stdin | unset <NAME> --yes', summary: 'Secrets for jobs, read as env.NAME. Values are encrypted and never shown again.', flags: ['--from-stdin', '--yes'] },
@@ -34,7 +37,7 @@ export const COMMANDS = [
 export const GLOBAL_FLAGS = [
   { name: '--json', summary: 'Machine-readable output.' },
   { name: '--server', summary: 'Which server: a name or URL. Default order: --server, CUBBY_SERVER, the app\'s cubby.json, the default server, the only server.' },
-  { name: '--client', summary: 'Your agent\'s name, recorded on deploys.' },
+  { name: '--client', summary: 'Your agent\'s name, recorded on deploys and used to name the agent at `cubby login` (detected if unset).' },
 ];
 
 export function helpJson(version, name) {

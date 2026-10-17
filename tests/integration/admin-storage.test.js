@@ -63,6 +63,9 @@ describe('admin storage and backups', () => {
     assert.ok(existsSync(join(srv.dataDir, 'backups', `sites-${today}.tar.gz`)));
     const s = (await adminCall('GET', '/api/admin/storage')).data;
     assert.ok(s.breakdown.backups_bytes >= b.total_bytes, 'the storage cache is refreshed after a backup');
+    const [logged] = (await adminCall('GET', '/api/activity')).data;
+    assert.equal(logged.action, 'admin.backup.create');
+    assert.match(logged.summary, new RegExp(`Started a backup \\(${today}\\)`));
   });
   test('delete removes both files of a pair, warns about the newest, and refuses the only backup without leave_none', async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -103,6 +106,8 @@ describe('admin storage and backups', () => {
     assert.deepEqual(await dates(), []);
     assert.equal((await adminCall('DELETE', '/api/admin/backups/2000-01-02')).status, 404);
     assert.equal((await adminCall('DELETE', '/api/admin/backups/latest')).status, 400);
+    const deletes = (await adminCall('GET', '/api/activity')).data.filter((r) => r.action === 'admin.backup.delete');
+    assert.deepEqual(deletes.map((r) => r.summary), ['Deleted backup 2000-01-02', 'Deleted backup 2000-01-01', `Deleted backup ${today}`], 'refused deletes are not logged');
   });
   test('admins delete older deploys of any app, oldest first, with their jobs folders; never the current one', async () => {
     await user('POST', '/api/projects', { body: { slug: 'pruned-app' } });

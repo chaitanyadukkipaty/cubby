@@ -85,7 +85,7 @@ describe('logic views', () => {
     assert.deepEqual(logic.settingsPatch({ jobs: 'no' }), {});
     for (const bad of [4, 291, 1.5, 'x']) assert.throws(() => logic.settingsPatch({ job_timeout_s: bad }), /job_timeout_s must be a whole number between 5 and 290/, String(bad));
   });
-  test('/api/info lists the optional features', () => assert.deepEqual(logic.FEATURES, ['jobs']));
+  test('/api/info lists the optional features', () => assert.deepEqual(logic.FEATURES, ['jobs', 'metrics']));
   test('the update check is stored inverted, so settings rows from before it existed keep it on', () => {
     assert.equal(logic.settingsView({ update_check_off: true }).update_check, false);
     assert.deepEqual(logic.settingsPatch({ update_check: false }), { update_check_off: true });
@@ -179,6 +179,49 @@ describe('logic patches', () => {
     assert.equal(logic.deployClient(undefined), '');
     assert.equal(logic.deployClient('claude-code'), 'claude-code');
     assert.equal(logic.deployClient('x'.repeat(100)).length, 60);
+  });
+  test('agentHint keeps the tool and machine a CLI sends, cleaned and capped; old CLIs send nothing', () => {
+    assert.deepEqual(logic.agentHint({ tool: ' Claude  Code\n', machine: 'mbp\u0007' }), { tool: 'Claude Code', machine: 'mbp' });
+    assert.deepEqual(logic.agentHint({}), { tool: '', machine: '' });
+    assert.deepEqual(logic.agentHint(undefined), { tool: '', machine: '' });
+    assert.deepEqual(logic.agentHint({ tool: 42, machine: ['x'] }), { tool: '', machine: '' });
+    assert.equal(logic.agentHint({ tool: 't'.repeat(100), machine: 'm'.repeat(100) }).tool.length, 40);
+    assert.equal(logic.agentHint({ machine: 'm'.repeat(100) }).machine.length, 57);
+  });
+  test('agentName names an agent from its hint, with a dated fallback for CLIs that sent none', () => {
+    const now = Date.UTC(2026, 9, 17, 12);
+    assert.equal(logic.agentName({ tool: 'Claude Code', machine: 'chaitanya-mbp' }, now), 'Claude Code · chaitanya-mbp');
+    assert.equal(logic.agentName({ tool: 'Codex', machine: '' }, now), 'Codex');
+    assert.equal(logic.agentName({ tool: '', machine: 'build-box' }, now), 'Agent · build-box');
+    assert.equal(logic.agentName({}, now), 'Agent · 2026-10-17');
+    assert.equal(logic.agentName(undefined, now), 'Agent · 2026-10-17');
+    assert.match(logic.agentName(), /^Agent · \d{4}-\d{2}-\d{2}$/);
+    // The key's label field holds at most 100 characters; the longest hints must still fit.
+    const longest = logic.agentHint({ tool: 't'.repeat(99), machine: 'm'.repeat(99) });
+    assert.ok(logic.agentName(longest, now).length <= 100);
+    assert.ok(logic.agentName({ machine: longest.machine }, now).length <= 100);
+  });
+  test('agentLabel cleans a new agent name like a hint and refuses blank or overlong names', () => {
+    assert.equal(logic.agentLabel('  CI  runner\n'), 'CI runner');
+    for (const bad of ['', '   ', '\u0007', undefined, 42, 'x'.repeat(61)]) rejects(() => logic.agentLabel(bad), 400, /Agent name must be 1-60 characters/);
+    assert.equal(logic.agentLabel('x'.repeat(60)).length, 60);
+  });
+  test('touchThrottle lets a key record its use at most once per interval, each key on its own clock', () => {
+    const t = logic.touchThrottle(60_000);
+    assert.equal(t.due('a', 0), true, 'first use is recorded');
+    assert.equal(t.due('a', 59_999), false, 'not again within the minute');
+    assert.equal(t.due('b', 30_000), true, 'other keys are independent');
+    assert.equal(t.due('a', 60_000), true, 'again once the minute is up');
+    assert.equal(t.due('a', 60_001), false);
+    t.forget('a');
+    assert.equal(t.due('a', 60_002), true, 'a forgotten (revoked) key starts over');
+  });
+  test('agentView shows agents by name, pre-agent keys as "Manual token", flags the current one and never the key', () => {
+    const agent = { id: 'a1', kind: 'agent', label: 'Codex · box', tool: 'Codex', machine: 'box', key: 'hk_secret', created: 'c1', last_used: 'u1' };
+    const legacy = { id: 'k0', kind: '', label: 'default', tool: '', machine: '', key: 'hk_old', created: 'c0', last_used: '' };
+    assert.deepEqual(logic.agentView(agent, 'a1'), { id: 'a1', name: 'Codex · box', tool: 'Codex', machine: 'box', manual: false, current: true, created: 'c1', last_used_at: 'u1' });
+    assert.deepEqual(logic.agentView(legacy, 'a1'), { id: 'k0', name: 'Manual token', tool: null, machine: null, manual: true, current: false, created: 'c0', last_used_at: null }, 'never used');
+    assert.equal(logic.agentView({ ...legacy, kind: undefined }).manual, true, 'rows from before the kind field');
   });
   test('settingsPatch validates limits and rotates the code', () => {
     let calls = 0;

@@ -20,7 +20,7 @@ export const BUNDLED_SKILL = fileURLToPath(new URL('../skill/cubby/', import.met
 export const VERSION_TTL_MS = 10 * 60 * 1000;
 
 // Commands that talk to a server run the CLI matching that server's version.
-export const SERVER_COMMANDS = new Set(['login', 'signup', 'whoami', 'help', 'init', 'link', 'projects', 'info', 'delete', 'schema', 'deploy', 'deploys', 'rollback', 'jobs', 'env', 'admin']);
+export const SERVER_COMMANDS = new Set(['login', 'signup', 'whoami', 'help', 'init', 'link', 'projects', 'info', 'delete', 'schema', 'deploy', 'deploys', 'rollback', 'jobs', 'env', 'admin', 'agents', 'activity', 'metrics']);
 // Commands that name their server as their argument ("cubby login <url>").
 export const ACCOUNT_COMMANDS = new Set(['login', 'signup']);
 // Purely local: always run here. `version` is answered by the launcher itself.

@@ -3,7 +3,7 @@ import { SLUG_RE, RESERVED_SLUGS, prefixFor, config } from './config.js';
 import { HttpError } from './http.js';
 
 // What this server supports beyond the basics, in /api/info (dashboards and newer CLIs check it).
-export const FEATURES = ['jobs'];
+export const FEATURES = ['jobs', 'metrics'];
 
 export const isLoopback = (ip) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip ?? '');
 
@@ -49,6 +49,116 @@ export function deployPatch(searchParams) {
 }
 
 export const deployClient = (header) => String(header ?? '').slice(0, 60);
+
+// --- Agents: one API key per approved `cubby login` ---
+// What a CLI says about itself when it starts a device login. Older CLIs send nothing, so every part is optional.
+const hintText = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+// 40 + " · " + 57 = 100, the key label's limit.
+export const agentHint = (body) => ({ tool: hintText(body?.tool, 40), machine: hintText(body?.machine, 57) });
+
+// "Claude Code · chaitanya-mbp"; "Agent · 2026-10-17" when the CLI sent no hint.
+export function agentName({ tool, machine } = {}, now = Date.now()) {
+  if (tool && machine) return `${tool} · ${machine}`;
+  return tool || `Agent · ${machine || new Date(now).toISOString().slice(0, 10)}`;
+}
+
+// A name someone gives an agent with `cubby agents rename`.
+export const AGENT_NAME_MAX = 60;
+export function agentLabel(name) {
+  const clean = hintText(name, Infinity);
+  if (!clean || clean.length > AGENT_NAME_MAX) throw new HttpError(400, `Agent name must be 1-${AGENT_NAME_MAX} characters`);
+  return clean;
+}
+
+// When a key was last used is written at most once per interval per key, so requests don't each cost a DB write.
+// In memory, like the rate limiter: Cubby runs one server process.
+export function touchThrottle(intervalMs) {
+  const last = new Map(); // keyId -> ms of the last recorded use
+  return {
+    due(keyId, now) {
+      if (now - (last.get(keyId) ?? -Infinity) < intervalMs) return false;
+      last.set(keyId, now);
+      return true;
+    },
+    forget: (keyId) => last.delete(keyId),
+  };
+}
+
+// Keys from before agents (and the dashboard's own) have no kind: they're the user's manual token.
+export const isAgentKey = (k) => k.kind === 'agent';
+export const MANUAL_TOKEN_NAME = 'Manual token';
+
+// Never includes the key itself.
+export const agentView = (k, currentKeyId) => ({
+  id: k.id,
+  name: isAgentKey(k) ? k.label : MANUAL_TOKEN_NAME,
+  tool: k.tool || null,
+  machine: k.machine || null,
+  manual: !isAgentKey(k),
+  current: k.id === currentKeyId,
+  created: k.created,
+  last_used_at: k.last_used || null,
+});
+
+// --- Activity log: one row per mutation, attributed to the agent key that made it ---
+// `actor.agent` is { id, name } for an agent's key, null for the manual token (the dashboard).
+export const activityRow = (actor, { action, app = '', summary = '' }, now = new Date()) => ({
+  user: actor.id,
+  agent: actor.agent?.id ?? '',
+  agent_name: actor.agent?.name ?? '',
+  app,
+  action,
+  summary: String(summary).slice(0, 300),
+  at: now.toISOString(),
+});
+
+export const ACTIVITY_LIMIT = { default: 50, max: 500 };
+export const ACTIVITY_DAYS = 30;
+// Rows before this are pruned. PocketBase's own date format ("2026-10-17 09:30:00.000Z"), so it compares cleanly.
+export const activityCutoff = (now) => new Date(now.getTime() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ');
+
+// The PocketBase filter for listing activity. A user sees only rows they made (their apps and agents);
+// `all` (admins, /api/admin/activity) drops that. agent=dashboard means the manual token.
+export function activityQuery(user, { app, agent, limit } = {}, { all = false } = {}) {
+  const parts = [];
+  const params = {};
+  const add = (text, key, value) => (parts.push(text), (params[key] = value));
+  if (!all) add('user = {:u}', 'u', user.id);
+  if (app) add('app = {:app}', 'app', String(app));
+  if (agent) add('agent = {:agent}', 'agent', agent === 'dashboard' ? '' : String(agent));
+  const n = Number.parseInt(limit, 10);
+  return {
+    filter: { text: parts.join(' && '), params },
+    limit: Number.isFinite(n) ? Math.min(Math.max(n, 1), ACTIVITY_LIMIT.max) : ACTIVITY_LIMIT.default,
+  };
+}
+
+// "Pushed schema: created notes; kept notes.body" from applySchema's changes.
+export function schemaSummary({ created = [], updated = [], kept = [] }) {
+  const parts = [['created', created], ['updated', updated], ['kept', kept]]
+    .filter(([, list]) => list.length).map(([verb, list]) => `${verb} ${list.join(', ')}`);
+  return `Pushed schema: ${parts.join('; ') || 'no changes'}`;
+}
+
+// 'Made "x" unlisted, renamed it to "X"' — what an owner's PATCH changed.
+export function patchSummary(slug, patch) {
+  const parts = [];
+  if ('unlisted' in patch) parts.push(patch.unlisted ? 'made it unlisted' : 'listed it in the gallery');
+  if ('name' in patch) parts.push(`renamed it to "${patch.name}"`);
+  if ('description' in patch) parts.push('changed its description');
+  return `Updated "${slug}": ${parts.join(', ')}`;
+}
+
+export const activityView = (r) => ({
+  id: r.id,
+  at: r.at,
+  user: r.expand?.user?.email ?? null,
+  via: r.agent ? 'agent' : 'dashboard',
+  agent: r.agent ? { id: r.agent, name: r.agent_name } : null,
+  app: r.app || null,
+  action: r.action,
+  summary: r.summary,
+});
 
 // Each server has a display name ("Priya's Cubby"), shown to friends and agents.
 export const SERVER_NAME_MAX = 60;

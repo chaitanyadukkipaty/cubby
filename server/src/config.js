@@ -18,7 +18,7 @@ export const config = {
   version: computeVersion({ pkgVersion, override: env('CUBBY_VERSION_OVERRIDE'), commit: build.commit, tag: build.tag }),
   commit: build.commit,
   // Daily check for a newer GitHub release: the only outbound request Cubby itself makes. CUBBY_UPDATE_CHECK=0 turns
-  // it off entirely; admins can also turn it off in the Admin tab.
+  // it off entirely; admins can also turn it off in the Admin page.
   updates: {
     enabled: env('CUBBY_UPDATE_CHECK', '1') !== '0',
     url: env('CUBBY_UPDATE_URL', 'https://api.github.com/repos/chaitanyadukkipaty/cubby/releases/latest'),

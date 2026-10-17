@@ -3,7 +3,7 @@
 import { parseArgs } from 'node:util';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { join, resolve, relative } from 'node:path';
 import * as tar from 'tar';
 import {
@@ -11,7 +11,7 @@ import {
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
   jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
-  formatStorage, formatBackups, formatBytes, formatRetention,
+  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents, formatActivity, formatMetrics, formatMetricsList,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -27,8 +27,8 @@ const { values: flags, positionals } = parseArgs({
     token: { type: 'string' }, code: { type: 'string' }, client: { type: 'string' }, 'no-skill': { type: 'boolean' }, wait: { type: 'boolean' }, 'no-wait': { type: 'boolean' },
     'no-install': { type: 'boolean' }, 'no-build': { type: 'boolean' }, unlisted: { type: 'boolean' }, listed: { type: 'boolean' },
     yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
-    run: { type: 'string' }, limit: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
-    keep: { type: 'string' },
+    run: { type: 'string' }, limit: { type: 'string' }, agent: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
+    keep: { type: 'string' }, range: { type: 'string' },
   },
 });
 
@@ -185,7 +185,9 @@ const commands = {
       useServerArg(device.server);
     } else {
       if (flags.wait) throw new CliError('No login in progress. Run `cubby login <server-url> --no-wait` first.');
-      device = { ...(await api('POST', '/api/device/start', { auth: false })), server: serverUrl() };
+      // The hint names this agent on the approval page and in `cubby agents`.
+      const hint = loginHint({ client: flags.client, env: process.env, hostname: hostname() });
+      device = { ...(await api('POST', '/api/device/start', { auth: false, body: hint })), server: serverUrl() };
       mkdirSync(GLOBAL_DIR, { recursive: true, mode: 0o700 });
       writeFileSync(PENDING, JSON.stringify(device), { mode: 0o600 });
       const msg = `Open this link to approve this login (sign up there if you're new):\n  ${device.verify_url}\n  code: ${device.user_code}`;
@@ -263,6 +265,43 @@ const commands = {
   async whoami() {
     const me = await api('GET', '/api/me');
     out(`${me.email}${me.is_admin ? ' (admin)' : ''} @ ${await where()}`, { email: me.email, is_admin: me.is_admin, server: serverUrl(), server_name: await serverName() });
+  },
+  async agents(sub, id, ...nameWords) {
+    const usage = 'Usage: cubby agents [rename <id> <name> | revoke <id> --yes]';
+    if (!sub || sub === 'list') {
+      const list = await api('GET', '/api/agents');
+      return out(formatAgents(list), list);
+    }
+    if (sub === 'rename') {
+      const name = nameWords.join(' ');
+      if (!id || !name) throw new CliError('Usage: cubby agents rename <id> <name>');
+      const r = await api('PATCH', `/api/agents/${encodeURIComponent(id)}`, { body: { name } });
+      return out(`Renamed ${id} to "${r.name}"`, r);
+    }
+    if (sub === 'revoke') {
+      if (!id) throw new CliError('Usage: cubby agents revoke <id> --yes');
+      if (!flags.yes) throw new CliError(`This revokes agent ${id}: its key stops working at once and it has to \`cubby login\` again. Re-run with --yes.`);
+      const name = (await api('GET', '/api/agents')).find((a) => a.id === id)?.name ?? id;
+      const r = await api('DELETE', `/api/agents/${encodeURIComponent(id)}`);
+      // Revoking this agent's own key: forget it here, like `cubby logout`, so later commands say to log in.
+      const t = target();
+      const loggedOut = Boolean(r.current && t.server?.token && !process.env.CUBBY_TOKEN);
+      if (loggedOut) writeConfig(GLOBAL_CONFIG, removeServer(config(), t.id));
+      const human = r.current
+        ? `Revoked ${name} (this agent).${loggedOut ? ` Logged out of ${describeServer(t.id, t.server)}.` : ''}`
+        : `Revoked ${name}. It can't use this server until it runs \`cubby login\` again.`;
+      return out(human, { ...r, logged_out: loggedOut });
+    }
+    throw new CliError(usage);
+  },
+  // Your actions (admins: everyone's, with --all), newest first. --agent <id> or --agent dashboard.
+  async activity(app) {
+    const q = new URLSearchParams();
+    if (app) q.set('app', app);
+    if (flags.agent) q.set('agent', flags.agent);
+    if (flags.limit) q.set('limit', flags.limit);
+    const list = await api('GET', `${flags.all ? '/api/admin/activity' : '/api/activity'}?${q}`);
+    out(formatActivity(list, { users: Boolean(flags.all) }), list);
   },
 
   async init(slug) {
@@ -355,6 +394,16 @@ const commands = {
     if (!id) throw new CliError('Usage: cubby rollback <deploy-id>');
     const r = await api('POST', `/api/projects/${requireProject()}/rollback`, { body: { deploy: id } });
     out(`Now serving ${id} at ${r.url}`, r);
+  },
+
+  async metrics(slug) {
+    const query = flags.range ? `?${new URLSearchParams({ range: flags.range })}` : '';
+    if (!slug) {
+      const list = await api('GET', `/api/metrics${query}`);
+      return out(formatMetricsList(list), list);
+    }
+    const r = await api('GET', `/api/projects/${encodeURIComponent(slug)}/metrics${query}`);
+    out(formatMetrics(r), r);
   },
 
   async jobs(sub, name) {

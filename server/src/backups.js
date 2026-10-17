@@ -10,6 +10,7 @@ import { HttpError } from './http.js';
 import { backupKeep } from './logic.js';
 import { getSettings } from './settings.js';
 import { deleteBackup, listBackups, planRetention } from './storage.js';
+import { pruneActivity } from './activity.js';
 
 const backupDir = join(config.dataDir, 'backups');
 
@@ -53,6 +54,19 @@ export function createBackupRunner({ run = runBackup, now = () => new Date() } =
   };
 }
 
+// The nightly maintenance: prune the activity log (first, so the backup is smaller), then back up.
+// A failed prune never stops the backup.
+// Steps are injectable for tests.
+export async function runMaintenance({ prune = pruneActivity, backup = runBackup, log = console.log, error = console.error } = {}) {
+  try {
+    const n = await prune();
+    if (n) log(`pruned ${n} activity rows`);
+  } catch (err) {
+    error('activity prune failed:', err.message);
+  }
+  await backup();
+}
+
 // Returns today's date stamp if a nightly backup should run now, otherwise null.
 export function backupDue(now, lastRun, hour) {
   const today = now.toISOString().slice(0, 10);
@@ -60,7 +74,7 @@ export function backupDue(now, lastRun, hour) {
 }
 
 // Checks every minute; runs at most once per day during the configured hour. Deps injectable for tests.
-export function scheduleBackups({ run = runBackup, now = () => new Date(), hour = config.backups.hour } = {}) {
+export function scheduleBackups({ run = runMaintenance, now = () => new Date(), hour = config.backups.hour } = {}) {
   let lastRun = '';
   const timer = setInterval(() => {
     const due = backupDue(now(), lastRun, hour);

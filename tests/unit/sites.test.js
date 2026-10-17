@@ -89,6 +89,17 @@ describe('serveSite', () => {
     assert.equal(r.status, 200);
     assert.equal(r.body, '');
   });
+  test('says whether it served an HTML page (what metrics count), not an asset or an error', async () => {
+    const served = async (path, proj = project) => {
+      const res = fakeRes();
+      const page = await sites.serveSite({ method: 'GET' }, res, proj, path);
+      await res.done;
+      return page;
+    };
+    for (const p of ['/', '/docs', '/polls/123', '/index.html']) assert.equal(await served(p), true, p);
+    for (const p of ['/assets/app-abc.js', '/favicon.svg', '/robots.txt', '/assets/missing.js', '/%E0%A4%A']) assert.equal(await served(p), false, p);
+    assert.equal(await served('/', { slug: 'empty', current_deploy: '' }), false);
+  });
   test('apps with no deploy explain how to deploy', async () => {
     const r = await get('/', { proj: { slug: 'empty', current_deploy: '' } });
     assert.equal(r.status, 404);
