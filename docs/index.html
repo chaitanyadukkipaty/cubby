@@ -561,18 +561,19 @@ cubby data restore 20261017T101500-a1b2c3
       <h2>Running the server</h2>
       <div class="two">
         <div>
-          <p>The <b>Admin</b> page shows users, apps, disk usage and limits. As admin you can:</p>
+          <p>The <b>Admin</b> page has a tab for each part of the server, and each tab has its own link (<code>/admin/storage</code>), so a reload keeps your place:</p>
           <ul>
-            <li>Rename the server. The name shows on the dashboard, the sign-in page and when people connect an agent</li>
-            <li>Rotate the signup code or turn on open signup</li>
-            <li>Set apps per user and the maximum deploy size</li>
-            <li>Disable a user (their apps stay online) or delete them with their apps</li>
-            <li>Delete any app, for example to free disk space</li>
-            <li>See every app's scheduled jobs and how their last run went, set the time limit per run (60 seconds by default), or stop all jobs at once</li>
+            <li><b>Overview</b>: users, views, visitors, who's on any app now, the API error rate and free disk; every app's views charted over 7 days; the busiest apps and the most active agents across every user; the disk at a glance; updates</li>
+            <li><b>Users</b>: disable someone (their apps stay online) or delete them with their apps</li>
+            <li><b>Apps</b>: every app with its owner and size; list and delete an app's older deploys; delete an app</li>
+            <li><b>Agents</b>: every agent that changed something in the last 30 days, whoever it belongs to, with how much it did and where (owners rename and revoke their own)</li>
+            <li><b>Jobs</b>: every app's scheduled jobs and how their last run went, the time limit per run (60 seconds by default), and a switch that stops them all</li>
+            <li><b>Settings</b>: the server's name (shown on the dashboard, the sign-in page and when people connect an agent), the signup code or open signup, apps per user, the maximum deploy size, and how many nightly backups to keep</li>
+            <li><b>Storage</b>: where the disk goes, backups and snapshots (below)</li>
           </ul>
           <p>Admins can't deploy into or edit other people's apps.</p>
         </div>
-        <figure class="shot"><img src="assets/dashboard-admin.png?v=513f932a" alt="Admin page with user and app counts, disk usage, the signup code, limits, scheduled jobs, users, apps and an update notice" loading="lazy" width="1280" height="1977"><figcaption>The Admin page.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-admin-overview.png?v=b31fd97f" alt="Admin Overview: users, views, visitors, active now, API error rate and free disk across the server, a 7-day views chart of every app, the top apps by views, the most active agents across users, the disk bar and an update notice" loading="lazy" width="1280" height="1297"><figcaption>Admin → Overview.</figcaption></figure>
       </div>
       <h3>On the server</h3>
       <div class="table"><table>
@@ -593,8 +594,21 @@ cubby data restore 20261017T101500-a1b2c3
       <p><b>Updates.</b> Once a day the server asks GitHub for the latest Cubby release. When there's a newer one, the Admin page shows <b>Update available</b> with a link to the release notes and the command to run. Turn the check off in the Admin page, or set <code>CUBBY_UPDATE_CHECK=0</code> in <code>/opt/cubby/cubby.env</code> to disable it completely.</p>
       <p><b>Versions.</b> A server built from a release shows its version, like <code>0.1.1</code>. Anything else shows the commit too, like <code>0.1.1-dev+b2cb75c</code>, so you always know which code is running.</p>
       <p><b>Backups</b> run every night at 03:00: a full database backup plus all deployed sites with their jobs, and the key that decrypts app secrets. The newest 7 are kept by default (see below to change it). The same nightly run first prunes activity log entries older than 30 days. Restoring rolls back every app on the server, so it's for real accidents.</p>
-      <h3>Disk and backups from your own machine</h3>
-      <p>You don't need to SSH in to see where the disk goes or to free some of it. Logged in as the admin, you or your agent can run:</p>
+      <h3>Disk and backups</h3>
+      <div class="two">
+        <div>
+          <p>You don't need to SSH in to see where the disk goes or to free some of it. <b>Admin → Storage</b> shows it as one bar: the database, uploaded files, the deploys apps serve, older deploys kept for rollback, backups, data-clear snapshots, what isn't Cubby's, and free space, with every app's share in a table below.</p>
+          <ul>
+            <li><b>Back up now</b> takes a backup right away (one at a time, shared with the nightly run).</li>
+            <li><b>Delete</b> on a backup says which two files go and how much space that frees. It warns before deleting the newest, and asks again before deleting the only one.</li>
+            <li>Each backup has its <code>sudo cubby-server restore &lt;date&gt;</code> command to copy: restoring stays on the server.</li>
+            <li>Snapshots left by data clears can be purged early.</li>
+            <li><b>Settings → Backups</b> shows what keeping a different number of backups would delete and free, or add, before you save it.</li>
+          </ul>
+        </div>
+        <figure class="shot"><img src="assets/dashboard-admin-storage.png?v=29f7d1fb" alt="Admin Storage: a disk bar split into database, uploads, current and old deploys, backups, snapshots, other files and free space; the nightly backups with Back up now, a copyable restore command and Delete on each; apps by size; and data-clear snapshots with Purge" loading="lazy" width="1280" height="1381"><figcaption>Admin → Storage.</figcaption></figure>
+      </div>
+      <p>Logged in as the admin, you or your agent can do the same from your own machine:</p>
       <div class="code"><pre>cubby admin storage                          <span class="c"># database, uploads, current and older deploys, backups, free disk; per app</span>
 cubby admin backups                          <span class="c"># backups by date: database size, sites size, total</span>
 cubby admin backups create                   <span class="c"># back up now (waits until done; --no-wait returns at once)</span>

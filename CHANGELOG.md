@@ -23,6 +23,15 @@ All notable changes to Cubby are documented here. The format follows
   by name; values are never shown) and **Settings** (gallery visibility, delete after typing the app's name) follow.
   Empty tabs suggest what to ask your agent. The **Apps** list became a table with active visitors, a 7-day views
   sparkline and who deployed each app last.
+- The dashboard's **Admin** page has tabs with their own links (`/admin/<tab>`, kept on reload): **Overview**
+  (server-wide users, views, visitors, active now, API error rate and free disk; every app's views charted over 7
+  days; the top apps by views; the most active agents across all users; the disk at a glance; updates), **Users**,
+  **Apps** (each app's older deploys, listed and deleted one by one or all at once; the live one never), **Agents**
+  (every agent that changed something in the last 30 days, with its owner), **Jobs**, **Settings** (name, invites,
+  limits, and how many nightly backups to keep with what that would delete and free, or add, before saving) and
+  **Storage** (a disk bar by category, apps by size, backups with Back up now, Delete with the newest and only-backup
+  guards and a copyable `sudo cubby-server restore <date>`, and data-clear snapshots with Purge).
+  `/api/admin/metrics` now also returns every app's hours and days summed, for the Overview chart.
 - Scheduled jobs. An app can run code on a cron schedule (UTC): one file per job in `cubby/jobs/`, bundled with its
   npm dependencies by `cubby deploy` and rolled back with the deploy. Each run is a sandboxed Node.js process (no
   access to the server's files, environment, processes or local network) whose database client reaches only that

@@ -1,4 +1,5 @@
-// Admin journeys: invites, limits, and managing users and apps.
+// Admin journeys: invites, limits, and managing users and apps (storage and data clears: admin-storage.spec.js,
+// data.spec.js).
 import { test, expect, answerNextDialog } from './support/fixtures.js';
 import { uid } from './support/api.js';
 import { AuthPage } from './pages/auth-page.js';
@@ -11,6 +12,7 @@ test.beforeEach(async ({ api, dashboard }) => {
 
 test('rotating the signup code invalidates the old one; open signup removes the code field', async ({ browser, baseURL, page, api, dashboard }) => {
   const { admin } = dashboard;
+  await admin.openTab('Settings');
   const oldCode = (await admin.signupCode.textContent()).trim();
 
   answerNextDialog(page);
@@ -38,6 +40,7 @@ test('rotating the signup code invalidates the old one; open signup removes the 
 
 test('settings: renaming the server updates the header and tab; limits reject out-of-range values', async ({ page, api, dashboard }) => {
   const { admin } = dashboard;
+  await admin.openTab('Settings');
   const original = (await api.settings()).server_name;
   await admin.renameServer("E2E Crew's Cubby");
   await expect(dashboard.toast).toHaveText('Server name saved');
@@ -89,7 +92,7 @@ test('users and apps: disable and re-enable a user, delete their app, then delet
   const user = await api.createUser('managed');
   const slug = await api.createDeployedApp(user.token, 'adm');
   await page.reload();
-  await dashboard.openAdmin();
+  await dashboard.openAdmin('Users');
 
   const row = admin.userRow(user.email);
   await expect(admin.userRow(ADMIN.email).deleteButton).toHaveCount(0); // admins can't remove themselves
@@ -103,12 +106,14 @@ test('users and apps: disable and re-enable a user, delete their app, then delet
   await expect(dashboard.toast).toHaveText('User enabled');
   expect(await api.meStatus(user.token)).toBe(200);
 
+  await admin.openTab('Apps');
   answerNextDialog(page, slug);
   await admin.appRow(slug).deleteButton.click();
   await expect(dashboard.toast).toHaveText(`Deleted ${slug}`);
   await expect(admin.appRow(slug).row).toHaveCount(0);
   expect((await api.project(user.token, slug)).status).toBe(404);
 
+  await admin.openTab('Users');
   answerNextDialog(page, user.email);
   await row.deleteButton.click();
   await expect(dashboard.toast).toHaveText('User deleted');
@@ -121,7 +126,7 @@ test("jobs: every app's jobs are listed; the kill switch stops runs and the time
   const owner = await api.createUser('jobowner');
   const slug = await api.createAppWithJobs(owner.token, 'adm-jobs', { nightly: { schedule: '0 2 * * *', code: 'export default async () => {};' } });
   await page.reload();
-  await dashboard.openAdmin();
+  await dashboard.openAdmin('Jobs');
 
   await expect(admin.jobsHeading).toBeVisible();
   const row = admin.jobRow(slug, 'nightly');

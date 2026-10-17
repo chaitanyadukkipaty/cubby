@@ -52,8 +52,10 @@ export class DashboardPage {
     await this.page.waitForURL('**/explore');
   }
 
-  async openAdmin() {
+  /** Opens Admin from the sidebar (its Overview), then `tab` if given ('Settings', 'Storage', …). */
+  async openAdmin(tab) {
     await this.adminLink.click();
-    await this.admin.inviteHeading.waitFor();
+    await this.admin.kpis.waitFor();
+    if (tab) await this.admin.openTab(tab);
   }
 }

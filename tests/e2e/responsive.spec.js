@@ -19,7 +19,13 @@ test('dashboard and admin fit a phone screen without sideways scrolling, in ligh
     await dashboard.agents.connectButton.waitFor();
     expect(await fitsWidth(), `Agents overflows at 390px (${colorScheme})`).toBe(true);
     await dashboard.openAdmin();
+    await page.waitForLoadState('networkidle');
     expect(await fitsWidth(), `Admin overflows at 390px (${colorScheme})`).toBe(true);
+    for (const tab of ['Users', 'Apps', 'Agents', 'Jobs', 'Settings', 'Storage']) {
+      await dashboard.admin.openTab(tab);
+      await page.waitForLoadState('networkidle');
+      expect(await fitsWidth(), `Admin ${tab} overflows at 390px (${colorScheme})`).toBe(true);
+    }
 
     backgrounds[colorScheme] = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     await context.close();

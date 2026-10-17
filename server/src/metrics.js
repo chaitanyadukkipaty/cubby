@@ -164,7 +164,21 @@ export function summarizeMetrics(projects, report) {
     views: total('views'), visitors: total('visitors'), active_now: total('active_now'),
     api_requests: requests, api_errors: total('api_errors'), api_error_rate: requests ? total('api_errors') / requests : 0,
     top_apps: apps.sort((a, b) => b.views - a.views || a.app.localeCompare(b.app)).slice(0, 10).map(({ from, to, ...a }) => a),
+    hours: sumBuckets(projects.map((p) => report[p.id].hours)),
+    days: sumBuckets(projects.map((p) => report[p.id].days)),
   };
+}
+
+// Every app's buckets added up by start, field by field (the apps of one report share their buckets).
+function sumBuckets(seriesList) {
+  const byStart = new Map();
+  for (const series of seriesList) {
+    for (const { start, ...counts } of series ?? []) {
+      const sum = byStart.get(start) ?? byStart.set(start, { start }).get(start);
+      for (const [k, v] of Object.entries(counts)) sum[k] = (sum[k] ?? 0) + v;
+    }
+  }
+  return [...byStart.values()];
 }
 
 // The app's own accounts (records of its auth collections, names starting with `prefix`), read when asked, never

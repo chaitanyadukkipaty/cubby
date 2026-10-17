@@ -106,11 +106,11 @@ else's platform and you can't bring your own agent.
 - **Clear test data, safely.** Empty or drop collections without deleting the app (`cubby data clear`), always after a snapshot kept for 7 days.
 - **Clear test data, safely.** Empty or drop collections, or delete records by filter, without deleting the app (`cubby data clear`), always after a snapshot kept for 7 days that `cubby data restore` brings back.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
-- **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps on Explore, and manage users, limits and disk from the Admin page.
+- **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code and browse everyone's apps on Explore. The **Admin** page has tabs, each with its own link: **Overview** (server-wide views charted over 7 days, the busiest apps, the most active agents across every user, the disk at a glance and updates), **Users**, **Apps** (with each app's older deploys), **Agents**, **Jobs**, **Settings** (name, invites, limits, how many backups to keep) and **Storage**.
 - **A dashboard that follows your agents.** Home is a timeline of what your agents did, one line each, grouped by day: a deploy you don't like is one **Roll back** away, and a failed job comes with a fix-it prompt to paste into your agent. Next to it: who's on your apps right now, views over the last 7 days, your agents, and ready-made prompts for what to ask next. **Agents** lists every agent you connected, with the apps it touched; rename or revoke one there, or open it to see everything it did. Each app has its own page with tabs (Overview charts, Activity, Deploys with rollback, Jobs, Env and Settings), and every tab has its own link.
 - **Quick to get around.** Press ⌘K (Ctrl+K) anywhere in the dashboard to jump to a page or one of your apps, copy the setup prompt or a common command, switch theme or log out.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
-- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin page tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins (or their agent) see where the disk goes and manage backups and older deploys with `cubby admin storage`, `cubby admin backups` and `cubby admin deploys`.
+- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin page tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins see where the disk goes on the Admin page's **Storage** tab (a bar of database, uploads, live and old deploys, backups, snapshots and free space; every app's size; backups to take, delete or copy the restore command for), and their agent can do the same with `cubby admin storage`, `cubby admin backups` and `cubby admin deploys`.
 
 <table>
 <tr>
@@ -130,7 +130,8 @@ else's platform and you can't bring your own agent.
 <td width="50%"><img src="docs/assets/dashboard-app-deploys.png?v=b758402a" alt="An app's Deploys tab listing four deploys with their message, agent, size and age, the live one marked, and Roll back to this on the others"><p align="center"><sub>Deploys: roll back to any kept deploy</sub></p></td>
 </tr>
 <tr>
-<td colspan="2" align="center"><img src="docs/assets/dashboard-admin.png?v=513f932a" width="640" alt="Admin page with users, apps, limits, scheduled jobs, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, jobs, users, disk, updates</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-admin-overview.png?v=b31fd97f" alt="Admin Overview: users, views, visitors, active now, API error rate and free disk across the server, a 7-day views chart of every app, the top apps by views, the most active agents across users, the disk bar and an update notice"><p align="center"><sub>Admin Overview: the whole server at a glance</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-admin-storage.png?v=29f7d1fb" alt="Admin Storage: a disk bar split into database, uploads, current and old deploys, backups, snapshots, other files and free space; the nightly backups with Back up now, a copyable restore command and Delete on each; apps by size; and data-clear snapshots with Purge"><p align="center"><sub>Admin Storage: where the disk goes, backups and snapshots</sub></p></td>
 </tr>
 </table>
 
@@ -188,8 +189,14 @@ automatically; see [Releases](CONTRIBUTING.md#releases).
 ### Disk and backups
 
 Every night Cubby backs up the database and the deployed sites, and keeps the newest 7 (a server setting). As the
-admin, you or your agent can see where the disk goes and free some of it from your own machine, with your admin
-login:
+admin, open **Admin → Storage** in the dashboard: a bar shows where the disk goes (database, uploads, live deploys,
+old deploys kept for rollback, backups, data-clear snapshots, what isn't Cubby's, and free space), with every app's
+share below. Each backup has a **Delete** (it says which files go and how much space that frees, warns when it's the
+newest, and asks again for the only one) and the exact `sudo cubby-server restore <date>` command to copy;
+**Back up now** takes one right away. **Settings → Backups** shows what a new retention would delete and free (or
+add) before you save it, and **Apps → Deploys** lists and deletes an app's older deploys.
+
+Your agent can do the same from your own machine, with your admin login:
 
 ```sh
 cubby admin storage                    # database, uploads, current and older deploys, backups, free disk; per app
