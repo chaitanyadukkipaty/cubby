@@ -62,6 +62,28 @@ export function agentName({ tool, machine } = {}, now = Date.now()) {
   return tool || `Agent · ${machine || new Date(now).toISOString().slice(0, 10)}`;
 }
 
+// A name someone gives an agent with `cubby agents rename`.
+export const AGENT_NAME_MAX = 60;
+export function agentLabel(name) {
+  const clean = hintText(name, Infinity);
+  if (!clean || clean.length > AGENT_NAME_MAX) throw new HttpError(400, `Agent name must be 1-${AGENT_NAME_MAX} characters`);
+  return clean;
+}
+
+// When a key was last used is written at most once per interval per key, so requests don't each cost a DB write.
+// In memory, like the rate limiter: Cubby runs one server process.
+export function touchThrottle(intervalMs) {
+  const last = new Map(); // keyId -> ms of the last recorded use
+  return {
+    due(keyId, now) {
+      if (now - (last.get(keyId) ?? -Infinity) < intervalMs) return false;
+      last.set(keyId, now);
+      return true;
+    },
+    forget: (keyId) => last.delete(keyId),
+  };
+}
+
 // Keys from before agents (and the dashboard's own) have no kind: they're the user's manual token.
 export const isAgentKey = (k) => k.kind === 'agent';
 export const MANUAL_TOKEN_NAME = 'Manual token';
@@ -75,6 +97,7 @@ export const agentView = (k, currentKeyId) => ({
   manual: !isAgentKey(k),
   current: k.id === currentKeyId,
   created: k.created,
+  last_used_at: k.last_used || null,
 });
 
 // Each server has a display name ("Priya's Cubby"), shown to friends and agents.

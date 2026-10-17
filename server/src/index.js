@@ -3,7 +3,7 @@ import { readFile, statfs } from 'node:fs/promises';
 import { config, SLUG_RE, prefixFor } from './config.js';
 import { HttpError, sendJson, readJson, readBody, rateLimiter } from './http.js';
 import { admin, startPocketBase } from './pb.js';
-import { signup, login, authenticate, regenerateToken, listAgents } from './auth.js';
+import { signup, login, authenticate, regenerateToken, listAgents, renameAgent, revokeAgent } from './auth.js';
 import { applySchema, readSchema, dropFromSchema, projectCollections, deleteCollections } from './schema.js';
 import { createDeploy, listDeploys, oldDeploys, deleteDeploys, rollback, removeSite, serveSite, sendPage, appDiskUsage, dirSize } from './sites.js';
 import { proxyPocketBase } from './proxy.js';
@@ -70,6 +70,8 @@ const routes = [
   ['POST', '/api/device/approve', 'user', async (req, user) => approveDevice(user, (await readJson(req)).code)],
   ['GET', '/api/me', 'user', async (req, user) => ({ ...user, key: undefined, keyId: undefined, token: user.key })],
   ['GET', '/api/agents', 'user', async (req, user) => listAgents(user)],
+  ['PATCH', '/api/agents/:id', 'user', async (req, user, { id }) => renameAgent(user, id, (await readJson(req)).name)],
+  ['DELETE', '/api/agents/:id', 'user', async (req, user, { id }) => revokeAgent(user, id)],
   ['POST', '/api/token/regenerate', 'user', async (req, user) => ({ token: await regenerateToken(user.id) })],
 
   ['GET', '/api/projects', 'user', async (req, user) => {
