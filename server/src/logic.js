@@ -83,6 +83,27 @@ export const serverName = (s) => s?.server_name || 'Cubby';
 export const renderSkillInstaller = (template, { publicUrl, name }) =>
   template.replaceAll('{{PUBLIC_URL}}', publicUrl).replaceAll('{{SERVER_NAME_JSON}}', JSON.stringify(name));
 
+// The dashboard's root URL as agents see it: curl and agents' fetch tools don't send a browser user agent, so they get
+// the setup steps as plain text instead of an empty single-page app. The repo matches SKILL_REPO in public/index.html.
+export const isBrowser = (userAgent) => /^Mozilla\//.test(String(userAgent ?? ''));
+export const agentLanding = ({ publicUrl, name }) => `${name} is a Cubby server: build and host full-stack web apps
+(React + Tailwind, a database, user accounts, file uploads, realtime) with your AI agent.
+${publicUrl}
+
+Set up:
+
+  npx skills add chaitanyadukkipaty/cubby --skill cubby -g
+
+If npm isn't available:
+
+  curl -fsSL ${publicUrl}/skill.sh | sh
+
+Then read ~/.agents/skills/cubby/SKILL.md and follow its Setup to connect to ${publicUrl}
+(the user approves one link in their browser).
+
+Docs:  ${publicUrl}/docs.md
+`;
+
 export function settingsPatch(body = {}, newCode) {
   const patch = {};
   if (body.server_name !== undefined) patch.server_name = checkServerName(body.server_name);

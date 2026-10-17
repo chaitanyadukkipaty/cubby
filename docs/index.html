@@ -8,7 +8,7 @@
 <link rel="icon" href="assets/logo.svg?v=aa679b5d" type="image/svg+xml">
 <meta property="og:title" content="Cubby: a home for the apps your agents build">
 <meta property="og:description" content="Self-host one server, invite your friends, and let AI coding agents build, deploy and share full-stack apps.">
-<meta property="og:image" content="assets/dashboard-my-apps.png?v=2db02665">
+<meta property="og:image" content="assets/dashboard-my-apps.png?v=7efca832">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -301,7 +301,7 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
       <h2>Invite people</h2>
       <p>Send your friends the server URL and the signup code. In the dashboard's <b>Admin</b> tab, <b>Copy invite</b> copies both. They open the URL, sign up with the code, and land on their dashboard, headed with your server's name.</p>
       <div class="two">
-        <figure class="shot"><img src="assets/dashboard-my-apps.png?v=2db02665" alt="Cubby dashboard showing the Connect your AI agent card and the user's Friend Polls app" loading="lazy" width="1280" height="820"><figcaption>What a friend sees after signing up.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-my-apps.png?v=7efca832" alt="Cubby dashboard showing the Copy prompt for agent button and the user's Friend Polls app" loading="lazy" width="1280" height="1040"><figcaption>What a friend sees after signing up.</figcaption></figure>
         <div>
           <p><b>Rotate code</b> invalidates the old code for new signups; existing accounts keep working.</p>
           <p><b>Open signup</b> drops the code requirement entirely. Leave it off for a server on the public internet: bots find open signup forms within days.</p>
@@ -318,7 +318,7 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
 Install it as a skill if I have npm: npx skills add chaitanyadukkipaty/cubby --skill cubby -g
 If not, do this instead: curl -fsSL https://cubby.example.com/skill.sh | sh
 After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to connect to https://cubby.example.com (you&#39;ll send me a link to approve), review the docs at https://cubby.example.com/docs.md and ask me what I&#39;d like to build.</pre></div>
-      <p>The agent installs the <b>cubby skill</b>, instructions that teach it how to use Cubby, with <code>npx skills add</code> from GitHub (or the server's own <code>/skill.sh</code> without npm), sends you a link to approve, and adds the server to your list by name. It's a prompt, not a bare <code>curl … | sh</code>, so your agent knows what you're asking for instead of flagging an unknown script. The skill goes in <code>~/.agents/skills/cubby</code> and is linked into every agent it finds:</p>
+      <p>The agent installs the <b>cubby skill</b>, instructions that teach it how to use Cubby, with <code>npx skills add</code> from GitHub (or the server's own <code>/skill.sh</code> without npm), sends you a link to approve, and adds the server to your list by name. It's a prompt, not a bare <code>curl … | sh</code>, so your agent knows what you're asking for instead of flagging an unknown script. Giving your agent just the server URL works too: anything that isn't a browser gets the setup steps as plain text from the root page. The skill goes in <code>~/.agents/skills/cubby</code> and is linked into every agent it finds:</p>
       <div class="grid">
         <div class="card"><h4>Claude Code</h4><p><code>~/.claude/skills</code></p></div>
         <div class="card"><h4>Codex</h4><p><code>~/.codex/skills</code></p></div>

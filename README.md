@@ -79,7 +79,7 @@ else's platform and you can't bring your own agent.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=2db02665" alt="Dashboard with the Connect your AI agent card"><p align="center"><sub>Your dashboard on Priya's Cubby: connect your agent, see your apps</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=7efca832" alt="Dashboard with the Copy prompt for agent button"><p align="center"><sub>Your dashboard on Priya's Cubby: connect your agent, see your apps</sub></p></td>
 <td width="50%"><img src="docs/assets/connect-approve.png?v=fd35d280" alt="Approval page for connecting an AI agent"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
 </tr>
 <tr>
@@ -153,7 +153,8 @@ automatically; see [Releases](CONTRIBUTING.md#releases).
    The agent installs the `cubby` skill (from GitHub with `npx skills add`, or from your server's `/skill.sh` without
    npm), sends you a link to approve, and adds the server to `~/.cubby/config.json`. It's a prompt rather than a
    bare `curl … | sh` so the agent knows what you're asking for: pasted on its own, agents rightly flag a pipe-to-shell
-   from an unfamiliar domain as suspicious.
+   from an unfamiliar domain as suspicious. You can also just give your agent the server's URL: fetched by anything that
+   isn't a browser (curl, an agent's fetch tool), the root page answers with these setup steps as plain text.
 3. Ask your agent for an app in plain words, naming the server if you have more than one. That's it.
 
 <details>

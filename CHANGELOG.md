@@ -5,10 +5,15 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The server's root URL answers agents and curl (anything without a browser user agent) with the setup steps as plain
+  text, so "set up Cubby from https://your-server" works without the dashboard. Browsers still get the dashboard.
+
 ### Changed
 
-- The dashboard's "Connect your AI agent" card shows a prompt to paste into your agent instead of a bare
-  `curl … | sh` command, which agents rightly flagged as suspicious. The prompt names the server, installs the skill
+- The dashboard's connect card is redesigned around one "Copy prompt for agent" button: a prompt to paste into your
+  agent instead of a bare `curl … | sh` command, which agents rightly flagged as suspicious. The prompt names the server, installs the skill
   with `npx skills add chaitanyadukkipaty/cubby --skill cubby -g` (or the server's `/skill.sh` without npm) and has
   the agent connect, so the server becomes your default. `/skill.sh` keeps working as before.
 - The skill takes the server URL from the user's message when the CLI isn't installed yet.
