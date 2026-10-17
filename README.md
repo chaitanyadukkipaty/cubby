@@ -77,7 +77,8 @@ And when you wonder whether anyone uses it:
 The agent runs `cubby metrics friend-polls --range 7d` and tells you the page views and unique visitors per day,
 how many people are on it right now and the busiest moment of the week, how many accounts signed up, and whether
 its database calls are failing. Cubby counts all of it itself as it serves the app, so there's no tracking script,
-cookie banner or analytics account.
+cookie banner or analytics account. The same numbers are charted on the app's page in the dashboard, with every
+deploy drawn through the charts, so "did the last deploy break something?" is one glance.
 
 ## Why Cubby
 
@@ -101,29 +102,33 @@ else's platform and you can't bring your own agent.
 - **Scheduled jobs.** Apps can run code on a cron schedule (digests, reminders, cleanups, syncing from an API) with encrypted secrets. Each run is sandboxed and can only reach its own app's data and the public internet.
 - **Know who did what.** Every change (deploys, rollbacks, schema, secrets, jobs, logins, admin actions on users, apps and backups) is logged
   for 30 days with the agent that made it, or "dashboard". `cubby activity` shows yours; admins can see everyone's.
-- **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), API requests and errors, and accounts and signups per app, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them.
+- **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), API requests and errors, and accounts and signups per app, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them, and each app's page in the dashboard charts them on one time axis with a line for every deploy.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps on Explore, and manage users, limits and disk from the Admin page.
-- **A dashboard that follows your agents.** Home is a timeline of what your agents did, one line each, grouped by day: a deploy you don't like is one **Roll back** away, and a failed job comes with a fix-it prompt to paste into your agent. Next to it: who's on your apps right now, views over the last 7 days, your agents, and ready-made prompts for what to ask next. **Agents** lists every agent you connected, with the apps it touched; rename or revoke one there, or open it to see everything it did.
+- **A dashboard that follows your agents.** Home is a timeline of what your agents did, one line each, grouped by day: a deploy you don't like is one **Roll back** away, and a failed job comes with a fix-it prompt to paste into your agent. Next to it: who's on your apps right now, views over the last 7 days, your agents, and ready-made prompts for what to ask next. **Agents** lists every agent you connected, with the apps it touched; rename or revoke one there, or open it to see everything it did. Each app has its own page with tabs (Overview charts, Activity, Deploys with rollback, Jobs, Env and Settings), and every tab has its own link.
 - **Quick to get around.** Press ⌘K (Ctrl+K) anywhere in the dashboard to jump to a page or one of your apps, copy the setup prompt or a common command, switch theme or log out.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
 - **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin page tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins (or their agent) see where the disk goes and manage backups and older deploys with `cubby admin storage`, `cubby admin backups` and `cubby admin deploys`.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-home.png?v=c8c5844a" alt="Dashboard Home: prompt suggestions for your agent, a failed job with a Copy fix-it prompt button, and a timeline of agent activity with Roll back on deploys, next to active visitors, 7-day views and your agents"><p align="center"><sub>Home on Priya's Cubby: what your agents did, and what to ask next</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-apps.png?v=3e327a57" alt="The Apps page with app cards and an app's scheduled jobs"><p align="center"><sub>Apps: visibility, delete, and each app's scheduled jobs</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-home.png?v=48d949ff" alt="Dashboard Home: prompt suggestions for your agent, a failed job with a Copy fix-it prompt button, and a timeline of agent activity with Roll back on deploys, next to active visitors, 7-day views and your agents"><p align="center"><sub>Home on Priya's Cubby: what your agents did, and what to ask next</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-app-overview.png?v=9f328c32" alt="Friend Polls' Overview tab: a KPI strip, then views, unique visitors, active visitors and API errors charted on one time axis with dashed deploy lines, and the top paths"><p align="center"><sub>An app's Overview: every chart shares one time axis, with deploys drawn through</sub></p></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/assets/dashboard-agents.png?v=a8074a2c" alt="The Agents page: Claude Code and Codex with their machine, the apps each touched, last seen, and Rename and Revoke buttons, above the token for scripts and CI"><p align="center"><sub>Agents: rename, revoke, or connect another</sub></p></td>
 <td width="50%"><img src="docs/assets/dashboard-first-run.png?v=64b14f11" alt="Home for a new user: step 1 Copy prompt for agent, then approve the login, then ask for an app"><p align="center"><sub>First visit: connect your agent in three steps</sub></p></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-gallery.png?v=616041f6" alt="Explore page listing everyone's apps"><p align="center"><sub>Explore: everyone's apps</sub></p></td>
-<td width="50%"><img src="docs/assets/connect-approve.png?v=f807a051" alt="Approval page naming the agent that wants access"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-gallery.png?v=a0e0f981" alt="Explore page listing everyone's apps"><p align="center"><sub>Explore: everyone's apps</sub></p></td>
+<td width="50%"><img src="docs/assets/connect-approve.png?v=4a5cb37f" alt="Approval page naming the agent that wants access"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
 </tr>
 <tr>
-<td colspan="2" align="center"><img src="docs/assets/dashboard-admin.png?v=93cf03fc" width="640" alt="Admin page with users, apps, limits, scheduled jobs, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, jobs, users, disk, updates</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-apps.png?v=69b4f308" alt="The Apps page: one row per app with active visitors, views over 7 days with a sparkline, and who deployed it last"><p align="center"><sub>Apps: who's on each app, 7-day views, and which agent deployed it</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-app-deploys.png?v=b758402a" alt="An app's Deploys tab listing four deploys with their message, agent, size and age, the live one marked, and Roll back to this on the others"><p align="center"><sub>Deploys: roll back to any kept deploy</sub></p></td>
+</tr>
+<tr>
+<td colspan="2" align="center"><img src="docs/assets/dashboard-admin.png?v=513f932a" width="640" alt="Admin page with users, apps, limits, scheduled jobs, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, jobs, users, disk, updates</sub></p></td>
 </tr>
 </table>
 

@@ -8,7 +8,7 @@
 <link rel="icon" href="assets/logo.svg?v=aa679b5d" type="image/svg+xml">
 <meta property="og:title" content="Cubby: a home for the apps your agents build">
 <meta property="og:description" content="Self-host one server, invite your friends, and let AI coding agents build, deploy and share full-stack apps.">
-<meta property="og:image" content="assets/dashboard-home.png?v=c8c5844a">
+<meta property="og:image" content="assets/dashboard-home.png?v=48d949ff">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -339,7 +339,7 @@ After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to c
           <p class="prompt">To connect me to your Cubby account, open this link and click Approve (you can sign up there if you're new).</p>
           <p>You open the link, check the code matches, and click <b>Approve</b>. The page says which agent is asking, like <i>“Claude Code on chaitanya-mbp wants access”</i>. The agent carries on by itself. You never paste passwords or tokens into a chat.</p>
         </div>
-        <figure class="shot"><img src="assets/connect-approve.png?v=f807a051" alt="Approval page saying Claude Code on priya-mbp wants access, with a matching code and an Approve button" loading="lazy" width="1280" height="820"><figcaption>The approval page your agent links you to.</figcaption></figure>
+        <figure class="shot"><img src="assets/connect-approve.png?v=4a5cb37f" alt="Approval page saying Claude Code on priya-mbp wants access, with a matching code and an Approve button" loading="lazy" width="1280" height="820"><figcaption>The approval page your agent links you to.</figcaption></figure>
       </div>
       <h3>Every login is its own agent</h3>
       <p>Each approved <code>cubby login</code> gets its own key and a name from the agent tool it runs under (Claude Code, Codex or Cursor, otherwise “Terminal”; <code>--client</code> sets it) and the machine it's on. Connect Claude Code on your laptop and Codex on your desktop and Cubby sees two agents, not one shared token. Agents that ran an older CLI get a dated name like “Agent · 2026-10-17”.</p>
@@ -357,7 +357,7 @@ cubby agents revoke p3n7w9s2t5u8v1y --yes   <span class="c"># refuses without --
       <p>An agent can revoke itself too; the CLI then forgets the dead token, like <code>cubby logout</code>. You can only see, rename and revoke your own agents. <b>Regenerate</b> on the Agents page replaces only your manual token; agents keep their own keys.</p>
       <h3>See which agent did what</h3>
       <p>Your dashboard's <b>Home</b> is a timeline of it: one line per change, grouped by day, with a badge for the agent that made it. The deploy that's live has <b>Roll back</b> (after a confirm, the deploy before it goes live again), and a failed job or an app with many API errors gets <b>Copy fix-it prompt</b>, a ready-made message for your agent naming the app and where to look. Above it, “What should your agent do next?” offers prompts to copy, and beside it you see who's on your apps right now, views over the last 7 days and your agents. Home only shows your own apps; friends' apps are on Explore.</p>
-      <figure class="shot"><img src="assets/dashboard-home.png?v=c8c5844a" alt="Dashboard Home: prompt suggestions, a failed job with Copy fix-it prompt, and the agent activity timeline with Roll back on deploys, next to active visitors, 7-day views and agents" loading="lazy" width="1280" height="900"><figcaption>Home: what your agents did, and what to ask next.</figcaption></figure>
+      <figure class="shot"><img src="assets/dashboard-home.png?v=48d949ff" alt="Dashboard Home: prompt suggestions, a failed job with Copy fix-it prompt, and the agent activity timeline with Roll back on deploys, next to active visitors, 7-day views and agents" loading="lazy" width="1280" height="900"><figcaption>Home: what your agents did, and what to ask next.</figcaption></figure>
       <p>The same log is in the terminal:</p>
       <p>Cubby keeps a short log of every change: creating, hiding and deleting apps, deploys (with the deploy id and file count), rollbacks, schema pushes and drops, secrets set or removed (by name, never the value), jobs run, paused or resumed, agent logins, and admin actions on users, apps and backups. Each entry says which agent made it, or <b>dashboard</b> for the dashboard and the manual token. Reads aren't logged, and entries are pruned after 30 days.</p>
       <div class="code"><pre>cubby activity friend-polls
@@ -380,7 +380,7 @@ cubby agents revoke p3n7w9s2t5u8v1y --yes   <span class="c"># refuses without --
         <li>Tests its own rules, then tells you the URL, what it built, and ideas for next steps.</li>
       </ol>
       <p>Everyone on your server can open the app and sees it on the <b>Explore</b> page. Ask for it to be unlisted if you'd rather share only the link.</p>
-      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-gallery.png?v=616041f6" alt="The Explore page listing everyone's apps: Team Tasks by Sam, Friend Polls and Book Club by Priya, Recipe Box by Arjun" loading="lazy" width="1280" height="820"><figcaption>Explore: what friends on the server have shipped.</figcaption></figure>
+      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-gallery.png?v=a0e0f981" alt="The Explore page listing everyone's apps: Team Tasks by Sam, Friend Polls and Book Club by Priya, Recipe Box by Arjun" loading="lazy" width="1280" height="820"><figcaption>Explore: what friends on the server have shipped.</figcaption></figure>
       <div class="note"><b>Changing an app later.</b> The server stores built output, not source code. Keep working in the folder the app was built in, and ask your agent for changes there.</div>
 
       <h3 id="jobs">Scheduled jobs</h3>
@@ -400,10 +400,10 @@ export default async ({ pb, env, log, fetch }) =&gt; {
         <li><b>Shipped with the app.</b> <code>cubby deploy</code> bundles the jobs with the frontend, and <code>cubby rollback</code> brings back the jobs of that deploy.</li>
         <li><b>Its own data, past the rules.</b> A job's <code>pb</code> acts as admin, but only for that app's collections. Other apps and the server's own data are out of reach.</li>
         <li><b>Secrets stay secret.</b> API keys are set with <code>cubby env set NAME=value</code>, stored encrypted, never shown again, and given only to the app's jobs as <code>env.NAME</code>.</li>
-        <li><b>Checked right away.</b> <code>cubby jobs run &lt;job&gt;</code> runs one now and prints its log, so the agent tests each job before telling you it's done. The app's card on the dashboard's <b>Apps</b> page lists its jobs, with <b>Run now</b>, <b>Pause</b> and the last log.</li>
+        <li><b>Checked right away.</b> <code>cubby jobs run &lt;job&gt;</code> runs one now and prints its log, so the agent tests each job before telling you it's done. The <b>Jobs</b> tab of the app's page on the dashboard lists its jobs, with <b>Run now</b>, <b>Pause</b> and the last log, and the <b>Env</b> tab sets and removes secrets by name (values are never shown).</li>
         <li><b>Safe to miss.</b> A run that's due while the previous one is still going is skipped, and runs missed while the server was down aren't caught up later.</li>
       </ul>
-      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-apps.png?v=3e327a57" alt="The Apps page: the Friend Polls card with its two scheduled jobs, one that ran OK and one not run yet, each with Run now and Pause buttons" loading="lazy" width="1280" height="820"><figcaption>An app's scheduled jobs on the Apps page.</figcaption></figure>
+      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-app-jobs.png?v=15d70d42" alt="Friend Polls' Jobs tab: two scheduled jobs that ran OK, each with its schedule, last and next run, and Run now and Pause buttons" loading="lazy" width="1280" height="820"><figcaption>An app's scheduled jobs, on its Jobs tab.</figcaption></figure>
 
       <h3 id="metrics">Visitors, activity and API health</h3>
       <p>Once friends are using an app, you'll want to know if they actually are. Ask:</p>
@@ -423,8 +423,11 @@ export default async ({ pb, env, log, fetch }) =&gt; {
         <li><b>Who's on it now.</b> Active now counts visitors who loaded a page or used the database in the last 5 minutes, without a heartbeat or anything added to the app. It lives only in memory; the highest it reached each hour is kept as that hour's peak, and the report shows the biggest peak in the range.</li>
         <li><b>Is the backend healthy?</b> Every database call through <code>/pb</code> counts as an API request, and every 5xx answer as an error, per hour. The error rate is errors over requests.</li>
         <li><b>Accounts.</b> The number of accounts in the app's own users collection, and how many signed up each day, read from the database when you ask.</li>
+        <li><b>Charted on the app's page.</b> The dashboard's app page opens on <b>Overview</b>: active now, views, visitors, API error rate and accounts across the top, then views, unique visitors, active visitors and API errors for the last 24 hours, 7 days or 30 days. The charts share one time axis and every deploy is a dashed line through all of them, so a spike right after a deploy stands out. Each chart has a text summary for screen readers and a <b>Show as table</b> fallback. The <b>Apps</b> list shows each app's visitors right now, a 7-day sparkline and which agent deployed it last.</li>
         <li><b>Yours to see.</b> Only the app's owner (and the server's admins) can see an app's numbers. <code>cubby metrics</code> without an app lists all of yours; <code>--range</code> takes hours or days up to <code>90d</code>, and <code>--json</code> adds views, peaks, API requests and errors per hour, views and visitors per day, and signups per day.</li>
       </ul>
+      <figure class="shot"><img src="assets/dashboard-app-overview.png?v=9f328c32" alt="Friend Polls' Overview tab: a KPI strip, then views, unique visitors, active visitors and API errors charted on one time axis with dashed deploy lines, and the top paths" loading="lazy" width="1280" height="1450"><figcaption>An app's Overview: deploys v3 and v4 drawn through every chart.</figcaption></figure>
+      <p>Its other tabs: <b>Activity</b> (that app's timeline), <b>Deploys</b> (every kept deploy with <b>Roll back to this</b>), <b>Jobs</b>, <b>Env</b> and <b>Settings</b> (show in the gallery, and delete after typing the app's name). The tab is part of the link, like <code>/apps/friend-polls/deploys</code>, so a reload keeps it, and on a phone the tabs scroll sideways. A tab with nothing in it yet suggests what to ask your agent, with a copy button.</p>
     </section>
 
     <section id="cli">
@@ -519,7 +522,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           </ul>
           <p>Admins can't deploy into or edit other people's apps.</p>
         </div>
-        <figure class="shot"><img src="assets/dashboard-admin.png?v=93cf03fc" alt="Admin page with user and app counts, disk usage, the signup code, limits, scheduled jobs, users, apps and an update notice" loading="lazy" width="1280" height="1977"><figcaption>The Admin page.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-admin.png?v=513f932a" alt="Admin page with user and app counts, disk usage, the signup code, limits, scheduled jobs, users, apps and an update notice" loading="lazy" width="1280" height="1977"><figcaption>The Admin page.</figcaption></figure>
       </div>
       <h3>On the server</h3>
       <div class="table"><table>

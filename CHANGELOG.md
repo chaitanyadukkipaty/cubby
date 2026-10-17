@@ -15,6 +15,14 @@ All notable changes to Cubby are documented here. The format follows
 - The dashboard's **Agents** page lists your agents with their machine, the apps they touched and when they were last
   seen; rename one inline or revoke it (its key stops working at once). **Connect a new agent** copies the setup
   prompt, and the token for scripts and CI moved here from Home. `/agents/<id>` shows what one agent did.
+- Each app has a page in the dashboard, `/apps/<app>[/<tab>]`, with tabs that keep their place on reload (and scroll
+  sideways on phones). **Overview** has a KPI strip (active now, views, visitors, API error rate, accounts) and
+  hand-drawn charts of views, unique visitors, active visitors and API errors over 24 hours, 7 or 30 days, sharing one
+  time axis with every deploy drawn through them; each has a text summary and a table fallback, and top paths show
+  when the server reports them. **Activity**, **Deploys** (roll back to any kept deploy), **Jobs**, **Env** (secrets
+  by name; values are never shown) and **Settings** (gallery visibility, delete after typing the app's name) follow.
+  Empty tabs suggest what to ask your agent. The **Apps** list became a table with active visitors, a 7-day views
+  sparkline and who deployed each app last.
 - Scheduled jobs. An app can run code on a cron schedule (UTC): one file per job in `cubby/jobs/`, bundled with its
   npm dependencies by `cubby deploy` and rolled back with the deploy. Each run is a sandboxed Node.js process (no
   access to the server's files, environment, processes or local network) whose database client reaches only that
