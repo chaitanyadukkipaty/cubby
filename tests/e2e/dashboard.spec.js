@@ -16,6 +16,8 @@ test('a new user signs up with the signup code and lands on their dashboard', as
   await authPage.createAccountButton.click();
   await expect(dashboard.account(email)).toBeVisible();
   await expect(dashboard.myApps.connectHeading).toBeVisible();
+  await expect(dashboard.myApps.appIdea).toHaveText('polls');
+  await expect(dashboard.myApps.appIdea).toHaveText('chat', { timeout: 5_000 }); // the highlighted app idea rotates
   await expect(dashboard.myApps.setupPrompt).toContainText('npx skills add chaitanyadukkipaty/cubby --skill cubby -g');
   await expect(dashboard.myApps.setupPrompt).toContainText(`curl -fsSL ${baseURL}/skill.sh | sh`);
   await expect(dashboard.myApps.emptyState).toBeVisible();

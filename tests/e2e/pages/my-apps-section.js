@@ -3,6 +3,7 @@ export class MyAppsSection {
   constructor(page) {
     this.page = page;
     this.connectHeading = page.getByRole('heading', { name: /^A home for every/ });
+    this.appIdea = this.connectHeading.locator('.chip');
     this.setupPrompt = page.getByLabel('Setup prompt');
     this.copyPromptButton = page.getByRole('button', { name: 'Copy prompt for agent' });
     this.tokenToggle = page.getByText('Token for scripts and CI');
