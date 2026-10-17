@@ -54,7 +54,7 @@ after(() => srv?.stop());
 
 describe('deploying jobs', () => {
   test('/api/info says the server has jobs', async () => {
-    assert.deepEqual((await api(srv.url)('GET', '/api/info')).data.features, ['jobs']);
+    assert.deepEqual((await api(srv.url)('GET', '/api/info')).data.features, ['jobs', 'metrics']);
   });
   test('a deploy carries its jobs; they are listed but their code is never served', async () => {
     assert.equal((await alice('PUT', '/api/projects/worker/env/API_KEY', { body: { value: 's3cret' } })).status, 200);

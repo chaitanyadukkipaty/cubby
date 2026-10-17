@@ -85,7 +85,7 @@ describe('logic views', () => {
     assert.deepEqual(logic.settingsPatch({ jobs: 'no' }), {});
     for (const bad of [4, 291, 1.5, 'x']) assert.throws(() => logic.settingsPatch({ job_timeout_s: bad }), /job_timeout_s must be a whole number between 5 and 290/, String(bad));
   });
-  test('/api/info lists the optional features', () => assert.deepEqual(logic.FEATURES, ['jobs']));
+  test('/api/info lists the optional features', () => assert.deepEqual(logic.FEATURES, ['jobs', 'metrics']));
   test('the update check is stored inverted, so settings rows from before it existed keep it on', () => {
     assert.equal(logic.settingsView({ update_check_off: true }).update_check, false);
     assert.deepEqual(logic.settingsPatch({ update_check: false }), { update_check_off: true });

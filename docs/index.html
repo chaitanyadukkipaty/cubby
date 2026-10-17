@@ -231,7 +231,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
       <p class="kicker">Architecture</p>
       <h2>How it works</h2>
       <p>Everything runs in one Docker container: Caddy in front for HTTPS, the Cubby server, and a shared <a href="https://pocketbase.io">PocketBase</a> database. Each app gets its own subdomain and its own walled-off slice of the database.</p>
-      <div class="arch" role="img" aria-label="Diagram: browsers and agents reach Caddy, which forwards to the Cubby server. The server serves the dashboard and control API, hosts each app's static files, and proxies each app's database calls to a shared PocketBase, allowing only that app's collections. It also runs each app's scheduled jobs.">
+      <div class="arch" role="img" aria-label="Diagram: browsers and agents reach Caddy, which forwards to the Cubby server. The server serves the dashboard and control API, hosts each app's static files, and proxies each app's database calls to a shared PocketBase, allowing only that app's collections. It also runs each app's scheduled jobs and counts its page views.">
         <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg">
           <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="ar"/></marker></defs>
           <rect class="box" x="10" y="40" width="150" height="58" rx="10"/><text x="85" y="66" text-anchor="middle">Coding agent</text><text class="sm" x="85" y="84" text-anchor="middle">cubby CLI + skill</text>
@@ -241,7 +241,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
           <rect class="box" x="390" y="62" width="200" height="46" rx="8"/><text x="490" y="82" text-anchor="middle">Dashboard + API</text><text class="sm" x="490" y="98" text-anchor="middle">your-server.com</text>
           <rect class="box" x="390" y="120" width="200" height="46" rx="8"/><text x="490" y="140" text-anchor="middle">App hosting</text><text class="sm" x="490" y="156" text-anchor="middle">&lt;app&gt;.your-server.com</text>
           <rect class="box" x="390" y="178" width="200" height="46" rx="8"/><text x="490" y="198" text-anchor="middle">Database proxy</text><text class="sm" x="490" y="214" text-anchor="middle">&lt;app&gt;/pb/* → own data only</text>
-          <text class="sm" x="490" y="252" text-anchor="middle">scheduled jobs · deploys · backups</text>
+          <text class="sm" x="490" y="252" text-anchor="middle">scheduled jobs · metrics · deploys · backups</text>
           <rect class="box" x="660" y="160" width="190" height="82" rx="10"/><text x="755" y="188" text-anchor="middle">PocketBase</text><text class="sm" x="755" y="206" text-anchor="middle">polls__votes, tasks__…</text><text class="sm" x="755" y="222" text-anchor="middle">one prefix per app</text>
           <path class="ln" d="M160 69 C185 69 185 130 203 135" marker-end="url(#a)"/>
           <path class="ln" d="M160 219 C185 219 185 160 203 155" marker-end="url(#a)"/>
@@ -399,6 +399,21 @@ export default async ({ pb, env, log, fetch }) =&gt; {
         <li><b>Safe to miss.</b> A run that's due while the previous one is still going is skipped, and runs missed while the server was down aren't caught up later.</li>
       </ul>
       <figure class="shot" style="max-width:760px"><img src="assets/dashboard-my-apps.png?v=e4b08ff1" alt="My apps: the Friend Polls card with its two scheduled jobs, one that ran OK and one not run yet, each with Run now and Pause buttons" loading="lazy" width="1280" height="1341"><figcaption>An app's scheduled jobs on its owner's dashboard.</figcaption></figure>
+
+      <h3 id="metrics">Page views and visitors</h3>
+      <p>Once friends are using an app, you'll want to know if they actually are. Ask:</p>
+      <p class="prompt">How many people used the polls app this week?</p>
+      <p>The agent runs <code>cubby metrics friend-polls --range 7d</code> and answers from what the server counted:</p>
+      <div class="code"><pre>friend-polls: 214 views, 23 visitors in the last 7d
+  2026-10-11     18 views     4 visitors
+  2026-10-12     41 views     9 visitors
+  <span class="c">…</span></pre></div>
+      <ul>
+        <li><b>Nothing to add to the app.</b> The server counts as it hands out the app's pages: every page a browser loads is a view. Scripts, images, database calls and obvious bots and link previews don't count.</li>
+        <li><b>Visitors, not people's IPs.</b> A visitor is a hash of the IP address and browser, mixed with a secret that only lives in memory and changes every day (UTC). The same person counts once a day and can't be followed from one day to the next. IP addresses are never stored.</li>
+        <li><b>By the hour and by the day.</b> Counts are written to the database every minute, so a crash loses at most a minute, and a restart may count some of that day's visitors twice. Visitors are unique per day; over several days, the total adds up each day's visitors.</li>
+        <li><b>Yours to see.</b> Only the app's owner (and the server's admins) can see an app's numbers. <code>cubby metrics</code> without an app lists all of yours; <code>--range</code> takes hours or days up to <code>90d</code>, and <code>--json</code> gives the hourly and daily numbers.</li>
+      </ul>
     </section>
 
     <section id="cli">
@@ -429,6 +444,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           <tr><td><code>cubby jobs logs &lt;job&gt; [--limit n] [--run &lt;id&gt;]</code></td><td>Show past runs and their output (the last 100 per job are kept).</td></tr>
           <tr><td><code>cubby jobs pause | resume &lt;job&gt;</code></td><td>Stop or restart a job's schedule. Stays that way across deploys.</td></tr>
           <tr><td><code>cubby env list | set NAME=value | unset NAME --yes</code></td><td>Secrets for jobs. <code>set NAME --from-stdin</code> keeps the value out of shell history.</td></tr>
+          <tr><td><code>cubby metrics [&lt;app&gt;] [--range 7d]</code></td><td>Page views and unique visitors of one app, or of all your apps. The last 24 hours by default, at most 90 days.</td></tr>
           <tr><td><code>cubby schema push | pull</code></td><td>Apply or download the data model. Push never deletes anything.</td></tr>
           <tr><td><code>cubby schema drop &lt;c&gt;[.&lt;f&gt;] --yes</code></td><td>Delete a collection or field and its data.</td></tr>
           <tr><td><code>cubby projects</code> · <code>info</code> · <code>link &lt;app&gt;</code></td><td>List your apps, show the current one, or attach this folder to an existing app.</td></tr>
@@ -539,6 +555,7 @@ cubby admin deploys blog delete &lt;id&gt; --yes</pre></div>
         <li><b>Agents never see passwords.</b> They log in through a link you approve in the browser.</li>
         <li><b>Deploys are inert files.</b> Uploads are unpacked as plain files only (no symlinks), into folders that can't be escaped. Job code is moved out of the site, so it's never served.</li>
         <li><b>Jobs are sandboxed.</b> Each run is a separate Node.js process with the permission model on: it can't read the server's files, start processes or see its environment, and it can only connect to public internet addresses, never to the database or anything else on the server's network. Its database client reaches only its own app's records, checked by the same code as the proxy. Runs have a time limit and a 128 MB memory cap, and at most two run at once. This stops accidents and snooping between apps; like the rest of Cubby, it assumes people with accounts aren't attackers.</li>
+        <li><b>Metrics keep no IP addresses.</b> Visitors are counted by a daily-salted hash of IP address and browser, and the salt never leaves memory.</li>
         <li><b>Secrets are encrypted</b> with a server key that's kept outside the database (and backed up with it). The database admin UI shows only ciphertext, and values are never shown again after they're set.</li>
         <li><b>Every agent has its own key.</b> Each approved login gets a separate token, named after its tool and machine. Your manual token is stored so the dashboard can show it again. <code>cubby agents revoke</code> cuts one agent off immediately, and <b>Regenerate</b> replaces the manual token without touching agents.</li>
         <li><b>Changes are logged, secrets aren't.</b> The activity log records who changed what and through which agent, for 30 days. It stores secret names only, never values, and like every platform collection it's reachable only through the server, never from apps. Users see their own entries; admins see everyone's.</li>

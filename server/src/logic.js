@@ -3,7 +3,7 @@ import { SLUG_RE, RESERVED_SLUGS, prefixFor, config } from './config.js';
 import { HttpError } from './http.js';
 
 // What this server supports beyond the basics, in /api/info (dashboards and newer CLIs check it).
-export const FEATURES = ['jobs'];
+export const FEATURES = ['jobs', 'metrics'];
 
 export const isLoopback = (ip) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip ?? '');
 

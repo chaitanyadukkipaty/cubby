@@ -53,6 +53,12 @@ All notable changes to Cubby are documented here. The format follows
   Entries older than 30 days are pruned before every backup (nightly, `cubby admin backups create` and
   `cubby-server backup`). An app's entries outlive the app until they age out; deleting a user deletes theirs.
   Stored in a new platform collection, `cubby_activity`, closed to apps like the others.
+- Page views and unique visitors per app, counted by the server as it serves an app's pages: no script in the app,
+  no cookies. Assets, `/pb` calls, HEAD requests, prefetches and obvious bots don't count. A visitor is a hash of IP
+  address and browser with a salt that lives only in memory and changes every UTC day; IPs are never stored. Counts
+  are flushed to the database every minute (and on shutdown) in hourly and daily buckets. `cubby metrics <app>`
+  shows one app, `cubby metrics` all of yours, `--range` up to 90d (default 24h). Owners see their apps; admins see
+  any. `/api/info` lists `metrics` in `features`.
 
 ### Changed
 

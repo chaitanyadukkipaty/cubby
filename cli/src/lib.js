@@ -316,6 +316,21 @@ export const formatRun = (r) => `${r.job} ${r.id}  ${r.status}  ${r.trigger}  ${
 
 export const formatEnv = (list) => list.map((e) => `${e.key.padEnd(32)} set ${e.updated}`).join('\n') || 'No secrets. Add one with: cubby env set NAME=value';
 
+const counts = (b) => `${String(b.views).padStart(6)} views  ${String(b.visitors).padStart(4)} visitors`;
+
+// `cubby metrics <app>`: visitors are unique per UTC day, so each day is listed with its own count.
+export const formatMetrics = (r) => [
+  `${r.app}: ${r.views} views, ${r.visitors} visitors in the last ${r.range}`,
+  ...r.days.map((d) => `  ${d.start.slice(0, 10)} ${counts(d)}`),
+].join('\n');
+
+// `cubby metrics`: every app of yours.
+export function formatMetricsList(list) {
+  if (!list.length) return 'No apps yet. Create one with `cubby init <app>`.';
+  const width = Math.max(...list.map((a) => a.app.length));
+  return [`Last ${list[0].range}`, ...list.map((a) => `  ${a.app.padEnd(width)} ${counts(a)}`)].join('\n');
+}
+
 // `cubby env set NAME=value`
 export function parseEnvAssignment(text) {
   const i = String(text ?? '').indexOf('=');
