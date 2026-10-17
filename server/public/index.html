@@ -208,7 +208,7 @@ function renderAuth() {
       h('input', { name: 'password', type: 'password', placeholder: 'Password (8+ characters)', required: true, minlength: 8, autocomplete: mode === 'signup' ? 'new-password' : 'current-password', 'aria-label': 'Password' }),
       mode === 'signup' && !info.open_signup
         ? h('input', { name: 'code', type: 'text', placeholder: 'Signup code from your admin', required: true, autocomplete: 'off', 'aria-label': 'Signup code' })
-        : null,
+        : '', // native replaceChildren would render null as "null"
       err,
       h('button', { class: 'primary', type: 'submit', style: 'width:100%' }, mode === 'signup' ? 'Create account' : 'Log in'),
     );
