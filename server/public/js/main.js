@@ -6,6 +6,7 @@ import { state, loadMe, logout, setRenderer } from './session.js';
 import { currentRoute, navigate, startRouter } from './router.js';
 import { credit, httpBanner, icon, logo, toast } from './ui.js';
 import { themeButton } from './theme.js';
+import { installPalette, paletteButton } from './command-palette.js';
 import { renderAuth } from './views/auth.js';
 import { renderConnect } from './views/connect.js';
 import { renderHome } from './views/home.js';
@@ -22,6 +23,7 @@ function sidebar(route) {
   const { me, info } = state;
   return h('aside', { class: 'side-col' }, h('div', { class: 'side' },
     h('div', { class: 'brand' }, logo(), h('div', {}, h('h1', {}, displayName(info.name)), credit())),
+    paletteButton(),
     h('nav', { class: 'nav', 'aria-label': 'Main' }, navItems(me, route).map((n) =>
       h('a', { href: n.href, 'aria-current': n.current ? 'page' : false }, icon(n.icon), h('span', {}, n.label)))),
     h('div', { class: 'foot' },
@@ -52,6 +54,7 @@ function render() {
 
 setRenderer(render);
 startRouter(render);
+installPalette();
 try { state.info = await (await fetch('/api/info')).json(); } catch {}
 document.title = displayName(state.info.name);
 await loadMe();

@@ -63,6 +63,9 @@ All notable changes to Cubby are documented here. The format follows
   minutes, in memory only, no heartbeat) and its peak per hour; `/pb` API requests and 5xx errors per hour with the
   error rate; and the app's accounts with signups per day, read from PocketBase when asked. `cubby metrics` without
   an app also shows each app's active now and API errors.
+- A command palette in the dashboard: ⌘K (Ctrl+K), or Search in the sidebar, jumps to a page or one of your apps
+  and copies the setup prompt or a common command (`cubby deploy`, `cubby login`), switches theme or logs out.
+  Fuzzy search, fully keyboard-driven.
 
 ### Changed
 

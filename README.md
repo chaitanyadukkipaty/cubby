@@ -104,20 +104,21 @@ else's platform and you can't bring your own agent.
 - **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), API requests and errors, and accounts and signups per app, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps on Explore, and manage users, limits and disk from the Admin page.
+- **Quick to get around.** Press ⌘K (Ctrl+K) anywhere in the dashboard to jump to a page or one of your apps, copy the setup prompt or a common command, switch theme or log out.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
 - **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin page tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins (or their agent) see where the disk goes and manage backups and older deploys with `cubby admin storage`, `cubby admin backups` and `cubby admin deploys`.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=15bb425b" alt="Dashboard Home with a sidebar, the Copy prompt for agent button and a list of the user's apps"><p align="center"><sub>Home on Priya's Cubby: connect your agent, see your apps</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-apps.png?v=f9bc8e16" alt="The Apps page with app cards and an app's scheduled jobs"><p align="center"><sub>Apps: visibility, delete, and each app's scheduled jobs</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=2b0656a2" alt="Dashboard Home with a sidebar, the Copy prompt for agent button and a list of the user's apps"><p align="center"><sub>Home on Priya's Cubby: connect your agent, see your apps</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-apps.png?v=3e327a57" alt="The Apps page with app cards and an app's scheduled jobs"><p align="center"><sub>Apps: visibility, delete, and each app's scheduled jobs</sub></p></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/assets/dashboard-gallery.png?v=fdae93fd" alt="Explore page listing everyone's apps"><p align="center"><sub>Explore: everyone's apps</sub></p></td>
 <td width="50%"><img src="docs/assets/connect-approve.png?v=0360b2c0" alt="Approval page naming the agent that wants access"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
 </tr>
 <tr>
-<td colspan="2" align="center"><img src="docs/assets/dashboard-admin.png?v=1936738f" width="640" alt="Admin page with users, apps, limits, scheduled jobs, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, jobs, users, disk, updates</sub></p></td>
+<td colspan="2" align="center"><img src="docs/assets/dashboard-admin.png?v=93cf03fc" width="640" alt="Admin page with users, apps, limits, scheduled jobs, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, jobs, users, disk, updates</sub></p></td>
 </tr>
 </table>
 

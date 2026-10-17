@@ -2,6 +2,7 @@
 import { MyAppsSection } from './my-apps-section.js';
 import { GallerySection } from './gallery-section.js';
 import { AdminSection } from './admin-section.js';
+import { CommandPalette } from './command-palette.js';
 
 export class DashboardPage {
   constructor(page) {
@@ -20,6 +21,7 @@ export class DashboardPage {
     this.myApps = new MyAppsSection(page);
     this.gallery = new GallerySection(page);
     this.admin = new AdminSection(page);
+    this.palette = new CommandPalette(page);
   }
 
   /** Opens the dashboard already signed in, the way a returning user arrives (or follows a link to `path`). */
