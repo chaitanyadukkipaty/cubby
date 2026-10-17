@@ -3,6 +3,8 @@ import { MyAppsSection } from './my-apps-section.js';
 import { GallerySection } from './gallery-section.js';
 import { AdminSection } from './admin-section.js';
 import { CommandPalette } from './command-palette.js';
+import { HomeSection } from './home-page.js';
+import { AgentsSection } from './agents-page.js';
 
 export class DashboardPage {
   constructor(page) {
@@ -22,6 +24,8 @@ export class DashboardPage {
     this.gallery = new GallerySection(page);
     this.admin = new AdminSection(page);
     this.palette = new CommandPalette(page);
+    this.home = new HomeSection(page);
+    this.agents = new AgentsSection(page);
   }
 
   /** Opens the dashboard already signed in, the way a returning user arrives (or follows a link to `path`). */

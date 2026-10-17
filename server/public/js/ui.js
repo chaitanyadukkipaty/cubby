@@ -26,6 +26,10 @@ const PATHS = {
   moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+  external: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  sparkle: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
+  alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/>',
 };
 
 /** An inline icon (static markup from PATHS, never user data). */
@@ -49,6 +53,18 @@ export function httpBanner() {
     h('b', {}, '⚠ '), 'This server runs on plain HTTP, so passwords and tokens are not encrypted in transit. ',
     'Ask the admin to add a domain to enable HTTPS.');
 }
+
+/** A prompt or command to paste somewhere, in monospace with a copy button (the whole chip copies). */
+export function copyChip(text, { what = 'Prompt copied', label = 'Copy prompt' } = {}) {
+  return h('button', { type: 'button', class: 'chip-copy', title: label, 'aria-label': `${label}: ${text}`, onclick: () => copy(text, what) },
+    h('span', { class: 'mono' }, text), icon('copy'));
+}
+
+/** An "Ask your agent:" box: what to paste into the agent when there's nothing to show yet. */
+export const askAgent = (text) => h('div', { class: 'ask' }, h('span', { class: 'ask-h' }, 'Ask your agent:'), copyChip(text));
+
+/** An agent's two-letter badge (decorative; the name is always next to it). */
+export const agentBadge = (mono) => h('span', { class: 'mono-badge', 'aria-hidden': 'true' }, mono);
 
 /** A page's title row: heading plus optional extras (counts, actions). */
 export const pageHeader = (title, ...extra) => h('header', { class: 'page-h' }, h('h2', {}, title), ...extra);

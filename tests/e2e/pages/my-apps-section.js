@@ -1,4 +1,4 @@
-// Home (the connect-your-agent card and the token) and /apps (the user's own apps as cards).
+// Home's connect-your-agent card and /apps (the user's own apps as cards).
 export class MyAppsSection {
   constructor(page) {
     this.page = page;
@@ -6,10 +6,6 @@ export class MyAppsSection {
     this.appIdea = this.connectHeading.locator('.chip');
     this.setupPrompt = page.getByLabel('Setup prompt');
     this.copyPromptButton = page.getByRole('button', { name: 'Copy prompt for agent' });
-    this.tokenToggle = page.getByText('Token for scripts and CI');
-    this.token = page.getByLabel('Your token');
-    this.revealButton = page.getByRole('button', { name: 'Reveal' });
-    this.regenerateButton = page.getByRole('button', { name: 'Regenerate' });
     this.emptyState = page.getByText('No apps yet.');
   }
 
@@ -37,11 +33,5 @@ export class MyAppsSection {
         };
       },
     };
-  }
-
-  async revealToken() {
-    await this.tokenToggle.click();
-    await this.revealButton.click();
-    return (await this.token.textContent()).trim();
   }
 }

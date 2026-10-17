@@ -7,6 +7,14 @@ All notable changes to Cubby are documented here. The format follows
 
 ### Added
 
+- Dashboard Home is now your agents' activity timeline: one line per change, grouped by day, with the agent's badge
+  and the app. The live deploy has **Roll back** (with a confirm), and a failed job gets **Copy fix-it prompt**.
+  "What should your agent do next?" offers prompts to copy, and a summary column (above the timeline on phones)
+  shows who's on your apps now, views over 7 days and your agents. Failed jobs and apps with many API errors are
+  flagged at the top. A new user with no agent and no app gets three connect steps instead.
+- The dashboard's **Agents** page lists your agents with their machine, the apps they touched and when they were last
+  seen; rename one inline or revoke it (its key stops working at once). **Connect a new agent** copies the setup
+  prompt, and the token for scripts and CI moved here from Home. `/agents/<id>` shows what one agent did.
 - Scheduled jobs. An app can run code on a cron schedule (UTC): one file per job in `cubby/jobs/`, bundled with its
   npm dependencies by `cubby deploy` and rolled back with the deploy. Each run is a sandboxed Node.js process (no
   access to the server's files, environment, processes or local network) whose database client reaches only that

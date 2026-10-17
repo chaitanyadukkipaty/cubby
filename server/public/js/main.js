@@ -11,13 +11,13 @@ import { renderAuth } from './views/auth.js';
 import { renderConnect } from './views/connect.js';
 import { renderHome } from './views/home.js';
 import { renderApps, renderApp } from './views/apps.js';
-import { renderAgents } from './views/agents.js';
+import { renderAgents, renderAgent } from './views/agents.js';
 import { renderExplore } from './views/explore.js';
 import { renderAdmin } from './views/admin.js';
 
 const $app = document.getElementById('app');
 
-const VIEWS = { home: renderHome, apps: renderApps, app: renderApp, agents: renderAgents, explore: renderExplore, admin: renderAdmin };
+const VIEWS = { home: renderHome, apps: renderApps, app: renderApp, agents: renderAgents, agent: renderAgent, explore: renderExplore, admin: renderAdmin };
 
 function sidebar(route) {
   const { me, info } = state;

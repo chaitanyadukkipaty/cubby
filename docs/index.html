@@ -8,7 +8,7 @@
 <link rel="icon" href="assets/logo.svg?v=aa679b5d" type="image/svg+xml">
 <meta property="og:title" content="Cubby: a home for the apps your agents build">
 <meta property="og:description" content="Self-host one server, invite your friends, and let AI coding agents build, deploy and share full-stack apps.">
-<meta property="og:image" content="assets/dashboard-my-apps.png?v=2b0656a2">
+<meta property="og:image" content="assets/dashboard-home.png?v=c8c5844a">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -300,9 +300,9 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
       <p class="kicker">Admin</p>
       <h2>Invite people</h2>
       <p>Send your friends the server URL and the signup code. On the dashboard's <b>Admin</b> page, <b>Copy invite</b> copies both. They open the URL, sign up with the code, and land on <b>Home</b>, under your server's name.</p>
-      <p>The dashboard has a sidebar (a bottom bar on phones): <b>Home</b> holds the setup prompt for their agent and a list of their apps, <b>Apps</b> has a card per app, <b>Explore</b> shows everyone's apps, and admins also get <b>Admin</b>. Every page has its own link, so a bookmark or a reload lands in the same place. It follows the system's light or dark setting, and the toggle under your email overrides it. Press <b>⌘K</b> (<b>Ctrl+K</b>), or click <b>Search</b> in the sidebar, to jump to any page or app, copy the setup prompt or a common command, switch theme or log out, all from the keyboard.</p>
+      <p>The dashboard has a sidebar (a bottom bar on phones). The first time, <b>Home</b> walks them through connecting their agent in three steps; after that it's a timeline of what their agents did, with suggestions for what to ask next. <b>Agents</b> lists the agents they connected, <b>Apps</b> has a row per app, <b>Explore</b> shows everyone's apps, and admins also get <b>Admin</b>. Every page has its own link, so a bookmark or a reload lands in the same place. It follows the system's light or dark setting, and the toggle under your email overrides it. Press <b>⌘K</b> (<b>Ctrl+K</b>), or click <b>Search</b> in the sidebar, to jump to any page or app, copy the setup prompt or a common command, switch theme or log out, all from the keyboard.</p>
       <div class="two">
-        <figure class="shot"><img src="assets/dashboard-my-apps.png?v=2b0656a2" alt="Cubby dashboard Home: a sidebar with Home, Apps, Agents, Explore and Admin, the Copy prompt for agent button and a table of the user's apps" loading="lazy" width="1280" height="820"><figcaption>Home, what a friend sees after signing up.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-first-run.png?v=64b14f11" alt="Cubby dashboard Home for a new user: step 1 with the Copy prompt for agent button, step 2 approve the login, step 3 prompts to ask for an app" loading="lazy" width="1280" height="820"><figcaption>Home, what a friend sees after signing up.</figcaption></figure>
         <div>
           <p><b>Rotate code</b> invalidates the old code for new signups; existing accounts keep working.</p>
           <p><b>Open signup</b> drops the code requirement entirely. Leave it off for a server on the public internet: bots find open signup forms within days.</p>
@@ -314,7 +314,7 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
     <section id="agents">
       <p class="kicker">Everyone · once</p>
       <h2>Connect your agent</h2>
-      <p>Each person pastes one prompt into their coding agent. It's on their dashboard's Home page with the server's name and URL filled in:</p>
+      <p>Each person pastes one prompt into their coding agent. It's on their dashboard's Home page the first time (and behind <b>Connect a new agent</b> on the Agents page later), with the server's name and URL filled in:</p>
       <div class="code"><pre style="white-space:pre-wrap">I&#39;d like you to set up Cubby: Priya&#39;s Cubby at https://cubby.example.com, a self-hosted server where you build and host web apps for me.
 Install it as a skill if I have npm: npx skills add chaitanyadukkipaty/cubby --skill cubby -g
 If not, do this instead: curl -fsSL https://cubby.example.com/skill.sh | sh
@@ -348,13 +348,17 @@ After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to c
 <span class="c">#   k0m2c8d1x4e5f6g  Manual token                 -            -              2026-10-01  2 days ago</span>
 <span class="c"># * r8a2kq0m1vx7c3d  Claude Code · chaitanya-mbp  Claude Code  chaitanya-mbp  2026-10-17  just now</span>
 <span class="c">#   p3n7w9s2t5u8v1y  Codex · desktop              Codex        desktop        2026-10-17  3 hours ago</span></pre></div>
-      <p>The <code>*</code> marks the agent asking. The token on your dashboard, for scripts and CI, shows up as <b>Manual token</b>; tokens from before agents existed keep working and appear there too. <i>Last seen</i> is when the agent last used its key, updated at most once a minute.</p>
+      <p>The <code>*</code> marks the agent asking. The dashboard's <b>Agents</b> page shows the same list, with the apps each agent touched, and opening one shows everything it did. The token for scripts and CI (also on the Agents page) shows up as <b>Manual token</b>; tokens from before agents existed keep working and appear there too. <i>Last seen</i> is when the agent last used its key, updated at most once a minute.</p>
       <h3>Rename or revoke an agent</h3>
-      <p>Done with an agent, or lost the laptop it ran on? Revoke it, and its key stops working on its very next request. Your other agents keep working, and any of them can do it for you: just ask.</p>
+      <p>Done with an agent, or lost the laptop it ran on? Revoke it, and its key stops working on its very next request. Click <b>Rename</b> or <b>Revoke</b> next to it on the Agents page, or let any of your agents do it for you: just ask.</p>
+      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-agents.png?v=a8074a2c" alt="The Agents page: Claude Code and Codex with their machine, the apps each touched, last seen, and Rename and Revoke buttons, above the token for scripts and CI" loading="lazy" width="1280" height="820"><figcaption>The Agents page.</figcaption></figure>
       <div class="code"><pre>cubby agents rename p3n7w9s2t5u8v1y "Old desktop"
 cubby agents revoke p3n7w9s2t5u8v1y --yes   <span class="c"># refuses without --yes</span></pre></div>
-      <p>An agent can revoke itself too; the CLI then forgets the dead token, like <code>cubby logout</code>. You can only see, rename and revoke your own agents. <b>Regenerate</b> on the dashboard replaces only your manual token; agents keep their own keys.</p>
+      <p>An agent can revoke itself too; the CLI then forgets the dead token, like <code>cubby logout</code>. You can only see, rename and revoke your own agents. <b>Regenerate</b> on the Agents page replaces only your manual token; agents keep their own keys.</p>
       <h3>See which agent did what</h3>
+      <p>Your dashboard's <b>Home</b> is a timeline of it: one line per change, grouped by day, with a badge for the agent that made it. The deploy that's live has <b>Roll back</b> (after a confirm, the deploy before it goes live again), and a failed job or an app with many API errors gets <b>Copy fix-it prompt</b>, a ready-made message for your agent naming the app and where to look. Above it, “What should your agent do next?” offers prompts to copy, and beside it you see who's on your apps right now, views over the last 7 days and your agents. Home only shows your own apps; friends' apps are on Explore.</p>
+      <figure class="shot"><img src="assets/dashboard-home.png?v=c8c5844a" alt="Dashboard Home: prompt suggestions, a failed job with Copy fix-it prompt, and the agent activity timeline with Roll back on deploys, next to active visitors, 7-day views and agents" loading="lazy" width="1280" height="900"><figcaption>Home: what your agents did, and what to ask next.</figcaption></figure>
+      <p>The same log is in the terminal:</p>
       <p>Cubby keeps a short log of every change: creating, hiding and deleting apps, deploys (with the deploy id and file count), rollbacks, schema pushes and drops, secrets set or removed (by name, never the value), jobs run, paused or resumed, agent logins, and admin actions on users, apps and backups. Each entry says which agent made it, or <b>dashboard</b> for the dashboard and the manual token. Reads aren't logged, and entries are pruned after 30 days.</p>
       <div class="code"><pre>cubby activity friend-polls
 <span class="c"># 2026-10-17 09:30  friend-polls  Claude Code · chaitanya-mbp  Deployed k3x9q2 (14 files)</span>

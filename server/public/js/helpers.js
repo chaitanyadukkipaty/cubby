@@ -14,9 +14,33 @@ export function h(tag, attrs = {}, ...children) {
 
 export const fmtBytes = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(1)} GB`;
 
+// PocketBase writes dates as "2026-10-17 09:30:00.000Z"; the API also returns ISO strings. Dates pass through.
+export const parseDate = (date) => (date instanceof Date ? date : new Date(String(date).replace(' ', 'T')));
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "Oct 11" in local time; the year is added when it isn't `now`'s ("Dec 30, 2025"). */
+export function shortDate(date, now = new Date()) {
+  const d = parseDate(date);
+  const label = `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  return d.getFullYear() === now.getFullYear() ? label : `${label}, ${d.getFullYear()}`;
+}
+
+const DASH = '–';
+/** 5063 → "5,063"; a missing number → "–". */
+export const fmtCount = (n) => (typeof n === 'number' && Number.isFinite(n) ? Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') : DASH);
+
+/** 0.0042 → "0.4%", 0.257 → "26%"; a nonzero rate under 0.1% is "<0.1%" so it never reads as none. */
+export function fmtPct(rate) {
+  if (typeof rate !== 'number' || !Number.isFinite(rate)) return DASH;
+  const pct = rate * 100;
+  if (pct === 0) return '0%';
+  if (pct < 0.1) return '<0.1%';
+  return pct < 10 ? `${pct.toFixed(1)}%` : `${Math.round(pct)}%`;
+}
+
 export function ago(date, now = Date.now()) {
   if (!date) return 'never';
-  const s = (now - new Date(date.replace(' ', 'T')).getTime()) / 1000;
+  const s = (now - parseDate(date).getTime()) / 1000;
   if (s < 60) return 'just now';
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;

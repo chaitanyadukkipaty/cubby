@@ -104,14 +104,19 @@ else's platform and you can't bring your own agent.
 - **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), API requests and errors, and accounts and signups per app, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps on Explore, and manage users, limits and disk from the Admin page.
+- **A dashboard that follows your agents.** Home is a timeline of what your agents did, one line each, grouped by day: a deploy you don't like is one **Roll back** away, and a failed job comes with a fix-it prompt to paste into your agent. Next to it: who's on your apps right now, views over the last 7 days, your agents, and ready-made prompts for what to ask next. **Agents** lists every agent you connected, with the apps it touched; rename or revoke one there, or open it to see everything it did.
 - **Quick to get around.** Press ⌘K (Ctrl+K) anywhere in the dashboard to jump to a page or one of your apps, copy the setup prompt or a common command, switch theme or log out.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
 - **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin page tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins (or their agent) see where the disk goes and manage backups and older deploys with `cubby admin storage`, `cubby admin backups` and `cubby admin deploys`.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=2b0656a2" alt="Dashboard Home with a sidebar, the Copy prompt for agent button and a list of the user's apps"><p align="center"><sub>Home on Priya's Cubby: connect your agent, see your apps</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-home.png?v=c8c5844a" alt="Dashboard Home: prompt suggestions for your agent, a failed job with a Copy fix-it prompt button, and a timeline of agent activity with Roll back on deploys, next to active visitors, 7-day views and your agents"><p align="center"><sub>Home on Priya's Cubby: what your agents did, and what to ask next</sub></p></td>
 <td width="50%"><img src="docs/assets/dashboard-apps.png?v=3e327a57" alt="The Apps page with app cards and an app's scheduled jobs"><p align="center"><sub>Apps: visibility, delete, and each app's scheduled jobs</sub></p></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/assets/dashboard-agents.png?v=a8074a2c" alt="The Agents page: Claude Code and Codex with their machine, the apps each touched, last seen, and Rename and Revoke buttons, above the token for scripts and CI"><p align="center"><sub>Agents: rename, revoke, or connect another</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-first-run.png?v=64b14f11" alt="Home for a new user: step 1 Copy prompt for agent, then approve the login, then ask for an app"><p align="center"><sub>First visit: connect your agent in three steps</sub></p></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/assets/dashboard-gallery.png?v=616041f6" alt="Explore page listing everyone's apps"><p align="center"><sub>Explore: everyone's apps</sub></p></td>
@@ -209,7 +214,7 @@ account" error.
 ## Connect your agent and build
 
 1. Open the server URL and **sign up** with the signup code.
-2. Copy the setup prompt from your dashboard's Home page and paste it into your agent (Claude Code, Codex, Cursor or OpenCode),
+2. Copy the setup prompt from your dashboard (on Home the first time, then **Connect a new agent** on the Agents page) and paste it into your agent (Claude Code, Codex, Cursor or OpenCode),
    once per server. It has your server's name and URL filled in:
    ```text
    I'd like you to set up Cubby: Priya's Cubby at https://your-server.com, a self-hosted server where you build and host web apps for me.
@@ -227,9 +232,11 @@ account" error.
    server which agent tool it runs under (Claude Code, Codex, Cursor, otherwise "Terminal"; `--client` overrides it)
    and the machine's name. Each approved login becomes its own **agent** with its own key, so your laptop's Claude
    Code and your desktop's Codex are two agents, not one shared token. `cubby agents` lists them with when each was
-   last seen and marks the one asking. The token on your dashboard (for scripts and CI) is listed as "Manual token".
+   last seen and marks the one asking; the dashboard's **Agents** page shows the same list with the apps each agent
+   touched. The token for scripts and CI (on the Agents page) is listed as "Manual token".
 
-   Lost a laptop, or done with an agent? Ask any of your agents to revoke it, or run it yourself:
+   Lost a laptop, or done with an agent? Click **Revoke** next to it on the Agents page, ask any of your agents to
+   revoke it, or run it yourself:
 
    ```sh
    cubby agents                                      # ID, name, tool, machine, created, last seen
@@ -238,9 +245,11 @@ account" error.
    ```
 
    Your other agents keep working. An agent can revoke itself too, which logs it out like `cubby logout`.
-   **Regenerate** on the dashboard replaces only the manual token; agents keep their own keys.
+   **Regenerate** on the Agents page replaces only the manual token; agents keep their own keys.
 3. Ask your agent for an app in plain words, naming the server if you have more than one. That's it.
-4. Later, `cubby activity` answers "which agent deployed this?": every change to your apps and agents from the
+4. Your dashboard's Home then shows what your agents do, newest first. If a deploy broke something, **Roll back** on
+   its line serves the one before it again; if a scheduled job failed, **Copy fix-it prompt** gives your agent the
+   app, the job and how to read its log. In a terminal, `cubby activity` answers "which agent deployed this?": every change to your apps and agents from the
    last 30 days, newest first, with the agent that made it. Changes made from the dashboard (or with the manual
    token) say "dashboard". Filter with `cubby activity <app>`, `--agent <id>` (from `cubby agents --json`) or
    `--agent dashboard`, and `--limit`. Reads aren't logged, and secrets show up by name only, never their values.
@@ -406,8 +415,8 @@ for groups who trust each other, not as a hostile multi-tenant cloud.
 - All apps share one SQLite database, which suits a group of friends or a small team.
 - Jobs are for groups who trust each other too: the sandbox stops accidents and snooping between apps, not a
   determined attacker with an account. At most two run at once per server.
-- Agents are managed from the CLI (`cubby agents`); the dashboard doesn't list them yet. "Last seen" is updated at
-  most once a minute per agent.
+- "Last seen" for an agent is updated at most once a minute. Home's timeline shows your latest 60 changes; older
+  ones are on each agent's page and in `cubby activity`.
 - The activity log keeps 30 days (pruned nightly) and shows your own actions. An admin's actions on your app (like
   deleting it) are in the admin's log, not yours. An app's history stays after the app is deleted, until it ages
   out; deleting a user deletes their history.

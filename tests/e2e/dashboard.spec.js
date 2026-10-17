@@ -20,7 +20,8 @@ test('a new user signs up with the signup code and lands on their dashboard', as
   await expect(dashboard.myApps.appIdea).toHaveText('chat', { timeout: 5_000 }); // the highlighted app idea rotates
   await expect(dashboard.myApps.setupPrompt).toContainText('npx skills add chaitanyadukkipaty/cubby --skill cubby -g');
   await expect(dashboard.myApps.setupPrompt).toContainText(`curl -fsSL ${baseURL}/skill.sh | sh`);
-  await expect(dashboard.myApps.emptyState).toBeVisible();
+  await expect(dashboard.home.steps).toBeVisible(); // first run: connect your agent, approve, ask for an app
+  await expect(dashboard.home.steps.getByRole('button', { name: /^Copy prompt: Build me a polls app/ })).toBeVisible();
   await expect(dashboard.adminLink).toHaveCount(0);
 
   await page.reload();
@@ -53,17 +54,21 @@ test('the token can be revealed and copied, and regenerating it revokes the old 
   const device = await api.startDeviceLogin({ tool: 'Codex', machine: 'e2e' });
   await api.as(user.token)('POST', '/api/device/approve', { body: { code: device.user_code } });
   const agent = (await api.pollDeviceLogin(device.device_id)).token;
-  await dashboard.openAs(user.token);
+  await dashboard.openAs(user.token, '/agents');
+  const { agents } = dashboard;
 
-  await expect(dashboard.myApps.token).toHaveText(/^hk_\S{3}•+$/);
-  expect(await dashboard.myApps.revealToken()).toBe(user.token);
+  await expect(agents.token).toHaveText(/^hk_\S{3}•+$/);
+  expect(await agents.revealToken()).toBe(user.token);
+  await agents.copyTokenButton.click();
+  await expect(dashboard.toast).toHaveText('Token copied');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(user.token);
 
-  await dashboard.myApps.copyPromptButton.click();
+  await agents.connectButton.click();
   await expect(dashboard.toast).toHaveText('Prompt copied');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^I'd like you to set up Cubby: [\s\S]*\/docs\.md and ask me what I'd like to build\.$/);
 
   const asked = new Promise((resolve) => page.once('dialog', (d) => { resolve(d.message()); d.accept(); }));
-  await dashboard.myApps.regenerateButton.click();
+  await agents.regenerateButton.click();
   expect(await asked).toBe('Regenerate your token for scripts and CI? The old one stops working immediately. Agents you connected with cubby login have their own keys and stay connected (revoke one with cubby agents revoke).');
   await expect(dashboard.toast).toHaveText('New token created');
   expect(await api.meStatus(user.token)).toBe(401);
@@ -74,6 +79,7 @@ test('the token can be revealed and copied, and regenerating it revokes the old 
   expect(await api.meStatus(fresh)).toBe(200);
   await page.reload();
   await expect(dashboard.account(user.email)).toBeVisible();
+  await expect(agents.agent('Codex · e2e').row).toBeVisible(); // the agent is still listed
 });
 
 test('a deployed app shows in My apps and the gallery; its owner can unlist and delete it', async ({ browser, baseURL, page, api, dashboard }) => {
@@ -173,7 +179,7 @@ test('every page has its own URL: deep links and reloads land on it, and back/fo
   await expect(page.getByText("You don't have an app called not-mine.")).toBeVisible();
   await dashboard.openAs(user.token, '/admin');
   await expect(page).toHaveURL(/\/$/, { timeout: 5_000 }); // not an admin: back to Home
-  await expect(dashboard.myApps.connectHeading).toBeVisible();
+  await expect(dashboard.pageHeading).toHaveText('Home');
 
   await dashboard.openAs(await api.adminToken(), '/admin');
   await expect(dashboard.admin.inviteHeading).toBeVisible();

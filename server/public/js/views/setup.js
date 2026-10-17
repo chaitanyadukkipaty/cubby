@@ -1,5 +1,5 @@
-// The connect-your-agent card: the setup prompt to paste into an agent, and the token for scripts and CI.
-import { h, displayName, maskToken, setupPrompt, tokenLoginCommand } from '../helpers.js';
+// The connect-your-agent card (the setup prompt to paste into an agent) and the token card for scripts and CI.
+import { h, ago, displayName, maskToken, setupPrompt, tokenLoginCommand } from '../helpers.js';
 import { state, api, setToken, rerender, SERVER } from '../session.js';
 import { toast, copy, icon } from '../ui.js';
 
@@ -18,12 +18,8 @@ function rotate(el, words, ms = 1800) {
 }
 
 export function setupCard() {
-  const { me, info } = state;
+  const { info } = state;
   const prompt = setupPrompt(SERVER, info.name);
-  let revealed = false;
-  const tokenEl = h('code', { class: 'mono', 'aria-label': 'Your token', style: 'overflow-wrap:anywhere' });
-  const draw = () => { tokenEl.textContent = revealed ? me.token : maskToken(me.token); };
-  draw();
   const idea = h('span', { class: 'chip' }, APP_IDEAS[0]);
   rotate(idea, APP_IDEAS);
   return h('div', { class: 'card stack connect' },
@@ -36,25 +32,34 @@ export function setupCard() {
         h('pre', { 'aria-label': 'Setup prompt', style: 'word-break:normal;overflow-wrap:anywhere' }, prompt)),
       h('p', { class: 'agents-label' }, 'Works with every agent'),
       h('div', { class: 'agents' }, ...AGENTS.map((a) => h('span', {}, a))),
-    ),
-    h('details', { class: 'small', style: 'border-top:1px solid var(--line);padding-top:12px' },
-      h('summary', { class: 'muted' }, 'Token for scripts and CI'),
-      h('div', { class: 'spread', style: 'margin-top:10px' },
-        tokenEl,
-        h('div', { class: 'row' },
-          h('button', { onclick: () => { revealed = !revealed; draw(); } }, 'Reveal'),
-          h('button', { onclick: () => copy(me.token, 'Token copied') }, 'Copy'),
-          h('button', { class: 'danger', onclick: async () => {
-            if (!confirm('Regenerate your token for scripts and CI? The old one stops working immediately. Agents you connected with cubby login have their own keys and stay connected (revoke one with cubby agents revoke).')) return;
-            const r = await api('POST', '/api/token/regenerate');
-            setToken(r.token);
-            me.token = r.token;
-            toast('New token created');
-            rerender();
-          } }, 'Regenerate'),
-        ),
+    )
+  );
+}
+
+/** The manual token (for scripts and CI): reveal, copy, regenerate. `lastUsed` comes from GET /api/agents. */
+export function tokenCard({ lastUsed } = {}) {
+  const { me } = state;
+  let revealed = false;
+  const tokenEl = h('code', { class: 'mono', 'aria-label': 'Your token', style: 'overflow-wrap:anywhere' });
+  const draw = () => { tokenEl.textContent = revealed ? me.token : maskToken(me.token); };
+  draw();
+  return h('div', { class: 'card stack small', id: 'token', role: 'region', 'aria-label': 'Token for scripts and CI' },
+    h('div', { class: 'spread' },
+      tokenEl,
+      h('div', { class: 'row' },
+        h('button', { onclick: () => { revealed = !revealed; draw(); } }, 'Reveal'),
+        h('button', { onclick: () => copy(me.token, 'Token copied') }, 'Copy'),
+        h('button', { class: 'danger', onclick: async () => {
+          if (!confirm('Regenerate your token for scripts and CI? The old one stops working immediately. Agents you connected with cubby login have their own keys and stay connected (revoke one with cubby agents revoke).')) return;
+          const r = await api('POST', '/api/token/regenerate');
+          setToken(r.token);
+          me.token = r.token;
+          toast('New token created');
+          rerender();
+        } }, 'Regenerate'),
       ),
-      h('p', { class: 'muted', style: 'margin-top:8px' }, 'Use with ', h('code', {}, tokenLoginCommand(SERVER)), ' or the CUBBY_TOKEN environment variable.'),
     ),
+    h('p', { class: 'muted' }, 'Use with ', h('code', {}, tokenLoginCommand(SERVER)), ' or the CUBBY_TOKEN environment variable.',
+      lastUsed !== undefined ? ` Last used ${ago(lastUsed)}.` : ''),
   );
 }

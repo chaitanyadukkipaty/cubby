@@ -12,8 +12,12 @@ test('dashboard and admin fit a phone screen without sideways scrolling, in ligh
     const fitsWidth = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 
     await dashboard.openAs(token);
-    await expect(dashboard.myApps.connectHeading).toBeVisible();
-    expect(await fitsWidth(), `My apps overflows at 390px (${colorScheme})`).toBe(true);
+    await expect(dashboard.pageHeading).toHaveText('Home');
+    await page.waitForLoadState('networkidle');
+    expect(await fitsWidth(), `Home overflows at 390px (${colorScheme})`).toBe(true);
+    await dashboard.agentsLink.click();
+    await dashboard.agents.connectButton.waitFor();
+    expect(await fitsWidth(), `Agents overflows at 390px (${colorScheme})`).toBe(true);
     await dashboard.openAdmin();
     expect(await fitsWidth(), `Admin overflows at 390px (${colorScheme})`).toBe(true);
 
