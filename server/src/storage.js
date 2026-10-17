@@ -18,9 +18,8 @@ const sizeOf = async (dir, e) => {
 // `jobs-<deploy>` for its jobs; anything that isn't the current deploy (older deploys kept for rollback, or
 // leftovers of a deleted app) counts as older.
 export async function scanStorage(dataDir, apps) {
-  const breakdown = { database_bytes: 0, uploads_bytes: 0, sites_current_bytes: 0, sites_older_bytes: 0, backups_bytes: 0, other_bytes: 0 };
-  // Snapshots, once they exist, get their own category here.
-  const perApp = new Map(apps.map((a) => [a.slug, { slug: a.slug, owner: a.owner, total_bytes: 0, current_deploy_bytes: 0, older_deploys_bytes: 0, uploads_bytes: 0 }]));
+  const breakdown = { database_bytes: 0, uploads_bytes: 0, sites_current_bytes: 0, sites_older_bytes: 0, backups_bytes: 0, snapshots_bytes: 0, other_bytes: 0 };
+  const perApp = new Map(apps.map((a) => [a.slug, { slug: a.slug, owner: a.owner, total_bytes: 0, current_deploy_bytes: 0, older_deploys_bytes: 0, uploads_bytes: 0, snapshots_bytes: 0 }]));
   const appOfCollection = new Map(apps.flatMap((a) => a.collectionIds.map((id) => [id, perApp.get(a.slug)])));
   const currentOf = new Map(apps.map((a) => [a.slug, a.current_deploy]));
 
@@ -52,11 +51,18 @@ export async function scanStorage(dataDir, apps) {
       }
     } else if (top.name === 'backups') {
       breakdown.backups_bytes += await sizeOf(dataDir, top);
+    } else if (top.name === 'snapshots') {
+      // Data clears (snapshots.js), one folder per app.
+      for (const app of await entries(topDir)) {
+        const bytes = await sizeOf(topDir, app);
+        breakdown.snapshots_bytes += bytes;
+        if (perApp.has(app.name)) perApp.get(app.name).snapshots_bytes += bytes;
+      }
     } else {
       breakdown.other_bytes += await sizeOf(dataDir, top);
     }
   }
-  const list = [...perApp.values()].map((a) => ({ ...a, total_bytes: a.current_deploy_bytes + a.older_deploys_bytes + a.uploads_bytes }));
+  const list = [...perApp.values()].map((a) => ({ ...a, total_bytes: a.current_deploy_bytes + a.older_deploys_bytes + a.uploads_bytes + a.snapshots_bytes }));
   return {
     data_bytes: Object.values(breakdown).reduce((sum, n) => sum + n, 0),
     breakdown,

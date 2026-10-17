@@ -199,6 +199,133 @@ describe('jobs and env helpers', () => {
       '  2026-10-17   1230 views     2 visitors     4 signups',
     ].join('\n'));
   });
+  test('formatMetrics: top paths and deploys in the range; past a month only the days with traffic', () => {
+    const days = Array.from({ length: 60 }, (_, i) => ({ start: new Date(Date.UTC(2026, 7, 19 + i)).toISOString(), views: i === 59 ? 5 : 0, visitors: i === 59 ? 2 : 0 }));
+    const text = lib.formatMetrics({
+      app: 'polls', range: '60d', views: 5, visitors: 2, active_now: 0, peak_active: 1, api_requests: 0, api_errors: 0, api_error_rate: 0,
+      top_paths: [{ path: '/', views: 4 }, { path: 'other', views: 1 }],
+      deploys: [{ id: 'd1', created: '2026-10-17 09:00:00.000Z', message: 'fix login' }],
+      days, accounts: { total: 0, new: 0, days: days.map((d) => ({ start: d.start, signups: 0 })) },
+    });
+    assert.match(text, /\n {2}Top paths: \/ 4 · other 1\n/);
+    assert.match(text, /\n {2}Deploy 2026-10-17 09:00 d1 fix login\n/);
+    assert.equal(text.split('\n').filter((l) => /^ {2}\d{4}-/.test(l)).length, 1);
+  });
+  test('formatAdminMetrics: totals across apps, then the busiest ones', () => {
+    const text = lib.formatAdminMetrics({
+      range: '7d', apps: 3, views: 20, visitors: 6, active_now: 1, api_requests: 100, api_errors: 1, api_error_rate: 0.01,
+      top_apps: [{ app: 'polls', owner: 'a@x.dev', views: 15, visitors: 4, api_errors: 1 }, { app: 'notes', owner: null, views: 5, visitors: 2, api_errors: 0 }],
+    });
+    assert.equal(text, [
+      'All apps: 20 views, 6 visitors in the last 7d (3 apps)',
+      '  Active now 1',
+      '  API: 100 requests, 1 errors (1.0%)',
+      'Busiest apps:',
+      '  polls     15 views     4 visitors     1 API errors  a@x.dev',
+      '  notes      5 views     2 visitors     0 API errors',
+    ].join('\n'));
+    assert.doesNotMatch(lib.formatAdminMetrics({ range: '24h', apps: 0, views: 0, visitors: 0, active_now: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_apps: [] }), /Busiest/);
+  });
+  test('formatData: one line per collection with its type, records and uploads', () => {
+    const text = lib.formatData('shop', [
+      { name: 'customers', type: 'auth', records: 3, files_bytes: 0 },
+      { name: 'products', type: 'base', records: 1204, files_bytes: 2048 },
+    ]);
+    assert.equal(text, [
+      'shop: 2 collections',
+      '  customers  auth      3 records  files 0 B',
+      '  products   base   1204 records  files 2.0 KB',
+    ].join('\n'));
+    assert.match(lib.formatData('shop', []), /no collections yet/);
+  });
+  test('formatClear: what went, cascades, and how to undo it', () => {
+    const text = lib.formatClear('shop', {
+      mode: 'empty', collections: [{ name: 'products', records: 2, files_bytes: 100 }],
+      cascade: [{ collection: 'orders', field: 'product', records: 1, deletes: true }, { collection: 'notes', field: 'product', records: 4, deletes: false }],
+      warnings: ['careful'],
+      snapshot: { id: '20261017T101500-a1b2c3', expires: '2026-10-24T10:15:00.000Z', files: true },
+    });
+    assert.equal(text, [
+      'Emptied products (2 records) in shop.',
+      '  orders: 1 record pointing at them were deleted too (cascade on orders.product)',
+      '  notes: 4 records lost their link (notes.product)',
+      'Snapshot 20261017T101500-a1b2c3 keeps them until 2026-10-24. Undo with: cubby data restore 20261017T101500-a1b2c3',
+      'warning: careful',
+    ].join('\n'));
+  });
+  test('formatClear: records deleted by filter or ids, and nothing matched', () => {
+    const snapshot = { id: '20261017T101500-a1b2c3', expires: '2026-10-24T10:15:00.000Z' };
+    const base = { collections: [{ name: 'polls', records: 3 }], cascade: [], warnings: [], snapshot };
+    assert.match(lib.formatClear('shop', { ...base, mode: 'filter', filter: 'closed = true' }), /^Deleted 3 records from polls in shop \(matching closed = true\)\.\n/);
+    assert.match(lib.formatClear('shop', { ...base, mode: 'ids', missing: ['zz'] }), /^Deleted 3 records from polls in shop\. Not found: zz\n/);
+    assert.equal(lib.formatClear('shop', { ...base, mode: 'filter', filter: 'x = 1', collections: [{ name: 'polls', records: 0 }], snapshot: null }), 'Nothing in polls matches: nothing was deleted.');
+  });
+  test('formatClear: a wipe says the whole database went, and so does its preview', () => {
+    const r = { mode: 'drop', wipe: true, collections: [{ name: 'a', records: 1 }, { name: 'b', records: 2 }], cascade: [], warnings: [], snapshot: { id: 's', expires: '2026-10-24T00:00:00.000Z' } };
+    assert.match(lib.formatClear('shop', r), /^Wiped the database of shop: dropped a \(1 record\), b \(2 records\)\.\n/);
+    assert.match(lib.formatClearPreview('shop', { ...r, dry_run: true, matches: 3, total: 3, samples: [] }), /^Dry run: wiping the database \(a, b\) deletes 3 records\./);
+  });
+  test('formatClear and its preview for a plain drop and for ids; snapshots and restores in their other shapes', () => {
+    const snapshot = { id: 's', expires: '2026-10-24T00:00:00.000Z' };
+    assert.match(lib.formatClear('shop', { mode: 'drop', collections: [{ name: 'a', records: 1 }], cascade: [], warnings: [], snapshot }), /^Dropped a \(1 record\) in shop\./);
+    assert.match(lib.formatClearPreview('shop', { mode: 'drop', matches: 1, total: 1, collections: [{ name: 'a', records: 1 }], samples: [], cascade: [], warnings: [] }), /^Dry run: dropping a deletes 1 record\./);
+    assert.match(lib.formatClearPreview('shop', { mode: 'ids', matches: 1, total: 4, collections: [{ name: 'a', records: 1 }], samples: [], cascade: [], warnings: [] }), /^Dry run: 1 of 4 records in a match\. Nothing/);
+    assert.match(lib.formatSnapshots([{ id: 's', app: 'a', created: 'C', expires: '2026-10-24', by: null, by_admin: false, reason: '', mode: 'ids', collections: [{ name: 'x' }], records: 1, files: true }]), /by \?  until 2026-10-24/);
+    const base = { snapshot: 's', recreated: [], skipped_fields: [], refused_fields: [], accounts: [], failures: [], warnings: [] };
+    assert.equal(lib.formatRestore({ ...base, dry_run: true, overwrite: true, collections: [{ name: 'p', records: 2, existing: 1 }, { name: 'q', records: 1, existing: 0 }], recreated: ['q'] }),
+      'Dry run of snapshot s (nothing changed):\n  p: 2 records, 1 already there (replaced)\n  q: 1 record\nWould recreate: q');
+    assert.equal(lib.formatRestore({ ...base, overwrite: true, collections: [{ name: 'p', records: 2, existing: 1, restored: 1, replaced: 1, failed: 0 }] }), 'Restored snapshot s:\n  p: 1 restored, 1 replaced');
+  });
+  test('formatClearPreview: matches N of M, samples, cascades and warnings, deleting nothing', () => {
+    const text = lib.formatClearPreview('shop', {
+      dry_run: true, mode: 'filter', filter: 'closed = true', matches: 9, total: 10, collections: [{ name: 'polls', records: 9 }],
+      samples: [{ id: 'p1', title: 'Lunch?', closed: true, collectionId: 'x', collectionName: 'shop__polls' }, { id: 'p2', note: 'y'.repeat(200) }],
+      cascade: [{ collection: 'votes', field: 'poll', records: 31, deletes: true }], warnings: ['careful'], files: true, files_bytes: 0,
+    });
+    const lines = text.split('\n');
+    assert.equal(lines[0], 'Dry run: 9 of 10 records in polls match (closed = true). Nothing was deleted.');
+    assert.equal(lines[1], '  {"id":"p1","title":"Lunch?","closed":true}');
+    assert.ok(lines[2].length <= 122 && lines[2].endsWith('…'));
+    assert.equal(lines[3], '  votes: 31 records pointing at them would be deleted too (cascade on votes.poll)');
+    assert.equal(lines[4], 'warning: careful');
+    const whole = lib.formatClearPreview('shop', { dry_run: true, mode: 'empty', matches: 5, total: 5, collections: [{ name: 'a', records: 2 }, { name: 'b', records: 3 }], samples: [], cascade: [{ collection: 'c', field: 'a', records: 1, deletes: false }], warnings: [] });
+    assert.match(whole, /^Dry run: emptying a, b deletes 5 records\. Nothing was deleted\.\n {2}c: 1 record would lose their link \(c\.a\)$/);
+  });
+  test('formatSnapshots: one line per snapshot, newest first, with who, why and until when', () => {
+    const text = lib.formatSnapshots([
+      { id: '20261017T101500-a1b2c3', app: 'shop', created: '2026-10-17T10:15:00.000Z', expires: '2026-10-24T10:15:00.000Z', by: 'admin@x.dev', by_admin: true, reason: 'spam flood', mode: 'empty', collections: [{ name: 'polls', records: 1204 }], records: 1210, files: false },
+      { id: '20261016T090000-ffffff', app: 'shop', created: '2026-10-16T09:00:00.000Z', expires: '2026-10-23T09:00:00.000Z', by: 'me@x.dev', by_admin: false, reason: '', mode: 'filter', collections: [{ name: 'votes', records: 3 }], records: 3, files: true },
+    ]);
+    assert.equal(text, [
+      '20261017T101500-a1b2c3  shop  2026-10-17 10:15  empty polls  1210 records (no files)  by admin@x.dev (admin): spam flood  until 2026-10-24',
+      '20261016T090000-ffffff  shop  2026-10-16 09:00  filter votes  3 records  by me@x.dev  until 2026-10-23',
+      'Restore one with: cubby data restore <id> [--dry-run]',
+    ].join('\n'));
+    assert.match(lib.formatSnapshots([]), /No snapshots/);
+  });
+  test('formatRestore: per collection, drift, accounts and failures; a dry run says nothing changed', () => {
+    const r = {
+      snapshot: 's1', overwrite: false, recreated: ['orders'], skipped_fields: ['polls.color'], refused_fields: [], files: true,
+      collections: [{ name: 'polls', records: 3, existing: 1, restored: 2, replaced: 0, failed: 0 }, { name: 'users', records: 1, existing: 0, restored: 1, replaced: 0, failed: 1 }],
+      accounts: [{ collection: 'users', id: 'u1', email: 'ann@x.dev', password: 'Zx9-pass-word123' }], failures: [{ collection: 'users', id: 'u2', error: 'email taken' }],
+      warnings: ['heads up'], backup: { id: 'b1', expires: '2026-10-24T10:15:00.000Z' },
+    };
+    assert.equal(lib.formatRestore(r), [
+      'Restored snapshot s1:',
+      '  polls: 2 restored, 1 already there',
+      '  users: 1 restored, 1 failed',
+      'Recreated: orders',
+      'Skipped fields (removed since): polls.color',
+      'New passwords (hand them out; they can change them in the app):',
+      '  users  ann@x.dev  Zx9-pass-word123',
+      'Failed: users u2: email taken',
+      'Replaced records were saved in snapshot b1 (until 2026-10-24).',
+      'warning: heads up',
+    ].join('\n'));
+    const dry = lib.formatRestore({ ...r, dry_run: true, accounts: [], failures: [], backup: undefined, refused_fields: ['polls.n was text, is number now'] });
+    assert.match(dry, /^Dry run of snapshot s1 \(nothing changed\):\n {2}polls: 3 records, 1 already there\n/);
+    assert.match(dry, /\nRefused \(type changed\): polls\.n was text, is number now\n/);
+  });
   test('formatMetricsList: one line per app', () => {
     const text = lib.formatMetricsList([
       { app: 'polls', range: '7d', views: 12, visitors: 5, active_now: 1, api_errors: 2 },
@@ -355,8 +482,8 @@ describe('admin output', () => {
       computed_at: '2026-10-17T09:00:00.000Z',
       disk: { total_bytes: 10 * 1024 ** 3, free_bytes: 4 * 1024 ** 3 },
       data_bytes: 3 * 1024 ** 2,
-      breakdown: { database_bytes: 1024 ** 2, uploads_bytes: 0, sites_current_bytes: 512 * 1024, sites_older_bytes: 512 * 1024, backups_bytes: 1024 ** 2, other_bytes: 0 },
-      apps: [{ slug: 'blog', owner: 'a@x.dev', total_bytes: 2048, current_deploy_bytes: 1024, older_deploys_bytes: 1024, uploads_bytes: 0 }],
+      breakdown: { database_bytes: 1024 ** 2, uploads_bytes: 0, sites_current_bytes: 512 * 1024, sites_older_bytes: 512 * 1024, backups_bytes: 1024 ** 2, snapshots_bytes: 2048, other_bytes: 0 },
+      apps: [{ slug: 'blog', owner: 'a@x.dev', total_bytes: 4096, current_deploy_bytes: 1024, older_deploys_bytes: 1024, uploads_bytes: 0, snapshots_bytes: 2048 }],
     });
     assert.match(text, /Database\s+1\.0 MB/);
     assert.match(text, /Current deploys\s+512\.0 KB/);
@@ -364,7 +491,8 @@ describe('admin output', () => {
     assert.match(text, /Backups\s+1\.0 MB/);
     assert.match(text, /Total\s+3\.0 MB/);
     assert.match(text, /Disk: 4\.0 GB free of 10\.0 GB/);
-    assert.match(text, /blog\s+2\.0 KB\s+current 1\.0 KB · older 1\.0 KB · uploads 0 B\s+a@x\.dev/);
+    assert.match(text, /Snapshots \(data clears\)\s+2\.0 KB/);
+    assert.match(text, /blog\s+4\.0 KB\s+current 1\.0 KB · older 1\.0 KB · uploads 0 B · snapshots 2\.0 KB\s+a@x\.dev/);
     assert.match(text, /as of 2026-10-17T09:00:00\.000Z/);
   });
   test('formatStorage says when there are no apps, and leaves out a missing owner', () => {

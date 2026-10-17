@@ -199,6 +199,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
       <li><a href="#invite">Invite people</a></li>
       <li><a href="#agents">Connect your agent</a></li>
       <li><a href="#build">Build an app</a></li>
+      <li><a href="#clear-data">Clear test data</a></li>
       <li><a href="#cli">CLI reference</a></li>
       <li><a href="#schema">Data and security rules</a></li>
       <li><a href="#admin">Running the server</a></li>
@@ -413,6 +414,8 @@ export default async ({ pb, env, log, fetch }) =&gt; {
   Active now 2, peak 7
   API: 1480 requests, 3 errors (0.2%)
   Accounts: 19, 4 new
+  Top paths: / 120 · /polls/7 41 · /new 30 · other 23
+  Deploy 2026-10-14 18:02 k3x9q2 add comments
   2026-10-11     18 views     4 visitors     1 signups
   2026-10-12     41 views     9 visitors     2 signups
   <span class="c">…</span></pre></div>
@@ -424,10 +427,50 @@ export default async ({ pb, env, log, fetch }) =&gt; {
         <li><b>Is the backend healthy?</b> Every database call through <code>/pb</code> counts as an API request, and every 5xx answer as an error, per hour. The error rate is errors over requests.</li>
         <li><b>Accounts.</b> The number of accounts in the app's own users collection, and how many signed up each day, read from the database when you ask.</li>
         <li><b>Charted on the app's page.</b> The dashboard's app page opens on <b>Overview</b>: active now, views, visitors, API error rate and accounts across the top, then views, unique visitors, active visitors and API errors for the last 24 hours, 7 days or 30 days. The charts share one time axis and every deploy is a dashed line through all of them, so a spike right after a deploy stands out. Each chart has a text summary for screen readers and a <b>Show as table</b> fallback. The <b>Apps</b> list shows each app's visitors right now, a 7-day sparkline and which agent deployed it last.</li>
-        <li><b>Yours to see.</b> Only the app's owner (and the server's admins) can see an app's numbers. <code>cubby metrics</code> without an app lists all of yours; <code>--range</code> takes hours or days up to <code>90d</code>, and <code>--json</code> adds views, peaks, API requests and errors per hour, views and visitors per day, and signups per day.</li>
+        <li><b>Which pages.</b> Each day keeps its 10 most viewed paths (query strings dropped, so nothing in them is stored), and everything else as "other". The report adds them up over the range.</li>
+        <li><b>Did my deploy break it?</b> Deploys in the range are listed with the numbers, so a jump in errors lines up with the deploy that caused it. The app guide tells agents to run <code>cubby metrics &lt;app&gt; --range 1h</code> after deploying and look at the errors.</li>
+        <li><b>A year of history, kept small.</b> Hourly numbers are kept 30 days; the nightly maintenance then folds them into their day, and days are kept a year. Ranges up to <code>30d</code> are reported by the hour; longer ones (up to <code>1y</code>) by the day.</li>
+        <li><b>Yours to see.</b> Only the app's owner (and the server's admins) can see an app's numbers. <code>cubby metrics</code> without an app lists all of yours; <code>--range</code> takes <code>1h</code>, <code>24h</code>, <code>7d</code>, <code>30d</code>, <code>1y</code> or any hours or days in between, and <code>--json</code> adds views, peaks, API requests and errors per hour, views, visitors, API requests and errors per day, and signups per day. Admins get every app summed, with the busiest apps, from <code>cubby metrics --all</code>.</li>
       </ul>
       <figure class="shot"><img src="assets/dashboard-app-overview.png?v=0495eb58" alt="Friend Polls' Overview tab: a KPI strip, then views, unique visitors, active visitors and API errors charted on one time axis with dashed deploy lines, and the top paths" loading="lazy" width="1280" height="1450"><figcaption>An app's Overview: deploys v3 and v4 drawn through every chart.</figcaption></figure>
       <p>Its other tabs: <b>Activity</b> (that app's timeline), <b>Deploys</b> (every kept deploy with <b>Roll back to this</b>), <b>Jobs</b>, <b>Env</b> and <b>Settings</b> (show in the gallery, and delete after typing the app's name). The tab is part of the link, like <code>/apps/friend-polls/deploys</code>, so a reload keeps it, and on a phone the tabs scroll sideways. A tab with nothing in it yet suggests what to ask your agent, with a copy button.</p>
+    </section>
+
+    <section id="clear-data">
+      <p class="kicker">Data</p>
+      <h2>Clear test data</h2>
+      <p>Before you share an app, you'll want the test records gone without deleting the app or its accounts. Ask:</p>
+      <p class="prompt">Clear out the test polls and votes in friend-polls, but keep the users.</p>
+      <p>The agent looks first, then empties just those collections:</p>
+      <div class="code"><pre>cubby data list friend-polls
+<span class="c">friend-polls: 3 collections
+  polls  base     42 records  files 1.2 MB
+  users  auth      5 records  files 0 B
+  votes  base    310 records  files 0 B</span>
+cubby data clear friend-polls --collections polls,votes --yes
+<span class="c">Emptied polls (42 records), votes (310 records) in friend-polls.
+Snapshot 20261017T101500-a1b2c3 keeps them until 2026-10-24.</span></pre></div>
+      <ul>
+        <li><b>Empty or drop.</b> Emptying (the default) deletes every record and keeps the collection with its fields and rules. <code>--drop</code> removes the collection too, and the next <code>cubby deploy</code> pushes <code>schema.json</code> again.</li>
+        <li><b>Always a snapshot first.</b> Everything about to be deleted is written to <code>DATA_DIR/snapshots/&lt;app&gt;/</code> first: the collections' schema, their records, the records of other collections that point at them (deleted by cascade or unlinked), and uploaded files up to 100 MB in all (above that, you're warned they can't come back). Snapshots are plain files kept for 7 days, removed by the nightly maintenance and with the app, and counted in the admin storage breakdown.</li>
+        <li><b>Or just some records.</b> <code>--collection polls --filter 'closed = true'</code> (a PocketBase filter) or <code>--ids a,b</code> deletes only those, and only they go in the snapshot. <code>--dry-run</code> shows "matches 9 of 42", five of the records and what would go by cascade, deleting nothing; a clear without <code>--yes</code> shows the same preview. More than 10,000 matches need <code>--all-matching</code>. A filter runs as the server, so it gets the same check as the app's own requests: naming another app's collection, or a platform one, is refused.</li>
+        <li><b>Accounts only when named.</b> The app's users collection is only cleared when you list it, and the result warns that restored accounts get new passwords: PocketBase never hands out password hashes, even to the server.</li>
+        <li><b>Owners only.</b> Only the app's owner (and admins) can clear its data, the CLI needs <code>--yes</code>, and every clear is in <code>cubby activity</code>.</li>
+      </ul>
+      <h3 id="restore">Undo a clear</h3>
+      <p>Cleared the wrong thing? Within 7 days, ask your agent to bring it back:</p>
+      <div class="code"><pre>cubby data snapshots friend-polls
+cubby data restore 20261017T101500-a1b2c3 --dry-run
+cubby data restore 20261017T101500-a1b2c3
+<span class="c">Restored snapshot 20261017T101500-a1b2c3:
+  polls: 42 restored
+  votes: 310 restored</span></pre></div>
+      <ul>
+        <li><b>Same ids, nothing doubled.</b> Records come back with their original ids, so links still work. Ids that exist again are skipped, so restoring twice is harmless; <code>--overwrite --yes</code> replaces them, after saving the current versions in a new snapshot.</li>
+        <li><b>Schema changes since.</b> A dropped collection is recreated from the snapshot, rules included. Fields removed since are skipped; a field whose type changed stops the restore until it's dropped or renamed. <code>--dry-run</code> shows all of it first.</li>
+        <li><b>Admins too, never silently.</b> An admin can clear any app's data, but must give <code>--reason</code>. The owner sees it in their own activity ("Admin (priya@…) emptied polls — 1,204 records · snapshot … Reason: spam flood") and as a flag on the app until they dismiss it. Owners can restore an admin's snapshot but not purge it. <code>--wipe</code> drops every collection, and the app's next <code>cubby deploy</code> recreates them from <code>schema.json</code>.</li>
+        <li><b>What comes back different.</b> PocketBase sets <code>created</code> and <code>updated</code> itself and renames uploaded files, and it never hands out password hashes, not even to the server. So restored accounts get new random passwords, listed by the restore for you to hand out.</li>
+      </ul>
     </section>
 
     <section id="cli">
@@ -458,9 +501,16 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           <tr><td><code>cubby jobs logs &lt;job&gt; [--limit n] [--run &lt;id&gt;]</code></td><td>Show past runs and their output (the last 100 per job are kept).</td></tr>
           <tr><td><code>cubby jobs pause | resume &lt;job&gt;</code></td><td>Stop or restart a job's schedule. Stays that way across deploys.</td></tr>
           <tr><td><code>cubby env list | set NAME=value | unset NAME --yes</code></td><td>Secrets for jobs. <code>set NAME --from-stdin</code> keeps the value out of shell history.</td></tr>
-          <tr><td><code>cubby metrics [&lt;app&gt;] [--range 7d]</code></td><td>Views, visitors, active now and peak, API requests and errors, accounts and signups of one app, or a summary of all your apps. The last 24 hours by default, at most 90 days.</td></tr>
+          <tr><td><code>cubby metrics [&lt;app&gt;] [--range 7d] [--all]</code></td><td>Views, visitors, active now and peak, API requests and errors, top paths, deploys, accounts and signups of one app, or a summary of all your apps. The last 24 hours by default, at most a year. <code>--all</code>: every app on the server, for admins.</td></tr>
           <tr><td><code>cubby schema push | pull</code></td><td>Apply or download the data model. Push never deletes anything.</td></tr>
           <tr><td><code>cubby schema drop &lt;c&gt;[.&lt;f&gt;] --yes</code></td><td>Delete a collection or field and its data.</td></tr>
+          <tr><td><code>cubby data list [&lt;app&gt;]</code></td><td>The app's collections with their record counts and uploaded file sizes.</td></tr>
+          <tr><td><code>cubby data clear [&lt;app&gt;] --collections a,b [--drop] --yes</code></td><td>Empty collections (fields and rules stay) or drop them, after a snapshot kept for 7 days.</td></tr>
+          <tr><td><code>cubby data clear [&lt;app&gt;] --collection c --filter "…" | --ids a,b [--dry-run] --yes</code></td><td>Delete only matching records. <code>--dry-run</code> shows matches N of M, samples and cascades.</td></tr>
+          <tr><td><code>cubby data snapshots [&lt;app&gt;]</code></td><td>Snapshots of clears: who, why, what, how many records, until when.</td></tr>
+          <tr><td><code>cubby data clear [&lt;app&gt;] --wipe --yes</code></td><td>Drop every collection of the app (after a snapshot); the next deploy pushes the schema again.</td></tr>
+          <tr><td><code>cubby data purge &lt;id&gt; --yes</code></td><td>Delete a snapshot before it expires. Owners can't purge one an admin made.</td></tr>
+          <tr><td><code>cubby data restore &lt;id&gt; [--overwrite --yes] [--dry-run]</code></td><td>Bring a snapshot back. Existing ids are skipped (or replaced with <code>--overwrite</code>); restored accounts get new passwords.</td></tr>
           <tr><td><code>cubby projects</code> · <code>info</code> · <code>link &lt;app&gt;</code></td><td>List your apps, show the current one, or attach this folder to an existing app.</td></tr>
           <tr><td><code>cubby delete &lt;app&gt; --yes</code></td><td>Delete an app, its data and deploys.</td></tr>
           <tr><td><code>cubby admin storage</code></td><td>Admins only: disk use by category (database, uploads, current and older deploys, backups) and per app, with free disk.</td></tr>

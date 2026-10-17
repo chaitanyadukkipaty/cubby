@@ -89,16 +89,32 @@ describe('scheduleBackups', () => {
 });
 
 describe('runMaintenance', () => {
-  test('prunes the activity log first, then backs up', async () => {
+  test('runs every cleanup in order (activity, metrics rollup, …), logs what each did, then backs up', async () => {
     const order = [];
-    await runMaintenance({ prune: async () => (order.push('prune'), 3), backup: async () => order.push('backup'), log: () => {} });
-    assert.deepEqual(order, ['prune', 'backup']);
+    const logs = [];
+    await runMaintenance({
+      cleanups: [
+        ['activity prune', async () => (order.push('activity'), 'pruned 3 activity rows')],
+        ['metrics rollup', async () => (order.push('metrics'), null)],
+      ],
+      backup: async () => order.push('backup'),
+      log: (m) => logs.push(m),
+    });
+    assert.deepEqual(order, ['activity', 'metrics', 'backup']);
+    assert.deepEqual(logs, ['pruned 3 activity rows']);
   });
-  test('a failed prune never stops the backup', async () => {
+  test('a failed cleanup never stops the others or the backup', async () => {
     const errors = [];
-    let backedUp = false;
-    await runMaintenance({ prune: async () => { throw new Error('db busy'); }, backup: async () => { backedUp = true; }, log: () => {}, error: (...a) => errors.push(a.join(' ')) });
-    assert.equal(backedUp, true);
+    const order = [];
+    await runMaintenance({
+      cleanups: [['activity prune', async () => { throw new Error('db busy'); }], ['metrics rollup', async () => { order.push('metrics'); }]],
+      backup: async () => { order.push('backup'); }, log: () => {}, error: (...a) => errors.push(a.join(' ')),
+    });
+    assert.deepEqual(order, ['metrics', 'backup']);
     assert.match(errors.join('\n'), /activity prune failed: db busy/);
+  });
+  test('the nightly cleanups are the activity prune, the metrics rollup and the snapshot prune', async () => {
+    const { MAINTENANCE } = await import('../../server/src/backups.js');
+    assert.deepEqual(MAINTENANCE.map(([name]) => name), ['activity prune', 'metrics rollup', 'snapshot prune']);
   });
 });

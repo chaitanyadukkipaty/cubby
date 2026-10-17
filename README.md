@@ -75,8 +75,8 @@ And when you wonder whether anyone uses it:
 > How many people used the polls app this week?
 
 The agent runs `cubby metrics friend-polls --range 7d` and tells you the page views and unique visitors per day,
-how many people are on it right now and the busiest moment of the week, how many accounts signed up, and whether
-its database calls are failing. Cubby counts all of it itself as it serves the app, so there's no tracking script,
+how many people are on it right now and the busiest moment of the week, which pages they open, how many accounts
+signed up, and whether its database calls started failing after the last deploy. Cubby counts all of it itself as it serves the app, so there's no tracking script,
 cookie banner or analytics account. The same numbers are charted on the app's page in the dashboard, with every
 deploy drawn through the charts, so "did the last deploy break something?" is one glance.
 
@@ -102,7 +102,9 @@ else's platform and you can't bring your own agent.
 - **Scheduled jobs.** Apps can run code on a cron schedule (digests, reminders, cleanups, syncing from an API) with encrypted secrets. Each run is sandboxed and can only reach its own app's data and the public internet.
 - **Know who did what.** Every change (deploys, rollbacks, schema, secrets, jobs, logins, admin actions on users, apps and backups) is logged
   for 30 days with the agent that made it, or "dashboard". `cubby activity` shows yours; admins can see everyone's.
-- **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), API requests and errors, and accounts and signups per app, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them, and each app's page in the dashboard charts them on one time axis with a line for every deploy.
+- **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), the top pages, API requests and errors next to each deploy, and accounts and signups per app, for up to a year, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them; each app's page in the dashboard charts them on one time axis with a line for every deploy; admins see every app with `--all`.
+- **Clear test data, safely.** Empty or drop collections without deleting the app (`cubby data clear`), always after a snapshot kept for 7 days.
+- **Clear test data, safely.** Empty or drop collections, or delete records by filter, without deleting the app (`cubby data clear`), always after a snapshot kept for 7 days that `cubby data restore` brings back.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps on Explore, and manage users, limits and disk from the Admin page.
 - **A dashboard that follows your agents.** Home is a timeline of what your agents did, one line each, grouped by day: a deploy you don't like is one **Roll back** away, and a failed job comes with a fix-it prompt to paste into your agent. Next to it: who's on your apps right now, views over the last 7 days, your agents, and ready-made prompts for what to ask next. **Agents** lists every agent you connected, with the apps it touched; rename or revoke one there, or open it to see everything it did. Each app has its own page with tabs (Overview charts, Activity, Deploys with rollback, Jobs, Env and Settings), and every tab has its own link.
@@ -275,8 +277,13 @@ account" error.
 | `cubby deploys` / `cubby rollback <id>` | List deploys, restore one instantly (with the jobs it shipped) |
 | `cubby jobs [run \| logs \| pause \| resume <job>]` | List scheduled jobs with their next and last run; run one now and print its log |
 | `cubby env list \| set NAME=value \| unset NAME --yes` | Secrets for jobs (`--from-stdin` keeps a value out of shell history) |
-| `cubby metrics [<app>] [--range 7d]` | Views, visitors, active now and peak, API requests and errors, accounts and signups of one app, or a summary of all yours (last 24h by default) |
+| `cubby metrics [<app>] [--range 1h\|24h\|7d\|30d\|1y]` | Views, visitors, active now and peak, top paths, API requests and errors, deploys in the range, accounts and signups of one app, or a summary of all yours (last 24h by default); `--all` for admins sums every app |
 | `cubby schema push \| pull \| drop` | Manage the data model (push never deletes) |
+| `cubby data list [<app>]` | Collections with their record counts and uploaded file sizes |
+| `cubby data clear [<app>] --collections a,b [--drop] --yes` | Empty collections (keeping fields and rules) or drop them, after a 7-day snapshot |
+| `cubby data clear [<app>] --collection c --filter "…" \| --ids a,b [--dry-run] --yes` | Delete matching records only; `--dry-run` shows matches N of M, samples and cascades |
+| `cubby data snapshots [<app>]` / `cubby data restore <id> [--overwrite --yes] [--dry-run]` | List snapshots of clears; restore one (additive: existing ids are skipped) |
+| `cubby data clear [<app>] --wipe --yes` / `cubby data purge <id> --yes` | Drop every collection (the next deploy recreates them); delete a snapshot early. Admins clearing others' apps add `--reason` |
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
 | `cubby admin storage` | Admins: disk use by category (database, uploads, current/older deploys, backups) and per app |
@@ -324,6 +331,80 @@ flowchart LR
     B --> Q[Acme Cubby]
 ```
 
+## Clear test data
+
+Before you share an app, you'll want the test polls gone, without deleting the app or its accounts. Ask:
+
+> Clear out the test polls and votes in friend-polls, but keep the users.
+
+The agent checks what's there, then empties just those collections:
+
+```sh
+cubby data list friend-polls
+# friend-polls: 3 collections
+#   polls  base     42 records  files 1.2 MB
+#   users  auth      5 records  files 0 B
+#   votes  base    310 records  files 0 B
+cubby data clear friend-polls --collections polls,votes --yes
+# Emptied polls (42 records), votes (310 records) in friend-polls.
+# Snapshot 20261017T101500-a1b2c3 keeps them until 2026-10-24. Undo with: cubby data restore 20261017T101500-a1b2c3
+```
+
+- **Empty** (the default) deletes every record and keeps the collection, its fields and rules. **`--drop`** removes the
+  collection too (like `cubby schema drop`, and the next `cubby deploy` pushes `schema.json` again). A collection
+  that others point at can only be dropped together with them.
+- **Nothing goes without a snapshot.** First Cubby writes everything it's about to delete to
+  `DATA_DIR/snapshots/<app>/<id>/`: the collections' schema, their records (one JSON line each), records of other
+  collections that point at them (deleted by cascade or unlinked, reported as such), and uploaded files if they total
+  100 MB or less (above that, it warns that files can't come back). Snapshots are plain files, kept 7 days, pruned by
+  the nightly maintenance, deleted with the app, and shown in `cubby admin storage`.
+- **Or just some records.** `--collection polls --filter 'closed = true'` (a PocketBase filter) or `--ids a,b`
+  deletes only those, and only they (and their files) go in the snapshot. `--dry-run` shows "matches N of M", five
+  of the records and what would go by cascade, and deletes nothing; any clear without `--yes` shows the same
+  preview. More than 10,000 matches need `--all-matching`. Filters run as the server, so they get the proxy's
+  check: a filter naming another app's collection, a platform collection, or a back-relation from one is refused.
+- **Accounts only when you name them.** An app's users collection is never cleared unless it's listed, and then the
+  result warns that restored accounts get new passwords: PocketBase never hands out password hashes, even to the
+  server.
+- Only the app's owner (and admins) can clear it, `--yes` is required, and each clear is in `cubby activity`.
+
+### Undo a clear
+
+Cleared the wrong thing? Within 7 days, ask *"bring back the polls I cleared this morning"*:
+
+```sh
+cubby data snapshots friend-polls          # id, when, what, how many records, who and why, until when
+cubby data restore 20261017T101500-a1b2c3 --dry-run
+cubby data restore 20261017T101500-a1b2c3
+# Restored snapshot 20261017T101500-a1b2c3:
+#   polls: 42 restored
+#   votes: 310 restored
+```
+
+- Records come back **with their original ids**, so links between them (and from other collections) still work.
+  Ids that exist again are skipped, so restoring twice is harmless. `--overwrite --yes` replaces them instead,
+  after saving the versions it replaces in a new snapshot.
+- A **dropped** collection is recreated from the snapshot's schema, rules included. Fields removed since are skipped;
+  a field whose type changed refuses the restore until it's dropped or renamed. `--dry-run` reports all of it.
+- What can't come back the same: PocketBase sets `created`/`updated` itself and renames uploaded files (their URLs
+  change), and it never hands out password hashes, not even to the server (we checked against the bundled
+  PocketBase: superusers can't read them, and writing one back just sets it as a new password). So **restored
+  accounts get new random passwords**, which the restore lists for you to hand out; everything else on the account
+  comes back.
+
+### When an admin clears your data
+
+Admins can clear data in any app (spam, a runaway job, a reset), but never silently:
+
+- An admin clearing someone else's app must give `--reason "…"`. The owner gets it in their own `cubby activity`
+  ("Admin (priya@…) emptied polls — 1,204 records · snapshot … until 2026-10-24. Reason: spam flood"), and the app
+  carries an `admin_clear` flag (shown by `cubby info`, for the dashboard's banner) until the owner dismisses it
+  (`DELETE /api/projects/<app>/admin-clear`).
+- `cubby data clear <app> --wipe --yes` wipes the database: every collection is dropped (after one snapshot) and
+  the schema hash is cleared, so the app's next `cubby deploy` pushes `schema.json` again and starts empty.
+- Owners can restore any snapshot of their app, including an admin's, but can't purge an admin's
+  (`cubby data purge <id> --yes` works on their own); admins can restore and purge any.
+
 ## How it works
 
 ```mermaid
@@ -364,6 +445,15 @@ flowchart LR
     proxy) as errors. Counting never changes what the proxy allows. A realtime connection counts when it closes.
   - **Accounts** are the records of the app's own auth collections (its `users`), counted from the database when
     you ask, with signups per day over the range. Nothing extra is stored.
+  - **Top paths**: each day's row keeps its 10 most viewed paths (query strings dropped, cut at 200 characters) and
+    "other" for the rest, a few hundred bytes a day. Between flushes at most 1,000 distinct paths per app are
+    counted; the merge keeps the top 10 of what's stored plus what's new, so it's a close approximation, not exact.
+  - **Deploys** in the range come back with the numbers, so a jump in errors lines up with the deploy behind it.
+  - **Retention**: hourly rows are kept 30 days; the nightly maintenance folds older ones into their day (API counts
+    added up, the peak kept) and deletes them, and deletes days older than a year. An app is at most ~720 hourly and
+    365 daily rows. Ranges up to 30 days are reported by the hour, longer ones (up to `1y`) by the day.
+  - **Admins** get every app summed with the 10 busiest (`cubby metrics --all`, `GET /api/admin/metrics`); visitors
+    are summed across apps there, so someone using two apps counts twice. Deleting an app deletes its metrics.
 - One Docker container runs Caddy, the Cubby server (Node.js) and PocketBase, with a single data volume.
 - Each server serves its own CLI (`/cli.tgz`), agent docs (`/docs.md`) and skill installer (`/skill.sh`), so agents
   always follow the rules of the server they're deploying to.
@@ -423,7 +513,7 @@ for groups who trust each other, not as a hostile multi-tenant cloud.
 - "Last seen" for an agent is updated at most once a minute. Home's timeline shows your latest 60 changes; older
   ones are on each agent's page and in `cubby activity`.
 - The activity log keeps 30 days (pruned nightly) and shows your own actions. An admin's actions on your app (like
-  deleting it) are in the admin's log, not yours. An app's history stays after the app is deleted, until it ages
+  deleting it) are in the admin's log, not yours, except data clears, which are in both. An app's history stays after the app is deleted, until it ages
   out; deleting a user deletes their history.
 - Not yet supported: server code that runs per request (API endpoints, hooks), custom domains per app, single sign-on
   across apps, app emails.

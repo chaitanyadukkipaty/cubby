@@ -11,7 +11,7 @@ import {
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
   jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
-  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents, formatActivity, formatMetrics, formatMetricsList,
+  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents, formatActivity, formatMetrics, formatMetricsList, formatAdminMetrics, formatData, formatClear, formatClearPreview, formatSnapshots, formatRestore,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -29,6 +29,8 @@ const { values: flags, positionals } = parseArgs({
     yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
     run: { type: 'string' }, limit: { type: 'string' }, agent: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
     keep: { type: 'string' }, range: { type: 'string' },
+    collections: { type: 'string' }, drop: { type: 'boolean' }, reason: { type: 'string' },
+    collection: { type: 'string' }, filter: { type: 'string' }, ids: { type: 'string' }, 'dry-run': { type: 'boolean' }, 'all-matching': { type: 'boolean' }, overwrite: { type: 'boolean' }, wipe: { type: 'boolean' },
   },
 });
 
@@ -329,7 +331,8 @@ const commands = {
   },
   async info() {
     const p = await api('GET', `/api/projects/${requireProject()}`);
-    out(`${p.slug}\n  server:  ${await where()}\n  url:     ${p.url}\n  prefix:  ${p.prefix}\n  deploy:  ${p.current_deploy ?? 'none'}`, { ...p, server: serverUrl() });
+    const notice = p.admin_clear ? `\n  notice:  ${p.admin_clear.summary}` : '';
+    out(`${p.slug}\n  server:  ${await where()}\n  url:     ${p.url}\n  prefix:  ${p.prefix}\n  deploy:  ${p.current_deploy ?? 'none'}${notice}`, { ...p, server: serverUrl() });
   },
   async delete(slug) {
     if (!slug) throw new CliError('Usage: cubby delete <slug> --yes');
@@ -398,12 +401,68 @@ const commands = {
 
   async metrics(slug) {
     const query = flags.range ? `?${new URLSearchParams({ range: flags.range })}` : '';
+    if (flags.all) {
+      const r = await api('GET', `/api/admin/metrics${query}`).catch(async (err) => {
+        if (err.status === 403) throw new CliError(`\`cubby metrics --all\` is for admins only. You're logged in to ${await where()} as a regular user.`);
+        throw err;
+      });
+      return out(formatAdminMetrics(r), r);
+    }
     if (!slug) {
       const list = await api('GET', `/api/metrics${query}`);
       return out(formatMetricsList(list), list);
     }
     const r = await api('GET', `/api/projects/${encodeURIComponent(slug)}/metrics${query}`);
     out(formatMetrics(r), r);
+  },
+
+  // An app's data: list collections, clear them (a snapshot is kept for 7 days). The app is the argument or cubby.json.
+  async data(sub, appArg) {
+    if (sub === 'restore') {
+      const id = appArg;
+      if (!id) throw new CliError('Usage: cubby data restore <snapshot-id> [--overwrite --yes] [--dry-run]');
+      if (flags.overwrite && !flags.yes && !flags['dry-run']) throw new CliError(`--overwrite replaces records that exist again with the snapshot's versions (the current ones are saved in a new snapshot first). Re-run with --yes, or see what it does with --dry-run.`);
+      const r = await api('POST', `/api/snapshots/${encodeURIComponent(id)}/restore`, { body: { overwrite: Boolean(flags.overwrite), dry_run: Boolean(flags['dry-run']) } });
+      return out(formatRestore(r), r);
+    }
+    if (sub === 'purge') {
+      const id = appArg;
+      if (!id) throw new CliError('Usage: cubby data purge <snapshot-id> --yes');
+      if (!flags.yes) throw new CliError(`This deletes snapshot ${id} now: what it holds can't be restored any more. Re-run with --yes.`);
+      const r = await api('DELETE', `/api/snapshots/${encodeURIComponent(id)}`);
+      return out(`Purged snapshot ${id}`, r);
+    }
+    if (sub === 'snapshots') {
+      const app = appArg ?? projectConfig()?.project;
+      const list = await api('GET', `/api/snapshots${app ? `?${new URLSearchParams({ app })}` : ''}`);
+      return out(formatSnapshots(list), list);
+    }
+    const app = appArg ?? requireProject();
+    const base = `/api/projects/${encodeURIComponent(app)}/data`;
+    if (!sub || sub === 'list') {
+      const list = await api('GET', base);
+      return out(formatData(app, list), list);
+    }
+    if (sub === 'clear') {
+      const list = (v) => (v ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+      const body = flags.wipe ? { wipe: true }
+        : flags.collection ? { collection: flags.collection, ...(flags.ids !== undefined ? { ids: list(flags.ids) } : { filter: flags.filter }), all_matching: Boolean(flags['all-matching']) }
+        : { collections: list(flags.collections), drop: Boolean(flags.drop) };
+      if (body.collections && !body.collections.length) throw new CliError(DATA_USAGE);
+      if (flags.reason) body.reason = flags.reason;
+      // Without --yes (or with --dry-run) it only previews: what matches, a few of the records, what cascades.
+      if (flags['dry-run'] || !flags.yes) {
+        const preview = await api('POST', `${base}/clear`, { body: { ...body, dry_run: true } });
+        if (flags['dry-run']) return out(formatClearPreview(app, preview), preview);
+        const what = flags.wipe ? `drops every collection (${preview.matches} records)`
+          : flags.collection ? `deletes ${preview.matches} records from ${flags.collection}`
+          : `${flags.drop ? 'drops' : 'empties'} ${body.collections.join(', ')}${flags.drop ? ' (the collections themselves go too)' : ''}`;
+        throw new CliError(`This ${what} in ${app}. A snapshot keeps them for 7 days (\`cubby data restore\`). Re-run with --yes.`, formatClearPreview(app, preview).split('\n').slice(1));
+      }
+      const r = await api('POST', `${base}/clear`, { body });
+      return out(formatClear(app, r), r);
+    }
+    throw new CliError(DATA_USAGE);
   },
 
   async jobs(sub, name) {
@@ -515,6 +574,7 @@ const commands = {
   },
 };
 
+const DATA_USAGE = 'Usage: cubby data list [app] | clear [app] (--collections a,b [--drop] | --collection c (--filter "<filter>" | --ids a,b) [--all-matching]) [--dry-run] --yes | clear [app] --wipe --yes | snapshots [app] | restore <snapshot-id> [--overwrite --yes] [--dry-run] | purge <snapshot-id> --yes';
 const ADMIN_USAGE = 'Usage: cubby admin storage | backups [create [--no-wait] | delete <YYYY-MM-DD> --yes [--leave-none] | keep <n> [--yes]] | deploys <app> [prune [--keep <n>] --yes | delete <deploy-id> --yes]';
 
 const [cmd, ...rest] = positionals;

@@ -98,6 +98,24 @@ describe('admin tasks', () => {
     assert.ok(left.includes('recent'));
     assert.ok(left.some((s) => /^Deployed /.test(s)), 'today\'s rows stay');
   });
+  test('the nightly maintenance rolls metrics hours older than 30 days into their day and drops days older than a year', async () => {
+    const pb = new PocketBase(srv.pbUrl);
+    await pb.collection('_superusers').authWithPassword(srv.env.PB_SUPERUSER_EMAIL, srv.env.PB_SUPERUSER_PASSWORD);
+    const project = await pb.collection('cubby_projects').getFirstListItem('slug = "kept-app"');
+    const day = 24 * 60 * 60 * 1000;
+    const dayAt = (ago) => new Date(Math.floor((Date.now() - ago * day) / day) * day);
+    const rows = pb.collection('cubby_metrics');
+    const old = dayAt(40);
+    await rows.create({ project: project.id, period: 'day', start: old, views: 3, visitors: 2 });
+    await rows.create({ project: project.id, period: 'hour', start: new Date(old.getTime() + 9 * 3_600_000), views: 3, peak_active: 2, api_requests: 7, api_errors: 1 });
+    await rows.create({ project: project.id, period: 'hour', start: new Date(dayAt(1).getTime() + 3_600_000), views: 1 });
+    await rows.create({ project: project.id, period: 'day', start: dayAt(400), views: 9, visitors: 9 });
+    const r = await task(['backup']);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /metrics: rolled 1 hourly rows into days, deleted 1 daily rows older than a year/);
+    const left = await rows.getFullList({ filter: pb.filter('project = {:p}', { p: project.id }), sort: 'start' });
+    assert.deepEqual(left.map((x) => [x.period, x.views, x.api_requests, x.api_errors, x.peak_active]), [['day', 3, 7, 1, 2], ['hour', 1, 0, 0, 0]]);
+  });
   test('reset-password lets the user log in with the new password', async () => {
     const r = await task(['reset-password', 'owner@test.dev', 'brand-new-pass']);
     assert.equal(r.code, 0, r.stderr);

@@ -110,6 +110,8 @@ async function ensurePlatformCollections() {
       { name: 'schema_hash', type: 'text' },
       // Names of jobs paused by the owner; kept across deploys and rollbacks.
       { name: 'jobs_paused', type: 'json' },
+      // Set when an admin clears the app's data (logic.adminClearFlag), for the owner's banner; null once dismissed.
+      { name: 'admin_clear', type: 'json' },
       ...autodates,
     ],
     indexes: ['CREATE UNIQUE INDEX idx_cubby_projects_slug ON cubby_projects (slug)'],
@@ -193,8 +195,10 @@ async function ensurePlatformCollections() {
   });
 
   // App metrics (metrics.js): per-app counts merged on every flush. "hour" buckets have views, /pb requests and 5xx
-  // errors (added up) and the peak of visitors active at once (a max); "day" (UTC) buckets have views and unique
-  // visitors. Fields a period doesn't use stay 0. Never holds IPs.
+  // errors (added up) and the peak of visitors active at once (a max); "day" (UTC) buckets have views, unique
+  // visitors and the day's top 10 paths (`paths`, { path: views, other: n }), plus, once the nightly rollup folds in
+  // hours older than 30 days, their API counts and peak. Day buckets are kept a year. Fields a period doesn't use stay
+  // 0. Never holds IPs.
   await upsertCollection({
     name: 'cubby_metrics',
     type: 'base',
@@ -208,6 +212,7 @@ async function ensurePlatformCollections() {
       { name: 'peak_active', type: 'number', onlyInt: true },
       { name: 'api_requests', type: 'number', onlyInt: true },
       { name: 'api_errors', type: 'number', onlyInt: true },
+      { name: 'paths', type: 'json', maxSize: 10_000 },
       ...autodates,
     ],
     indexes: ['CREATE UNIQUE INDEX idx_cubby_metrics_bucket ON cubby_metrics (project, period, start)'],

@@ -117,7 +117,7 @@ export function formatBytes(n) {
 
 const STORAGE_ROWS = [
   ['database_bytes', 'Database'], ['uploads_bytes', 'Uploaded files'], ['sites_current_bytes', 'Current deploys'],
-  ['sites_older_bytes', 'Older deploys (rollback)'], ['backups_bytes', 'Backups'], ['other_bytes', 'Other'],
+  ['sites_older_bytes', 'Older deploys (rollback)'], ['backups_bytes', 'Backups'], ['snapshots_bytes', 'Snapshots (data clears)'], ['other_bytes', 'Other'],
 ];
 
 export function formatStorage(s) {
@@ -130,7 +130,7 @@ export function formatStorage(s) {
     `Disk: ${formatBytes(s.disk.free_bytes)} free of ${formatBytes(s.disk.total_bytes)}`,
     '',
     s.apps.length ? 'Apps:' : 'No apps yet',
-    ...s.apps.map((a) => `  ${a.slug.padEnd(width)}${formatBytes(a.total_bytes).padStart(10)}  current ${formatBytes(a.current_deploy_bytes)} · older ${formatBytes(a.older_deploys_bytes)} · uploads ${formatBytes(a.uploads_bytes)}  ${a.owner ?? ''}`.trimEnd()),
+    ...s.apps.map((a) => `  ${a.slug.padEnd(width)}${formatBytes(a.total_bytes).padStart(10)}  current ${formatBytes(a.current_deploy_bytes)} · older ${formatBytes(a.older_deploys_bytes)} · uploads ${formatBytes(a.uploads_bytes)}${a.snapshots_bytes ? ` · snapshots ${formatBytes(a.snapshots_bytes)}` : ''}  ${a.owner ?? ''}`.trimEnd()),
   ].join('\n');
 }
 
@@ -319,14 +319,30 @@ export const formatEnv = (list) => list.map((e) => `${e.key.padEnd(32)} set ${e.
 const counts = (b) => `${String(b.views).padStart(6)} views  ${String(b.visitors).padStart(4)} visitors`;
 
 // `cubby metrics <app>`: visitors are unique per UTC day, so each day is listed with its own count (and signups: the same days).
+// Past a month, only the days with views or signups are listed.
 export function formatMetrics(r) {
   const signups = new Map(r.accounts.days.map((d) => [d.start, d.signups]));
+  const days = r.days.length > 31 ? r.days.filter((d) => d.views || signups.get(d.start)) : r.days;
   return [
     `${r.app}: ${r.views} views, ${r.visitors} visitors in the last ${r.range}`,
     `  Active now ${r.active_now}, peak ${r.peak_active}`,
     `  API: ${r.api_requests} requests, ${r.api_errors} errors (${(r.api_error_rate * 100).toFixed(1)}%)`,
     `  Accounts: ${r.accounts.total}, ${r.accounts.new} new`,
-    ...r.days.map((d) => `  ${d.start.slice(0, 10)} ${counts(d)}  ${String(signups.get(d.start)).padStart(4)} signups`),
+    ...(r.top_paths?.length ? [`  Top paths: ${r.top_paths.map((p) => `${p.path} ${p.views}`).join(' · ')}`] : []),
+    ...(r.deploys ?? []).map((d) => `  Deploy ${String(d.created).replace('T', ' ').slice(0, 16)} ${d.id} ${d.message}`.trimEnd()),
+    ...days.map((d) => `  ${d.start.slice(0, 10)} ${counts(d)}  ${String(signups.get(d.start)).padStart(4)} signups`),
+  ].join('\n');
+}
+
+// `cubby metrics --all` (admins): every app summed, then the busiest.
+export function formatAdminMetrics(r) {
+  const width = Math.max(0, ...r.top_apps.map((a) => a.app.length));
+  return [
+    `All apps: ${r.views} views, ${r.visitors} visitors in the last ${r.range} (${r.apps} apps)`,
+    `  Active now ${r.active_now}`,
+    `  API: ${r.api_requests} requests, ${r.api_errors} errors (${(r.api_error_rate * 100).toFixed(1)}%)`,
+    ...(r.top_apps.length ? ['Busiest apps:'] : []),
+    ...r.top_apps.map((a) => `  ${a.app.padEnd(width)} ${counts(a)}  ${String(a.api_errors).padStart(4)} API errors  ${a.owner ?? ''}`.trimEnd()),
   ].join('\n');
 }
 
@@ -335,6 +351,89 @@ export function formatMetricsList(list) {
   if (!list.length) return 'No apps yet. Create one with `cubby init <app>`.';
   const width = Math.max(...list.map((a) => a.app.length));
   return [`Last ${list[0].range}`, ...list.map((a) => `  ${a.app.padEnd(width)} ${counts(a)}  ${String(a.active_now).padStart(3)} active  ${String(a.api_errors).padStart(4)} API errors`)].join('\n');
+}
+
+// --- Data: clearing and restoring an app's records ---
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// `cubby data list`
+export function formatData(app, list) {
+  if (!list.length) return `${app}: no collections yet`;
+  const width = Math.max(...list.map((c) => c.name.length));
+  return [
+    `${app}: ${plural(list.length, 'collection')}`,
+    ...list.map((c) => `  ${c.name.padEnd(width)}  ${c.type.padEnd(4)} ${String(c.records).padStart(6)} records  files ${formatBytes(c.files_bytes)}`),
+  ].join('\n');
+}
+
+const cascadeLine = (c, would = false) => (c.deletes
+  ? `  ${c.collection}: ${plural(c.records, 'record')} pointing at them ${would ? 'would be' : 'were'} deleted too (cascade on ${c.collection}.${c.field})`
+  : `  ${c.collection}: ${plural(c.records, 'record')} ${would ? 'would lose' : 'lost'} their link (${c.collection}.${c.field})`);
+
+// `cubby data clear`: what went, what went with it, and the snapshot to undo it.
+export function formatClear(app, r) {
+  const [first] = r.collections;
+  if (!r.snapshot) return `Nothing in ${first.name} matches: nothing was deleted.`;
+  const head = r.mode === 'filter' || r.mode === 'ids'
+    ? `Deleted ${plural(first.records, 'record')} from ${first.name} in ${app}${r.mode === 'filter' ? ` (matching ${r.filter})` : ''}.${r.missing?.length ? ` Not found: ${r.missing.join(', ')}` : ''}`
+    : r.wipe ? `Wiped the database of ${app}: dropped ${r.collections.map((c) => `${c.name} (${plural(c.records, 'record')})`).join(', ')}.`
+    : `${r.mode === 'drop' ? 'Dropped' : 'Emptied'} ${r.collections.map((c) => `${c.name} (${plural(c.records, 'record')})`).join(', ')} in ${app}.`;
+  return [
+    head,
+    ...r.cascade.map((c) => cascadeLine(c)),
+    `Snapshot ${r.snapshot.id} keeps them until ${r.snapshot.expires.slice(0, 10)}. Undo with: cubby data restore ${r.snapshot.id}`,
+    ...r.warnings.map((w) => `warning: ${w}`),
+  ].join('\n');
+}
+
+// `cubby data clear --dry-run`: what a clear would delete (and up to 5 of the records), deleting nothing.
+export function formatClearPreview(app, r) {
+  const names = r.collections.map((c) => c.name).join(', ');
+  const head = r.mode === 'filter' || r.mode === 'ids'
+    ? `Dry run: ${r.matches} of ${plural(r.total, 'record')} in ${names} match${r.mode === 'filter' ? ` (${r.filter})` : ''}.`
+    : `Dry run: ${r.wipe ? `wiping the database (${names})` : `${r.mode === 'drop' ? 'dropping' : 'emptying'} ${names}`} deletes ${plural(r.matches, 'record')}.`;
+  const sample = ({ collectionId, collectionName, ...rec }) => {
+    const text = JSON.stringify(rec);
+    return `  ${text.length > 120 ? `${text.slice(0, 119)}…` : text}`;
+  };
+  return [
+    `${head} Nothing was deleted.`,
+    ...r.samples.map(sample),
+    ...r.cascade.map((c) => cascadeLine(c, true)),
+    ...r.warnings.map((w) => `warning: ${w}`),
+  ].join('\n');
+}
+
+const stamp = (at) => String(at).replace('T', ' ').slice(0, 16);
+
+// `cubby data snapshots`
+export function formatSnapshots(list) {
+  if (!list.length) return 'No snapshots. A data clear keeps one for 7 days.';
+  return [
+    ...list.map((s) => [
+      s.id, s.app, stamp(s.created), `${s.mode} ${s.collections.map((c) => c.name).join(',')}`, `${plural(s.records, 'record')}${s.files ? '' : ' (no files)'}`,
+      `by ${s.by ?? '?'}${s.by_admin ? ' (admin)' : ''}${s.reason ? `: ${s.reason}` : ''}`, `until ${s.expires.slice(0, 10)}`,
+    ].join('  ')),
+    'Restore one with: cubby data restore <id> [--dry-run]',
+  ].join('\n');
+}
+
+// `cubby data restore`
+export function formatRestore(r) {
+  const counts = (c) => (r.dry_run
+    ? [plural(c.records, 'record'), ...(c.existing ? [`${c.existing} already there${r.overwrite ? ' (replaced)' : ''}`] : [])]
+    : [`${c.restored} restored`, ...(c.replaced ? [`${c.replaced} replaced`] : []), ...(c.existing - c.replaced ? [`${c.existing - c.replaced} already there`] : []), ...(c.failed ? [`${c.failed} failed`] : [])]);
+  return [
+    r.dry_run ? `Dry run of snapshot ${r.snapshot} (nothing changed):` : `Restored snapshot ${r.snapshot}:`,
+    ...r.collections.map((c) => `  ${c.name}: ${counts(c).join(', ')}`),
+    ...(r.recreated.length ? [`${r.dry_run ? 'Would recreate' : 'Recreated'}: ${r.recreated.join(', ')}`] : []),
+    ...(r.skipped_fields.length ? [`Skipped fields (removed since): ${r.skipped_fields.join(', ')}`] : []),
+    ...(r.refused_fields.length ? [`Refused (type changed): ${r.refused_fields.join('; ')}`] : []),
+    ...(r.accounts.length ? ['New passwords (hand them out; they can change them in the app):', ...r.accounts.map((a) => `  ${a.collection}  ${a.email}  ${a.password}`)] : []),
+    ...r.failures.map((f) => `Failed: ${f.collection} ${f.id}: ${f.error}`),
+    ...(r.backup ? [`Replaced records were saved in snapshot ${r.backup.id} (until ${r.backup.expires.slice(0, 10)}).`] : []),
+    ...r.warnings.map((w) => `warning: ${w}`),
+  ].join('\n');
 }
 
 // `cubby env set NAME=value`

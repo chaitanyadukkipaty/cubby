@@ -69,6 +69,36 @@ describe('activity summaries', () => {
       'Pushed schema: created notes; updated tags; kept notes.body, old');
     assert.equal(logic.schemaSummary({ created: [], updated: [], kept: [] }), 'Pushed schema: no changes');
   });
+  test('data clears say what went, how many records, and until when the snapshot keeps them', () => {
+    const snapshot = { id: '20261017T101500-a1b2c3', expires: '2026-10-24T10:15:00.000Z' };
+    assert.equal(logic.clearSummary({ mode: 'empty', collections: [{ name: 'polls', records: 1204 }, { name: 'votes', records: 1 }], snapshot }),
+      'Emptied polls, votes — 1,205 records · snapshot 20261017T101500-a1b2c3 until 2026-10-24');
+    assert.equal(logic.clearSummary({ mode: 'drop', collections: [{ name: 'polls', records: 1 }], snapshot }),
+      'Dropped polls — 1 record · snapshot 20261017T101500-a1b2c3 until 2026-10-24');
+    assert.equal(logic.clearSummary({ mode: 'filter', filter: 'closed = true', collections: [{ name: 'polls', records: 3 }], snapshot }),
+      'Deleted 3 records from polls matching closed = true · snapshot 20261017T101500-a1b2c3 until 2026-10-24');
+    assert.equal(logic.clearSummary({ mode: 'ids', collections: [{ name: 'polls', records: 2 }], snapshot }),
+      'Deleted 2 records from polls by id · snapshot 20261017T101500-a1b2c3 until 2026-10-24');
+  });
+  test('restores say how many records came back, how many were already there, and new passwords', () => {
+    const collections = [{ name: 'polls', restored: 40, replaced: 0, existing: 2, failed: 0 }, { name: 'users', restored: 3, replaced: 0, existing: 0, failed: 1 }];
+    assert.equal(logic.restoreSummary({ snapshot: '20261017T101500-a1b2c3', overwrite: false, collections, accounts: [1, 2, 3] }),
+      'Restored 43 records from snapshot 20261017T101500-a1b2c3 (2 already there, 1 failed, 3 accounts with new passwords)');
+    assert.equal(logic.restoreSummary({ snapshot: 's', overwrite: true, collections: [{ name: 'polls', restored: 1, replaced: 2, existing: 2, failed: 0 }], accounts: [] }),
+      'Restored 1 record from snapshot s (2 replaced)');
+  });
+  test('a restore with nothing to note is one plain line; a bare snapshot lists without who or why', () => {
+    assert.equal(logic.restoreSummary({ snapshot: 's', collections: [{ restored: 1, replaced: 0, existing: 0, failed: 0 }], accounts: [] }), 'Restored 1 record from snapshot s');
+    const v = logic.snapshotView({ id: 's', app: 'a', created: 'C', expires: 'E', mode: 'ids', collections: [{ name: 'x', records: 2 }], files: true, files_bytes: 0 });
+    assert.deepEqual([v.by, v.by_admin, v.reason, v.records], [null, false, '', 2]);
+  });
+  test('a snapshot as listed: who, why, what, counts, until when', () => {
+    const meta = { id: 's1', app: 'shop', created: 'C', expires: 'E', by: { id: 'u1', email: 'a@x.dev', admin: true }, reason: 'spam', mode: 'empty', collections: [{ name: 'polls', type: 'base', records: 3, files_bytes: 9 }], cascade: [{ collection: 'votes', records: 2 }], files: true, files_bytes: 9, warnings: [] };
+    assert.deepEqual(logic.snapshotView(meta), {
+      id: 's1', app: 'shop', created: 'C', expires: 'E', by: 'a@x.dev', by_admin: true, reason: 'spam', mode: 'empty',
+      collections: [{ name: 'polls', records: 3 }], records: 5, files: true, files_bytes: 9,
+    });
+  });
   test('app updates say what changed', () => {
     assert.equal(logic.patchSummary('todo', { unlisted: true }), 'Updated "todo": made it unlisted');
     assert.equal(logic.patchSummary('todo', { unlisted: false, name: 'Todo', description: 'x' }),
@@ -124,5 +154,43 @@ describe('listing and pruning', () => {
     assert.equal(await pruneActivity(now, col), 450);
     assert.deepEqual(items.map((r) => r.id), ['new']);
     assert.ok(col.calls.every((c) => c.filter === 'at < "2026-10-01 12:00:00.000Z"'));
+  });
+});
+
+describe('admin data clears', () => {
+  const owner = { id: 'u1', is_admin: false };
+  const adminUser = { id: 'a1', is_admin: true, email: 'admin@x.dev' };
+  const project = { id: 'p1', owner: 'u1' };
+  test('an admin clearing someone else\'s app must give a reason; owners (and admins on their own apps) need none', () => {
+    assert.throws(() => logic.clearReason(adminUser, project, ''), (e) => e.status === 400 && /--reason/.test(e.message));
+    assert.throws(() => logic.clearReason(adminUser, project, '   '), (e) => e.status === 400);
+    assert.equal(logic.clearReason(adminUser, project, '  spam flood '), 'spam flood');
+    assert.equal(logic.clearReason(owner, project, undefined), '');
+    assert.equal(logic.clearReason(adminUser, { ...project, owner: 'a1' }, undefined), '');
+    assert.equal(logic.clearReason(owner, project, 'x'.repeat(400)).length, 300);
+  });
+  test('owners can purge their own snapshots but not an admin\'s; admins can purge any', () => {
+    const mine = { by: { id: 'u1', admin: false } };
+    const admins = { by: { id: 'a1', admin: true } };
+    assert.doesNotThrow(() => logic.checkPurge(owner, mine));
+    assert.throws(() => logic.checkPurge(owner, admins), (e) => e.status === 403 && /made by an admin/.test(e.message));
+    assert.doesNotThrow(() => logic.checkPurge(adminUser, admins));
+    assert.doesNotThrow(() => logic.checkPurge(adminUser, mine));
+  });
+  test('the owner\'s notice of an admin clear: the activity line and the dismissible flag', () => {
+    const result = { mode: 'empty', collections: [{ name: 'polls', records: 1204 }], snapshot: { id: 's1', expires: '2026-10-24T10:15:00.000Z' } };
+    assert.equal(logic.adminClearSummary(adminUser, result, 'spam flood'),
+      'Admin (admin@x.dev) emptied polls — 1,204 records · snapshot s1 until 2026-10-24. Reason: spam flood');
+    assert.equal(logic.adminClearSummary(adminUser, { ...result, mode: 'drop', wipe: true }, 'reset'),
+      'Admin (admin@x.dev) wiped the database (dropped polls) — 1,204 records · snapshot s1 until 2026-10-24. Reason: reset');
+    assert.deepEqual(logic.adminClearFlag(adminUser, result, 'spam flood', new Date('2026-10-17T10:15:00Z')), {
+      at: '2026-10-17T10:15:00.000Z', by: 'admin@x.dev', reason: 'spam flood', snapshot: 's1', expires: '2026-10-24T10:15:00.000Z',
+      summary: 'Admin (admin@x.dev) emptied polls — 1,204 records · snapshot s1 until 2026-10-24. Reason: spam flood',
+    });
+  });
+  test('a project shows the flag until it is dismissed', () => {
+    const cfg = { publicUrl: 'https://c.dev', baseDomain: 'c.dev' };
+    assert.equal(logic.projectView({ slug: 'shop' }, cfg).admin_clear, null);
+    assert.deepEqual(logic.projectView({ slug: 'shop', admin_clear: { by: 'admin@x.dev' } }, cfg).admin_clear, { by: 'admin@x.dev' });
   });
 });

@@ -15,7 +15,7 @@ describe('scanStorage', () => {
     }
     return dir;
   }
-  test('splits the data dir into database, uploads, current and older deploys, backups and other, plus per app', async () => {
+  test('splits the data dir into database, uploads, current and older deploys, backups, snapshots and other, plus per app', async () => {
     const dir = dataDir({
       'pb_data/data.db': 1000,
       'pb_data/auxiliary.db': 100,
@@ -31,6 +31,8 @@ describe('scanStorage', () => {
       'backups/sites-2026-10-01.tar.gz': 50,
       'secrets/env.key': 32,
       'tmp/upload': 1,
+      'snapshots/blog/20261017T101500-a1b2c3/records/posts.jsonl': 60,
+      'snapshots/gone/20261017T101500-ffffff/meta.json': 4,
     });
     try {
       const s = await scanStorage(dir, [
@@ -38,12 +40,12 @@ describe('scanStorage', () => {
         { slug: 'empty', owner: 'b@x.dev', current_deploy: null, collectionIds: [] },
       ]);
       assert.deepEqual(s.breakdown, {
-        database_bytes: 1100, uploads_bytes: 77, sites_current_bytes: 25, sites_older_bytes: 15, backups_bytes: 550, other_bytes: 33,
+        database_bytes: 1100, uploads_bytes: 77, sites_current_bytes: 25, sites_older_bytes: 15, backups_bytes: 550, snapshots_bytes: 64, other_bytes: 33,
       });
-      assert.equal(s.data_bytes, 1100 + 77 + 25 + 15 + 550 + 33);
+      assert.equal(s.data_bytes, 1100 + 77 + 25 + 15 + 550 + 64 + 33);
       assert.deepEqual(s.apps, [
-        { slug: 'blog', owner: 'a@x.dev', total_bytes: 108, current_deploy_bytes: 25, older_deploys_bytes: 13, uploads_bytes: 70 },
-        { slug: 'empty', owner: 'b@x.dev', total_bytes: 0, current_deploy_bytes: 0, older_deploys_bytes: 0, uploads_bytes: 0 },
+        { slug: 'blog', owner: 'a@x.dev', total_bytes: 168, current_deploy_bytes: 25, older_deploys_bytes: 13, uploads_bytes: 70, snapshots_bytes: 60 },
+        { slug: 'empty', owner: 'b@x.dev', total_bytes: 0, current_deploy_bytes: 0, older_deploys_bytes: 0, uploads_bytes: 0, snapshots_bytes: 0 },
       ]);
     } finally {
       rmSync(dir, { recursive: true, force: true });

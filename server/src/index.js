@@ -13,11 +13,14 @@ import { scheduleBackups, createBackupRunner, runMaintenance } from './backups.j
 import { scanStorage, createTtlCache, listBackups, checkBackupDelete, planRetention, deleteBackup } from './storage.js';
 import { listJobs, runNow, jobRuns, setPaused, allJobs, scheduleJobs, recoverRuns, deployJobs } from './jobs.js';
 import { listEnv, setEnv, unsetEnv } from './secrets.js';
-import { createMetrics, pocketbaseStore, countsAsView, isPerson, parseRange, metricsClock, appAccounts } from './metrics.js';
+import { createMetrics, pocketbaseStore, countsAsView, isPerson, parseRange, metricsClock, appAccounts, summarizeMetrics } from './metrics.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
 import { recordActivity, listActivity } from './activity.js';
+import { listData, clearData } from './data.js';
+import { removeAppSnapshots, listSnapshots, findSnapshot, removeSnapshot } from './snapshots.js';
+import { restoreSnapshot } from './restore.js';
 import { loadDashboard } from './dashboard.js';
 import { matchRoute } from '../public/js/routes.js';
 import { commandsMarkdown } from '../../cli/src/commands.js';
@@ -50,6 +53,7 @@ async function ownedProject(user, slug) {
 async function removeProject(project) {
   await deleteCollections(await projectCollections(project.slug));
   await removeSite(project.slug);
+  await removeAppSnapshots(config.dataDir, project.slug);
   await admin.collection('cubby_projects').delete(project.id);
 }
 
@@ -61,7 +65,7 @@ function requireAdmin(user) {
 const metrics = createMetrics({ store: pocketbaseStore(admin), now: metricsClock(process.env.CUBBY_TEST_CLOCK_FILE) });
 
 // Owners see their apps' metrics; admins see any app's.
-async function metricsProject(user, slug) {
+async function appForOwnerOrAdmin(user, slug) {
   if (!user.is_admin) return ownedProject(user, slug);
   const project = await findProject(slug);
   if (!project) throw new HttpError(404, `App "${slug}" not found`);
@@ -190,10 +194,14 @@ const routes = [
   ['GET', '/api/projects/:slug/metrics', 'user', async (req, user, { slug }, url) => {
     const range = url.searchParams.get('range') || '24h';
     const hours = parseRange(range);
-    const project = await metricsProject(user, slug);
+    const project = await appForOwnerOrAdmin(user, slug);
     const report = (await metrics.report([project.id], hours))[project.id];
     const accounts = await appAccounts(admin, prefixFor(project.slug), Date.parse(report.from), Date.parse(report.to));
-    return { app: project.slug, range, ...report, accounts };
+    // Deploy markers: the deploys still kept (the last 10) that went out in the range.
+    const deploys = (await admin.collection('cubby_deploys').getFullList({
+      filter: admin.filter('project = {:p} && created >= {:from}', { p: project.id, from: new Date(report.from) }), sort: 'created',
+    })).map((d) => ({ id: d.id, created: d.created, message: d.message }));
+    return { app: project.slug, range, ...report, accounts, deploys };
   }],
   ['GET', '/api/metrics', 'user', async (req, user, params, url) => {
     const range = url.searchParams.get('range') || '24h';
@@ -204,6 +212,68 @@ const routes = [
       const { from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate } = report[p.id];
       return { app: p.slug, name: p.name, range, from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate };
     });
+  }],
+
+  // Data: what's in an app's collections, and clearing it (after a snapshot). Owners for their apps; admins any app.
+  ['GET', '/api/projects/:slug/data', 'user', async (req, user, { slug }) => (
+    listData((await appForOwnerOrAdmin(user, slug)).slug, { pb: admin, dataDir: config.dataDir })
+  )],
+  ['POST', '/api/projects/:slug/data/clear', 'user', async (req, user, { slug }) => {
+    const project = await appForOwnerOrAdmin(user, slug);
+    const body = await readJson(req);
+    const actor = { id: user.id, email: user.email, admin: project.owner !== user.id };
+    // An admin clearing someone else's app must say why: the owner is told (activity, and a flag for the dashboard).
+    const reason = body.dry_run ? '' : logic.clearReason(user, project, body.reason);
+    const result = await clearData(project.slug, body, { pb: admin, dataDir: config.dataDir, project, actor, reason });
+    if (!result.snapshot) return result; // a dry run, or nothing matched: nothing changed
+    // Like `cubby schema drop` (and a wipe): the next deploy pushes schema.json again.
+    const patch = result.mode === 'drop' ? { schema_hash: '' } : {};
+    if (actor.admin) patch.admin_clear = logic.adminClearFlag(user, result, reason);
+    if (Object.keys(patch).length) await admin.collection('cubby_projects').update(project.id, patch);
+    storageCache.clear();
+    if (actor.admin) {
+      const summary = logic.adminClearSummary(user, result, reason);
+      await recordActivity(user, { action: 'admin.data.clear', app: slug, summary });
+      await recordActivity({ id: project.owner }, { action: 'admin.data.clear', app: slug, summary });
+    } else {
+      await recordActivity(user, { action: 'data.clear', app: slug, summary: logic.clearSummary(result) });
+    }
+    return result;
+  }],
+  // The owner dismisses the "data cleared by admin" banner.
+  ['DELETE', '/api/projects/:slug/admin-clear', 'user', async (req, user, { slug }) => {
+    const project = await ownedProject(user, slug);
+    await admin.collection('cubby_projects').update(project.id, { admin_clear: null });
+    return { ok: true };
+  }],
+
+  // Snapshots of data clears: of one app (?app=), or of all your apps.
+  ['GET', '/api/snapshots', 'user', async (req, user, params, url) => {
+    const app = url.searchParams.get('app');
+    const slugs = app ? [(await appForOwnerOrAdmin(user, app)).slug]
+      : (await admin.collection('cubby_projects').getFullList({ filter: admin.filter('owner = {:u}', { u: user.id }), fields: 'slug' })).map((p) => p.slug);
+    return (await listSnapshots(config.dataDir, slugs)).map(logic.snapshotView);
+  }],
+  ['POST', '/api/snapshots/:id/restore', 'user', async (req, user, { id }) => {
+    const snap = await findSnapshot(config.dataDir, id);
+    const project = await appForOwnerOrAdmin(user, snap.meta.app);
+    const { overwrite, dry_run } = await readJson(req);
+    const actor = { id: user.id, email: user.email, admin: project.owner !== user.id };
+    const result = await restoreSnapshot(snap, { overwrite: Boolean(overwrite), dry_run: Boolean(dry_run) }, { pb: admin, dataDir: config.dataDir, project, actor });
+    if (dry_run) return result;
+    storageCache.clear();
+    await recordActivity(user, { action: 'data.restore', app: project.slug, summary: logic.restoreSummary(result) });
+    return result;
+  }],
+  // Deletes a snapshot before it expires. Owners can't purge one an admin made; admins can purge any.
+  ['DELETE', '/api/snapshots/:id', 'user', async (req, user, { id }) => {
+    const snap = await findSnapshot(config.dataDir, id);
+    const project = await appForOwnerOrAdmin(user, snap.meta.app);
+    logic.checkPurge(user, snap.meta);
+    await removeSnapshot(snap.dir);
+    storageCache.clear();
+    await recordActivity(user, { action: 'data.purge', app: project.slug, summary: `Purged snapshot ${id}` });
+    return { ok: true, purged: id };
   }],
 
   ['GET', '/api/gallery', 'user', async () => {
@@ -274,6 +344,13 @@ const routes = [
     return projects.map((p) => ({ ...projectView(p), disk_bytes: usage.get(p.slug) ?? 0 }));
   }],
   ['GET', '/api/admin/jobs', 'admin', async () => allJobs()],
+  // Every app's numbers summed, with the busiest apps (by views).
+  ['GET', '/api/admin/metrics', 'admin', async (req, user, params, url) => {
+    const range = url.searchParams.get('range') || '24h';
+    const hours = parseRange(range);
+    const list = await admin.collection('cubby_projects').getFullList({ sort: 'slug', expand: 'owner' });
+    return { range, ...summarizeMetrics(list, await metrics.report(list.map((p) => p.id), hours)) };
+  }],
   ['GET', '/api/admin/storage', 'admin', async () => storageCache.get(computeStorage)],
   // `estimate`: what the next nightly prune deletes (whole pairs) and frees, for the setting or a ?keep=N to preview.
   ['GET', '/api/admin/backups', 'admin', async (req, user, params, url) => {
@@ -396,7 +473,7 @@ async function handleApp(req, res, slug, url) {
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') return sendPage(res, 405, 'Method not allowed');
   const page = await serveSite(req, res, project, url.pathname);
-  if (page && countsAsView(req)) metrics.record(project.id, { ip: clientIp(req), ua: req.headers['user-agent'] });
+  if (page && countsAsView(req)) metrics.record(project.id, { ip: clientIp(req), ua: req.headers['user-agent'], path: url.pathname });
 }
 
 // Caddy asks before issuing an on-demand certificate; only the root domain and real apps qualify.
