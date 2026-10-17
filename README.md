@@ -283,6 +283,7 @@ account" error.
 | `cubby data clear [<app>] --collections a,b [--drop] --yes` | Empty collections (keeping fields and rules) or drop them, after a 7-day snapshot |
 | `cubby data clear [<app>] --collection c --filter "…" \| --ids a,b [--dry-run] --yes` | Delete matching records only; `--dry-run` shows matches N of M, samples and cascades |
 | `cubby data snapshots [<app>]` / `cubby data restore <id> [--overwrite --yes] [--dry-run]` | List snapshots of clears; restore one (additive: existing ids are skipped) |
+| `cubby data clear [<app>] --wipe --yes` / `cubby data purge <id> --yes` | Drop every collection (the next deploy recreates them); delete a snapshot early. Admins clearing others' apps add `--reason` |
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
 | `cubby admin storage` | Admins: disk use by category (database, uploads, current/older deploys, backups) and per app |
@@ -390,6 +391,19 @@ cubby data restore 20261017T101500-a1b2c3
   PocketBase: superusers can't read them, and writing one back just sets it as a new password). So **restored
   accounts get new random passwords**, which the restore lists for you to hand out; everything else on the account
   comes back.
+
+### When an admin clears your data
+
+Admins can clear data in any app (spam, a runaway job, a reset), but never silently:
+
+- An admin clearing someone else's app must give `--reason "…"`. The owner gets it in their own `cubby activity`
+  ("Admin (priya@…) emptied polls — 1,204 records · snapshot … until 2026-10-24. Reason: spam flood"), and the app
+  carries an `admin_clear` flag (shown by `cubby info`, for the dashboard's banner) until the owner dismisses it
+  (`DELETE /api/projects/<app>/admin-clear`).
+- `cubby data clear <app> --wipe --yes` wipes the database: every collection is dropped (after one snapshot) and
+  the schema hash is cleared, so the app's next `cubby deploy` pushes `schema.json` again and starts empty.
+- Owners can restore any snapshot of their app, including an admin's, but can't purge an admin's
+  (`cubby data purge <id> --yes` works on their own); admins can restore and purge any.
 
 ## How it works
 
@@ -499,7 +513,7 @@ for groups who trust each other, not as a hostile multi-tenant cloud.
 - "Last seen" for an agent is updated at most once a minute. Home's timeline shows your latest 60 changes; older
   ones are on each agent's page and in `cubby activity`.
 - The activity log keeps 30 days (pruned nightly) and shows your own actions. An admin's actions on your app (like
-  deleting it) are in the admin's log, not yours. An app's history stays after the app is deleted, until it ages
+  deleting it) are in the admin's log, not yours, except data clears, which are in both. An app's history stays after the app is deleted, until it ages
   out; deleting a user deletes their history.
 - Not yet supported: server code that runs per request (API endpoints, hooks), custom domains per app, single sign-on
   across apps, app emails.

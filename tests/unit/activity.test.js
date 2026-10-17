@@ -151,3 +151,41 @@ describe('listing and pruning', () => {
     assert.ok(col.calls.every((c) => c.filter === 'at < "2026-10-01 12:00:00.000Z"'));
   });
 });
+
+describe('admin data clears', () => {
+  const owner = { id: 'u1', is_admin: false };
+  const adminUser = { id: 'a1', is_admin: true, email: 'admin@x.dev' };
+  const project = { id: 'p1', owner: 'u1' };
+  test('an admin clearing someone else\'s app must give a reason; owners (and admins on their own apps) need none', () => {
+    assert.throws(() => logic.clearReason(adminUser, project, ''), (e) => e.status === 400 && /--reason/.test(e.message));
+    assert.throws(() => logic.clearReason(adminUser, project, '   '), (e) => e.status === 400);
+    assert.equal(logic.clearReason(adminUser, project, '  spam flood '), 'spam flood');
+    assert.equal(logic.clearReason(owner, project, undefined), '');
+    assert.equal(logic.clearReason(adminUser, { ...project, owner: 'a1' }, undefined), '');
+    assert.equal(logic.clearReason(owner, project, 'x'.repeat(400)).length, 300);
+  });
+  test('owners can purge their own snapshots but not an admin\'s; admins can purge any', () => {
+    const mine = { by: { id: 'u1', admin: false } };
+    const admins = { by: { id: 'a1', admin: true } };
+    assert.doesNotThrow(() => logic.checkPurge(owner, mine));
+    assert.throws(() => logic.checkPurge(owner, admins), (e) => e.status === 403 && /made by an admin/.test(e.message));
+    assert.doesNotThrow(() => logic.checkPurge(adminUser, admins));
+    assert.doesNotThrow(() => logic.checkPurge(adminUser, mine));
+  });
+  test('the owner\'s notice of an admin clear: the activity line and the dismissible flag', () => {
+    const result = { mode: 'empty', collections: [{ name: 'polls', records: 1204 }], snapshot: { id: 's1', expires: '2026-10-24T10:15:00.000Z' } };
+    assert.equal(logic.adminClearSummary(adminUser, result, 'spam flood'),
+      'Admin (admin@x.dev) emptied polls — 1,204 records · snapshot s1 until 2026-10-24. Reason: spam flood');
+    assert.equal(logic.adminClearSummary(adminUser, { ...result, mode: 'drop', wipe: true }, 'reset'),
+      'Admin (admin@x.dev) wiped the database (dropped polls) — 1,204 records · snapshot s1 until 2026-10-24. Reason: reset');
+    assert.deepEqual(logic.adminClearFlag(adminUser, result, 'spam flood', new Date('2026-10-17T10:15:00Z')), {
+      at: '2026-10-17T10:15:00.000Z', by: 'admin@x.dev', reason: 'spam flood', snapshot: 's1', expires: '2026-10-24T10:15:00.000Z',
+      summary: 'Admin (admin@x.dev) emptied polls — 1,204 records · snapshot s1 until 2026-10-24. Reason: spam flood',
+    });
+  });
+  test('a project shows the flag until it is dismissed', () => {
+    const cfg = { publicUrl: 'https://c.dev', baseDomain: 'c.dev' };
+    assert.equal(logic.projectView({ slug: 'shop' }, cfg).admin_clear, null);
+    assert.deepEqual(logic.projectView({ slug: 'shop', admin_clear: { by: 'admin@x.dev' } }, cfg).admin_clear, { by: 'admin@x.dev' });
+  });
+});

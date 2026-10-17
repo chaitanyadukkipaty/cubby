@@ -260,6 +260,11 @@ describe('jobs and env helpers', () => {
     assert.match(lib.formatClear('shop', { ...base, mode: 'ids', missing: ['zz'] }), /^Deleted 3 records from polls in shop\. Not found: zz\n/);
     assert.equal(lib.formatClear('shop', { ...base, mode: 'filter', filter: 'x = 1', collections: [{ name: 'polls', records: 0 }], snapshot: null }), 'Nothing in polls matches: nothing was deleted.');
   });
+  test('formatClear: a wipe says the whole database went, and so does its preview', () => {
+    const r = { mode: 'drop', wipe: true, collections: [{ name: 'a', records: 1 }, { name: 'b', records: 2 }], cascade: [], warnings: [], snapshot: { id: 's', expires: '2026-10-24T00:00:00.000Z' } };
+    assert.match(lib.formatClear('shop', r), /^Wiped the database of shop: dropped a \(1 record\), b \(2 records\)\.\n/);
+    assert.match(lib.formatClearPreview('shop', { ...r, dry_run: true, matches: 3, total: 3, samples: [] }), /^Dry run: wiping the database \(a, b\) deletes 3 records\./);
+  });
   test('formatClearPreview: matches N of M, samples, cascades and warnings, deleting nothing', () => {
     const text = lib.formatClearPreview('shop', {
       dry_run: true, mode: 'filter', filter: 'closed = true', matches: 9, total: 10, collections: [{ name: 'polls', records: 9 }],

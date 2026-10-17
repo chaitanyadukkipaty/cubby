@@ -19,7 +19,7 @@ import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js'
 import * as logic from './logic.js';
 import { recordActivity, listActivity } from './activity.js';
 import { listData, clearData } from './data.js';
-import { removeAppSnapshots, listSnapshots, findSnapshot } from './snapshots.js';
+import { removeAppSnapshots, listSnapshots, findSnapshot, removeSnapshot } from './snapshots.js';
 import { restoreSnapshot } from './restore.js';
 import { loadDashboard } from './dashboard.js';
 import { matchRoute } from '../public/js/routes.js';
@@ -222,13 +222,29 @@ const routes = [
     const project = await appForOwnerOrAdmin(user, slug);
     const body = await readJson(req);
     const actor = { id: user.id, email: user.email, admin: project.owner !== user.id };
-    const result = await clearData(project.slug, body, { pb: admin, dataDir: config.dataDir, project, actor, reason: String(body.reason ?? '').slice(0, 300) });
-    // Like `cubby schema drop`: the next deploy pushes schema.json again.
+    // An admin clearing someone else's app must say why: the owner is told (activity, and a flag for the dashboard).
+    const reason = body.dry_run ? '' : logic.clearReason(user, project, body.reason);
+    const result = await clearData(project.slug, body, { pb: admin, dataDir: config.dataDir, project, actor, reason });
     if (!result.snapshot) return result; // a dry run, or nothing matched: nothing changed
-    if (result.mode === 'drop') await admin.collection('cubby_projects').update(project.id, { schema_hash: '' });
+    // Like `cubby schema drop` (and a wipe): the next deploy pushes schema.json again.
+    const patch = result.mode === 'drop' ? { schema_hash: '' } : {};
+    if (actor.admin) patch.admin_clear = logic.adminClearFlag(user, result, reason);
+    if (Object.keys(patch).length) await admin.collection('cubby_projects').update(project.id, patch);
     storageCache.clear();
-    await recordActivity(user, { action: 'data.clear', app: slug, summary: logic.clearSummary(result) });
+    if (actor.admin) {
+      const summary = logic.adminClearSummary(user, result, reason);
+      await recordActivity(user, { action: 'admin.data.clear', app: slug, summary });
+      await recordActivity({ id: project.owner }, { action: 'admin.data.clear', app: slug, summary });
+    } else {
+      await recordActivity(user, { action: 'data.clear', app: slug, summary: logic.clearSummary(result) });
+    }
     return result;
+  }],
+  // The owner dismisses the "data cleared by admin" banner.
+  ['DELETE', '/api/projects/:slug/admin-clear', 'user', async (req, user, { slug }) => {
+    const project = await ownedProject(user, slug);
+    await admin.collection('cubby_projects').update(project.id, { admin_clear: null });
+    return { ok: true };
   }],
 
   // Snapshots of data clears: of one app (?app=), or of all your apps.
@@ -248,6 +264,16 @@ const routes = [
     storageCache.clear();
     await recordActivity(user, { action: 'data.restore', app: project.slug, summary: logic.restoreSummary(result) });
     return result;
+  }],
+  // Deletes a snapshot before it expires. Owners can't purge one an admin made; admins can purge any.
+  ['DELETE', '/api/snapshots/:id', 'user', async (req, user, { id }) => {
+    const snap = await findSnapshot(config.dataDir, id);
+    const project = await appForOwnerOrAdmin(user, snap.meta.app);
+    logic.checkPurge(user, snap.meta);
+    await removeSnapshot(snap.dir);
+    storageCache.clear();
+    await recordActivity(user, { action: 'data.purge', app: project.slug, summary: `Purged snapshot ${id}` });
+    return { ok: true, purged: id };
   }],
 
   ['GET', '/api/gallery', 'user', async () => {

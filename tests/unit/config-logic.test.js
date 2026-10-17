@@ -48,12 +48,12 @@ describe('logic views', () => {
     const v = logic.projectView({ id: 'p1', slug: 'my-app', name: 'My App', created: 'c', expand: { owner: { email: 'a@b.c' } } }, cfg);
     assert.deepEqual(v, {
       id: 'p1', slug: 'my-app', name: 'My App', description: '', url: 'https://my-app.example.com', prefix: 'my_app__',
-      unlisted: false, current_deploy: null, last_deployed: null, schema_hash: null, created: 'c', owner: 'a@b.c',
+      unlisted: false, current_deploy: null, last_deployed: null, schema_hash: null, created: 'c', admin_clear: null, owner: 'a@b.c',
     });
     assert.ok(!('owner' in logic.projectView({ slug: 'x-y' }, cfg)));
   });
   test('galleryView hides owner-only internals', () => {
-    const g = logic.galleryView({ slug: 's', prefix: 'p', schema_hash: 'h', current_deploy: 'd', url: 'u' });
+    const g = logic.galleryView({ slug: 's', prefix: 'p', schema_hash: 'h', current_deploy: 'd', url: 'u', admin_clear: { by: 'a' } });
     assert.deepEqual(g, { slug: 's', url: 'u' });
   });
   test('settingsView exposes exactly the editable settings', () => {

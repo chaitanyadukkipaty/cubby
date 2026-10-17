@@ -110,6 +110,8 @@ async function ensurePlatformCollections() {
       { name: 'schema_hash', type: 'text' },
       // Names of jobs paused by the owner; kept across deploys and rollbacks.
       { name: 'jobs_paused', type: 'json' },
+      // Set when an admin clears the app's data (logic.adminClearFlag), for the owner's banner; null once dismissed.
+      { name: 'admin_clear', type: 'json' },
       ...autodates,
     ],
     indexes: ['CREATE UNIQUE INDEX idx_cubby_projects_slug ON cubby_projects (slug)'],

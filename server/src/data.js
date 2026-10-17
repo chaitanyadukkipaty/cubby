@@ -75,10 +75,14 @@ const anyOf = (pb, field, ids, op = '?=') =>
   pb.filter(ids.map((_, i) => `${field} ${op} {:i${i}}`).join(' || '), Object.fromEntries(ids.map((id, i) => [`i${i}`, id])));
 export const byIds = (pb, ids) => anyOf(pb, 'id', ids, '=');
 
-// What a clear request asks for: whole collections (`collections`, emptied or with `drop` dropped) or records of one
-// `collection`, by `filter` or by `ids`.
+// What a clear request asks for: whole collections (`collections`, emptied or with `drop` dropped), every collection
+// dropped (`wipe`), or records of one `collection`, by `filter` or by `ids`.
 function readRequest(r) {
   const bad = (msg) => new HttpError(400, msg);
+  if (r.wipe) {
+    if (['collection', 'collections', 'filter', 'ids'].some((k) => r[k] !== undefined)) throw bad('"wipe" drops every collection: it goes alone');
+    return { mode: 'drop', wipe: true };
+  }
   if (r.collection !== undefined) {
     if (r.collections !== undefined || r.drop) throw bad('Clear whole collections ("collections", optionally "drop") or records of one "collection" by "filter" or "ids", not both');
     if ((r.filter === undefined) === (r.ids === undefined)) throw bad('Give "filter" or "ids" (not both) to delete records of a collection');
@@ -100,6 +104,10 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
   const req = readRequest(request ?? {});
   if (req.mode === 'filter') checkDataFilter(req.filter, prefix);
   const cols = await projectCollections(slug, pb.collections);
+  if (req.wipe) {
+    if (!cols.length) throw new HttpError(400, `${slug} has no collections to wipe`);
+    req.names = cols.map((c) => c.name.slice(prefix.length));
+  }
   const targets = req.names.map((name) => {
     const c = cols.find((x) => x.name === prefix + name);
     if (!c) throw new HttpError(404, `Collection "${name}" not found`);
@@ -148,7 +156,7 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     ...summary.filter((c) => c.type === 'auth').map((c) => authWarning(c.name)),
   ];
   const result = {
-    mode: req.mode, collections: summary, matches, total: total ?? matches, ...(missing && { missing }),
+    mode: req.mode, ...(req.wipe && { wipe: true }), collections: summary, matches, total: total ?? matches, ...(missing && { missing }),
     ...(req.mode === 'filter' && { filter: req.filter }), cascade, warnings, files: withFiles, files_bytes: filesBytes,
   };
   // Each matched collection's records, a page at a time.

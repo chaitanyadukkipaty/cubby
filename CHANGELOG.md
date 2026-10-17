@@ -109,6 +109,12 @@ All notable changes to Cubby are documented here. The format follows
   just sets it as a new password, so restored accounts get new random passwords, which the restore lists. Files
   come back under new names and `created`/`updated` are new. API: `GET /api/snapshots[?app=]`,
   `POST /api/snapshots/<id>/restore`.
+- Admin data clears are never silent. An admin clearing someone else's app must give `--reason`; the owner gets an
+  activity entry naming the admin and the reason, and the app an `admin_clear` flag (for the dashboard's banner,
+  shown by `cubby info`) until the owner dismisses it with `DELETE /api/projects/<app>/admin-clear`. `--wipe` drops
+  every collection after one snapshot and clears the schema hash, so the next `cubby deploy` recreates them. Owners
+  can restore any snapshot of their app but can't purge an admin's; admins can restore and purge any
+  (`cubby data purge <id> --yes`, `DELETE /api/snapshots/<id>`).
 - A command palette in the dashboard: ⌘K (Ctrl+K), or Search in the sidebar, jumps to a page or one of your apps
   and copies the setup prompt or a common command (`cubby deploy`, `cubby login`), switches theme or logs out.
   Fuzzy search, fully keyboard-driven.

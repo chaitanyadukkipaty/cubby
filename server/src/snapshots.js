@@ -91,3 +91,5 @@ export async function pruneSnapshots(dataDir, now = Date.now()) {
 }
 
 export const removeAppSnapshots = (dataDir, slug) => rm(appSnapshotsDir(dataDir, slug), { recursive: true, force: true });
+
+export const removeSnapshot = (dir) => rm(dir, { recursive: true, force: true });

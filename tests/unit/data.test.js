@@ -113,6 +113,24 @@ describe('emptying collections', () => {
   });
 });
 
+describe('wiping the database', () => {
+  test('drops every collection of the app (users included) after one snapshot, and touches no other app', async () => {
+    const r = await clearData('shop', { wipe: true }, deps());
+    assert.deepEqual([r.mode, r.wipe, r.collections.map((c) => c.name).sort()], ['drop', true, ['customers', 'orders', 'products']]);
+    assert.deepEqual([...pb.collections.cols.values()].map((c) => c.name), ['other__products']);
+    assert.match(r.warnings.join('\n'), /customers holds user accounts/);
+    const meta = JSON.parse(readFileSync(join(dataDir, 'snapshots', 'shop', r.snapshot.id, 'meta.json'), 'utf8'));
+    assert.equal(meta.wipe, true);
+  });
+  test('wipe goes alone: not with collections, a filter or ids', async () => {
+    await assert.rejects(clearData('shop', { wipe: true, collections: ['products'] }, deps()), (e) => e.status === 400);
+    await assert.rejects(clearData('shop', { wipe: true, collection: 'products', ids: ['p1'] }, deps()), (e) => e.status === 400);
+  });
+  test('an app with no collections has nothing to wipe', async () => {
+    await assert.rejects(clearData('empty-app', { wipe: true }, deps()), (e) => e.status === 400 && /no collections/.test(e.message));
+  });
+});
+
 describe('big collections', () => {
   test('records are read and snapshotted a page (500) at a time, all of them', async () => {
     for (let i = 0; i < 520; i++) await pb.collection('shop__orders').create({ product: 'p2', qty: i });

@@ -3,14 +3,14 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
 import { startServer, ADMIN, ROOT } from '../helpers/server.js';
 import { api, signup, adminToken, app } from '../helpers/integration.js';
 
-let srv, pb, ownerToken, owner, stranger, adminCall;
+let srv, pb, ownerToken, owner, stranger, adminCall, adminTok;
 
 const SCHEMA = { collections: [
   { name: 'products', listRule: '', viewRule: '', fields: [{ name: 'title', type: 'text' }, { name: 'photo', type: 'file', maxSelect: 1 }] },
@@ -34,10 +34,10 @@ async function newApp(slug, call = owner) {
   await seed(slug.replaceAll('-', '_'));
 }
 
-const cubby = (args, token = ownerToken) => new Promise((resolve) => {
+const cubby = (args, token = ownerToken, cwd) => new Promise((resolve) => {
   const home = mkdtempSync(join(tmpdir(), 'cubby-data-home-'));
   const child = spawn(process.execPath, [join(ROOT, 'cli/src/launcher.js'), ...args], {
-    cwd: home, env: { ...process.env, HOME: home, CUBBY_TOKEN: token, CUBBY_SERVER: srv.url, CUBBY_CLIENT: '' },
+    cwd: cwd ?? home, env: { ...process.env, HOME: home, CUBBY_TOKEN: token, CUBBY_SERVER: srv.url, CUBBY_CLIENT: '' },
   });
   let stdout = '', stderr = '';
   child.stdout.on('data', (d) => (stdout += d));
@@ -56,7 +56,8 @@ before(async () => {
   ownerToken = await signup(srv.url, 'owner-data@test.dev');
   owner = api(srv.url, ownerToken);
   stranger = api(srv.url, await signup(srv.url, 'stranger-data@test.dev'));
-  adminCall = api(srv.url, await adminToken(srv.url, ADMIN));
+  adminTok = await adminToken(srv.url, ADMIN);
+  adminCall = api(srv.url, adminTok);
   await newApp('shop');
 });
 after(() => srv?.stop());
@@ -276,6 +277,65 @@ describe('restoring', () => {
     assert.equal((await restore('20260101T000000-000000')).status, 404);
     assert.equal((await restore('not-a-snapshot')).status, 400);
     assert.equal((await restore(id, {}, adminCall)).status, 200);
+  });
+});
+
+describe('admin clears are never silent', () => {
+  test('an admin needs a reason; the owner sees who did it and why, in their activity and on the app', async () => {
+    await newApp('watched');
+    const none = await cubby(['data', 'clear', 'watched', '--collections', 'orders', '--yes', '--json'], adminTok);
+    assert.equal(none.code, 1);
+    assert.match(none.json.error, /needs a reason/);
+    assert.equal((await adminCall('POST', '/api/projects/watched/data/clear', { body: { collections: ['orders'], dry_run: true } })).status, 200, 'a dry run needs no reason');
+    const r = await cubby(['data', 'clear', 'watched', '--collections', 'orders', '--reason', 'spam flood', '--yes', '--json'], adminTok);
+    assert.equal(r.code, 0, r.stderr);
+    const mine = (await owner('GET', '/api/activity?app=watched')).data[0];
+    assert.equal(mine.action, 'admin.data.clear');
+    assert.match(mine.summary, /^Admin \(admin@test\.dev\) emptied orders — 1 record · snapshot \S+ until \S+\. Reason: spam flood$/);
+    const flag = (await owner('GET', '/api/projects/watched')).data.admin_clear;
+    assert.deepEqual([flag.by, flag.reason, flag.snapshot], ['admin@test.dev', 'spam flood', r.json.snapshot.id]);
+    assert.match((await cubby(['info'], ownerToken, (() => { const d = mkdtempSync(join(tmpdir(), 'cubby-info-')); writeFileSync(join(d, 'cubby.json'), JSON.stringify({ project: 'watched', server: srv.url })); return d; })())).stdout, /notice: {2}Admin \(admin@test\.dev\) emptied orders/);
+    assert.equal((await stranger('DELETE', '/api/projects/watched/admin-clear')).status, 404);
+    assert.equal((await owner('DELETE', '/api/projects/watched/admin-clear')).status, 200);
+    assert.equal((await owner('GET', '/api/projects/watched')).data.admin_clear, null);
+  });
+  test('owners can restore an admin\'s snapshot but not purge it; admins can purge any', async () => {
+    await newApp('policed');
+    const made = await adminCall('POST', '/api/projects/policed/data/clear', { body: { collections: ['products'], reason: 'test data' } });
+    assert.equal(made.status, 200, JSON.stringify(made.data));
+    const id = made.data.snapshot.id;
+    assert.deepEqual((await owner('GET', '/api/snapshots?app=policed')).data.map((x) => [x.by, x.by_admin, x.reason]), [['admin@test.dev', true, 'test data']]);
+    const purge = await cubby(['data', 'purge', id, '--yes', '--json']);
+    assert.equal(purge.code, 1);
+    assert.match(purge.json.error, /made by an admin/);
+    assert.equal((await owner('POST', `/api/snapshots/${id}/restore`, { body: {} })).status, 200);
+    assert.equal((await pb.collection('policed__products').getList(1, 1)).totalItems, 2);
+    assert.equal((await cubby(['data', 'purge', id])).code, 1, 'needs --yes');
+    const done = await cubby(['data', 'purge', id, '--yes', '--json'], adminTok);
+    assert.equal(done.code, 0, done.stderr);
+    assert.deepEqual((await owner('GET', '/api/snapshots?app=policed')).data, []);
+    const own = await owner('POST', '/api/projects/policed/data/clear', { body: { collections: ['orders'] } });
+    assert.equal((await owner('DELETE', `/api/snapshots/${own.data.snapshot.id}`)).status, 200, 'their own they can purge');
+  });
+  test('wipe database drops every collection; the next `cubby deploy` pushes schema.json again', async () => {
+    await newApp('wiped');
+    const r = await cubby(['data', 'clear', 'wiped', '--wipe', '--reason', 'start over', '--yes', '--json'], adminTok);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual([r.json.wipe, r.json.collections.length], [true, 3]);
+    assert.deepEqual((await owner('GET', '/api/projects/wiped/schema')).data.collections, []);
+    assert.equal((await owner('GET', '/api/projects/wiped')).data.schema_hash, null);
+
+    const dir = mkdtempSync(join(tmpdir(), 'cubby-wiped-'));
+    writeFileSync(join(dir, 'cubby.json'), JSON.stringify({ project: 'wiped', server: srv.url }));
+    mkdirSync(join(dir, 'cubby'));
+    writeFileSync(join(dir, 'cubby', 'schema.json'), JSON.stringify(SCHEMA));
+    mkdirSync(join(dir, 'dist'));
+    writeFileSync(join(dir, 'dist', 'index.html'), '<h1>again</h1>');
+    const deploy = await cubby(['deploy', '--no-build'], ownerToken, dir);
+    assert.equal(deploy.code, 0, deploy.stderr);
+    assert.match(deploy.stdout, /Schema applied\. created: products, orders, customers/);
+    assert.deepEqual((await owner('GET', '/api/projects/wiped/schema')).data.collections.map((c) => c.name).sort(), ['customers', 'orders', 'products']);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 

@@ -376,6 +376,7 @@ export function formatClear(app, r) {
   if (!r.snapshot) return `Nothing in ${first.name} matches: nothing was deleted.`;
   const head = r.mode === 'filter' || r.mode === 'ids'
     ? `Deleted ${plural(first.records, 'record')} from ${first.name} in ${app}${r.mode === 'filter' ? ` (matching ${r.filter})` : ''}.${r.missing?.length ? ` Not found: ${r.missing.join(', ')}` : ''}`
+    : r.wipe ? `Wiped the database of ${app}: dropped ${r.collections.map((c) => `${c.name} (${plural(c.records, 'record')})`).join(', ')}.`
     : `${r.mode === 'drop' ? 'Dropped' : 'Emptied'} ${r.collections.map((c) => `${c.name} (${plural(c.records, 'record')})`).join(', ')} in ${app}.`;
   return [
     head,
@@ -390,7 +391,7 @@ export function formatClearPreview(app, r) {
   const names = r.collections.map((c) => c.name).join(', ');
   const head = r.mode === 'filter' || r.mode === 'ids'
     ? `Dry run: ${r.matches} of ${plural(r.total, 'record')} in ${names} match${r.mode === 'filter' ? ` (${r.filter})` : ''}.`
-    : `Dry run: ${r.mode === 'drop' ? 'dropping' : 'emptying'} ${names} deletes ${plural(r.matches, 'record')}.`;
+    : `Dry run: ${r.wipe ? `wiping the database (${names})` : `${r.mode === 'drop' ? 'dropping' : 'emptying'} ${names}`} deletes ${plural(r.matches, 'record')}.`;
   const sample = ({ collectionId, collectionName, ...rec }) => {
     const text = JSON.stringify(rec);
     return `  ${text.length > 120 ? `${text.slice(0, 119)}…` : text}`;

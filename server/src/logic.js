@@ -19,12 +19,12 @@ export const appUrl = (slug, publicUrl, baseDomain) => `${new URL(publicUrl).pro
 export const projectView = (p, { publicUrl, baseDomain }) => ({
   id: p.id, slug: p.slug, name: p.name, description: p.description || '', url: appUrl(p.slug, publicUrl, baseDomain), prefix: prefixFor(p.slug),
   unlisted: Boolean(p.unlisted), current_deploy: p.current_deploy || null, last_deployed: p.last_deployed || null,
-  schema_hash: p.schema_hash || null, created: p.created,
+  schema_hash: p.schema_hash || null, created: p.created, admin_clear: p.admin_clear || null,
   ...(p.expand?.owner && { owner: p.expand.owner.email }),
 });
 
 // Gallery entries hide internals that only the owner needs.
-export const galleryView = ({ prefix, schema_hash, current_deploy, ...p }) => p;
+export const galleryView = ({ prefix, schema_hash, current_deploy, admin_clear, ...p }) => p;
 
 export function checkNewSlug(slug) {
   if (typeof slug !== 'string' || !SLUG_RE.test(slug) || slug.length < 3 || slug.length > 40) {
@@ -141,15 +141,41 @@ export function schemaSummary({ created = [], updated = [], kept = [] }) {
 }
 
 // "Emptied polls — 1,204 records · snapshot … until 2026-10-24" from a data clear's result.
-export function clearSummary({ mode, collections, filter, snapshot }) {
+export function clearSummary({ mode, wipe, collections, filter, snapshot }) {
   const n = collections.reduce((sum, c) => sum + c.records, 0);
   const records = `${n.toLocaleString('en-US')} record${n === 1 ? '' : 's'}`;
   const names = collections.map((c) => c.name).join(', ');
   const what = mode === 'filter' ? `Deleted ${records} from ${names} matching ${filter}`
     : mode === 'ids' ? `Deleted ${records} from ${names} by id`
+    : wipe ? `Wiped the database (dropped ${names}) — ${records}`
     : `${mode === 'drop' ? 'Dropped' : 'Emptied'} ${names} — ${records}`;
   return `${what} · snapshot ${snapshot.id} until ${snapshot.expires.slice(0, 10)}`;
 }
+
+// --- Admin data clears: never silent ---
+// The reason an admin must give to clear data of an app that isn't theirs (shown to the owner); '' otherwise.
+export function clearReason(user, project, reason) {
+  const text = String(reason ?? '').trim().slice(0, 300);
+  if (user.id !== project.owner && !text) throw new HttpError(400, 'Clearing data of an app that isn\'t yours needs a reason, shown to its owner: --reason "…"');
+  return text;
+}
+
+// Owners may purge their own snapshots, not those an admin made (the owner's record of what the admin did).
+export function checkPurge(user, meta) {
+  if (!user.is_admin && meta.by?.admin) throw new HttpError(403, 'This snapshot was made by an admin: only an admin can purge it. You can still restore it.');
+}
+
+// "Admin (a@x.dev) emptied polls — 1,204 records · snapshot … until …. Reason: spam": the owner's activity line.
+export const adminClearSummary = (user, result, reason) => {
+  const what = clearSummary(result);
+  return `Admin (${user.email}) ${what[0].toLowerCase()}${what.slice(1)}. Reason: ${reason}`;
+};
+
+// The flag on the app (`admin_clear`) behind the owner's "data cleared by admin" banner, until they dismiss it.
+export const adminClearFlag = (user, result, reason, now = new Date()) => ({
+  at: now.toISOString(), by: user.email, reason, snapshot: result.snapshot.id, expires: result.snapshot.expires,
+  summary: adminClearSummary(user, result, reason),
+});
 
 // "Restored 43 records from snapshot … (2 already there, 3 accounts with new passwords)" from a restore's result.
 export function restoreSummary({ snapshot, collections, accounts }) {
