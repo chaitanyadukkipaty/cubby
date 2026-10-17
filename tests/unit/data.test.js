@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fakePocketBase } from '../helpers/fake-pocketbase.js';
 import { applySchema } from '../../server/src/schema.js';
-import { listData, clearData, formatBytes, checkDataFilter } from '../../server/src/data.js';
+import { listData, clearData, formatBytes, checkDataFilter, oneAtATime } from '../../server/src/data.js';
 
 let dataDir, pb;
 const T = Date.parse('2026-10-17T10:15:00Z');
@@ -259,6 +259,81 @@ describe('relations holding several ids', () => {
     const r = await clearData('shop', { collection: 'tags', filter: 'n = "x"' }, deps());
     assert.deepEqual(r.cascade, [{ collection: 'posts', field: 'tags', records: 2, deletes: false }]);
     assert.deepEqual(snapshotted(r, 'posts', 'links'), ['pa', 'pb']);
+  });
+});
+
+describe('required relations that don\'t cascade', () => {
+  beforeEach(async () => {
+    await applySchema('shop', { collections: [
+      { name: 'items', fields: [{ name: 'price', type: 'number' }] },
+      { name: 'lines', fields: [{ name: 'item', type: 'relation', collection: 'items', required: true }] },
+    ] }, pb.collections);
+    await pb.collection('shop__items').create({ id: 'i1', price: 1 });
+    await pb.collection('shop__items').create({ id: 'i2', price: 2 });
+    await pb.collection('shop__lines').create({ id: 'l1', item: 'i2' });
+  });
+  const nothingChanged = () => {
+    assert.deepEqual(pb.records('shop__items').map((x) => x.id), ['i1', 'i2']);
+    assert.ok(!existsSync(join(dataDir, 'snapshots', 'shop')) || !readdirSync(join(dataDir, 'snapshots', 'shop')).length, 'no snapshot left');
+  };
+  test('the preview names the relation that blocks the clear', async () => {
+    const r = await clearData('shop', { collection: 'items', filter: 'price > 0', dry_run: true }, deps());
+    assert.deepEqual(r.blocked, ['lines.item must point at an items record and doesn\'t cascade: 1 record (l1) would point at nothing. Delete or relink it first, or clear lines too.']);
+  });
+  test('the clear is refused (409) before anything is snapshotted or deleted, in every mode', async () => {
+    for (const body of [{ collection: 'items', filter: 'price > 0' }, { collection: 'items', ids: ['i1', 'i2'] }, { collections: ['items'] }]) {
+      await assert.rejects(clearData('shop', body, deps()), (e) => e.status === 409 && /lines\.item must point at an items record/.test(e.details.join('\n')), JSON.stringify(body));
+      nothingChanged();
+    }
+  });
+  test('records the clear deletes anyway don\'t block it; they go in an order PocketBase accepts', async () => {
+    const r = await clearData('shop', { collections: ['items', 'lines'] }, deps());
+    assert.deepEqual([r.blocked, pb.records('shop__items'), pb.records('shop__lines')], [[], [], []]);
+    await applySchema('shop', { collections: [{ name: 'folders', fields: [{ name: 'parent', type: 'relation', collection: 'folders', required: true }] }] }, pb.collections);
+    // aroot (its own parent) can't go while bkid points at it: bkid goes first.
+    await pb.collection('shop__folders').create({ id: 'aroot' });
+    pb.records('shop__folders')[0].parent = 'aroot';
+    await pb.collection('shop__folders').create({ id: 'bkid', parent: 'aroot' });
+    const f = await clearData('shop', { collection: 'folders', ids: ['aroot', 'bkid'] }, deps());
+    assert.deepEqual([f.matches, pb.records('shop__folders')], [2, []]);
+  });
+  test('a delete PocketBase refuses midway (a link made meanwhile) is a 409; what went is kept in the snapshot and reported', async () => {
+    await pb.collection('shop__lines').delete('l1');
+    const real = pb.collection.bind(pb);
+    let deletes = 0;
+    pb.collection = (name) => ({ ...real(name), delete: async (id) => {
+      if (++deletes === 2) await real('shop__lines').create({ id: 'l2', item: id });
+      return real(name).delete(id);
+    } });
+    const err = await clearData('shop', { collection: 'items', ids: ['i1', 'i2'] }, deps()).catch((e) => e);
+    pb.collection = real;
+    assert.equal(err.status, 409);
+    assert.match(err.message, /PocketBase refused/);
+    assert.deepEqual(pb.records('shop__items').map((x) => x.id), ['i2']);
+    assert.deepEqual([err.cleared.mode, err.cleared.collections[0].records], ['ids', 2]);
+    assert.ok(existsSync(join(dataDir, 'snapshots', 'shop', err.cleared.snapshot.id, 'meta.json')), 'the snapshot holds what went');
+  });
+  test('when nothing was deleted before PocketBase refused, no snapshot is left', async () => {
+    pb.collection = ((real) => (name) => ({ ...real(name), delete: async () => { throw Object.assign(new Error('Failed to delete record.'), { status: 400, response: { message: 'Failed to delete record.' } }); } }))(pb.collection.bind(pb));
+    await assert.rejects(clearData('shop', { collection: 'items', ids: ['i1'] }, deps()), (e) => e.status === 409 && !e.cleared);
+    assert.deepEqual(readdirSync(join(dataDir, 'snapshots', 'shop')), []);
+  });
+});
+
+describe('one data change at a time per app', () => {
+  test('clears, restores and schema changes of one app wait for each other; other apps don\'t wait; a failure frees the turn', async () => {
+    const log = [];
+    const step = (name, ms, fail) => async () => {
+      log.push(`${name} start`);
+      await new Promise((r) => setTimeout(r, ms));
+      log.push(`${name} end`);
+      if (fail) throw new Error(name);
+      return name;
+    };
+    const runs = [oneAtATime('shop', step('a', 20, true)), oneAtATime('shop', step('b', 1)), oneAtATime('blog', step('c', 1))];
+    const [a, b, c] = await Promise.allSettled(runs);
+    assert.deepEqual([a.reason.message, b.value, c.value], ['a', 'b', 'c']);
+    assert.deepEqual(log, ['a start', 'c start', 'c end', 'a end', 'b start', 'b end']);
   });
 });
 

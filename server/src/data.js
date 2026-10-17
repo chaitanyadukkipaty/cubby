@@ -34,6 +34,18 @@ export function checkDataFilter(filter, prefix) {
   if (bad) throw new HttpError(403, `Cannot reference collection "${bad}" from this app.`);
 }
 
+// Runs `fn` once every earlier data change of app `slug` (clear, restore, schema push or drop) is done, so they never
+// interleave: a clear's cascade check holds until its deletes are done. Cubby is one process, so a queue in memory is
+// enough (like its other in-memory state).
+const queues = new Map();
+export function oneAtATime(slug, fn) {
+  const run = (queues.get(slug) ?? Promise.resolve()).then(fn);
+  const tail = run.catch(() => {});
+  queues.set(slug, tail);
+  tail.then(() => { if (queues.get(slug) === tail) queues.delete(slug); });
+  return run;
+}
+
 export const storageDir = (dataDir, collectionId) => join(dataDir, 'pb_data', 'storage', collectionId);
 
 // The app's collections (unprefixed names, sorted) with their record counts and uploaded bytes.
@@ -160,9 +172,10 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     ...(withFiles ? [] : [`The uploaded files (${formatBytes(filesBytes)}) are over the ${formatBytes(filesCap)} snapshot cap: they are deleted and can't be restored.`]),
     ...summary.filter((c) => c.type === 'auth').map((c) => authWarning(c.name)),
   ];
+  const blocked = plan.blocked.map((b) => blockedText(short(b.col), b.field, short(b.target), b.ids));
   const result = {
     mode: req.mode, ...(req.wipe && { wipe: true }), collections: summary, matches, total: total ?? matches, ...(missing && { missing }),
-    ...(req.mode === 'filter' && { filter: req.filter }), cascade, warnings, files: withFiles, files_bytes: filesBytes,
+    ...(req.mode === 'filter' && { filter: req.filter }), cascade, blocked, warnings, files: withFiles, files_bytes: filesBytes,
   };
   // Each matched collection's records, a page at a time.
   const eachMatch = async (c, fn) => {
@@ -179,6 +192,8 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     return { dry_run: true, ...result, samples };
   }
   if (matched && !matched.length) return { ...result, snapshot: null };
+  // PocketBase would refuse (part of) the delete: refuse it now, before anything is snapshotted or deleted.
+  if (blocked.length) throw new HttpError(409, `Can't clear: ${blocked.length === 1 ? 'a required relation' : 'required relations'} would point at nothing`, blocked);
 
   const t = now();
   const snap = await startSnapshot(dataDir, slug, newSnapshotId(t));
@@ -210,14 +225,61 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     throw err;
   }
 
-  if (req.mode === 'drop') {
-    await deleteCollections(targets, pb.collections);
-    await collectionIndex(slug, { refresh: true }, pb.collections);
-  } else if (req.mode === 'empty') {
-    for (const c of targets) await pb.collections.truncate(c.id);
-  } else {
-    // Exactly the records snapshotted; one already gone (deleted meanwhile, or by a cascade) is fine.
-    for (const id of matched) await pb.collection(targets[0].name).delete(id).catch((err) => { if (err.status !== 404) throw err; });
+  const done = { ...result, snapshot: { id: snap.id, expires: meta.expires, files: withFiles, files_bytes: filesBytes } };
+  // PocketBase refuses (400) a delete that would leave a required relation empty, and runs each delete (with its
+  // cascade) or truncate in a transaction. One refused only for the order (it points at another that goes too) goes
+  // through once the other is gone: refused ones are tried again while that gets any further.
+  let progress = false;
+  const inTurn = async (list, del) => {
+    let pending = list;
+    while (pending.length) {
+      const refused = [];
+      let last;
+      for (const x of pending) {
+        try {
+          await del(x);
+          progress = true;
+        } catch (err) {
+          if (err.status === 404) continue; // gone already (deleted meanwhile, or by a cascade): fine
+          if (err.status !== 400) throw err;
+          refused.push(x);
+          last = err;
+        }
+      }
+      if (refused.length === pending.length) throw last;
+      pending = refused;
+    }
+  };
+  try {
+    if (req.mode === 'drop') {
+      await deleteCollections(targets, pb.collections).catch(async (err) => {
+        const left = new Set((await projectCollections(slug, pb.collections)).map((c) => c.id));
+        progress = targets.some((c) => !left.has(c.id));
+        throw err;
+      });
+      await collectionIndex(slug, { refresh: true }, pb.collections);
+    } else if (req.mode === 'empty') {
+      await inTurn(targets, (c) => pb.collections.truncate(c.id));
+    } else {
+      // Exactly the records snapshotted.
+      await inTurn(matched, (id) => pb.collection(targets[0].name).delete(id));
+    }
+  } catch (err) {
+    // Something changed since the check (a record linked meanwhile): what was deleted stays in the snapshot and is
+    // reported (err.cleared, for the activity log); the snapshot of a clear that deleted nothing goes.
+    const out = err.status === 400
+      ? new HttpError(409, `PocketBase refused to delete: ${err.response?.message || err.message}${progress ? ' Some records were deleted before that: the snapshot keeps them.' : ' Nothing was deleted.'}`)
+      : err;
+    if (progress) out.cleared = done;
+    else await snap.discard();
+    throw out;
   }
-  return { ...result, snapshot: { id: snap.id, expires: meta.expires, files: withFiles, files_bytes: filesBytes } };
+  return done;
+}
+
+// "lines.item must point at an items record and doesn't cascade: 2 records (l1, l2) would point at nothing. …"
+function blockedText(col, field, target, ids) {
+  const shown = ids.slice(0, 5).join(', ') + (ids.length > 5 ? `, … ${ids.length - 5} more` : '');
+  const one = ids.length === 1;
+  return `${col}.${field} must point at ${/^[aeiou]/.test(target) ? 'an' : 'a'} ${target} record and doesn't cascade: ${ids.length} record${one ? '' : 's'} (${shown}) would point at nothing. Delete or relink ${one ? 'it' : 'them'} first, or clear ${col} too.`;
 }

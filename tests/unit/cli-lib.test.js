@@ -291,6 +291,8 @@ describe('jobs and env helpers', () => {
     assert.ok(lines[2].length <= 122 && lines[2].endsWith('…'));
     assert.equal(lines[3], '  votes: 31 records pointing at them would be deleted too (cascade on votes.poll)');
     assert.equal(lines[4], 'warning: careful');
+    const blocked = lib.formatClearPreview('shop', { dry_run: true, mode: 'ids', matches: 1, total: 2, collections: [{ name: 'items', records: 1 }], samples: [], cascade: [], blocked: ['lines.item must point at an items record'], warnings: [] });
+    assert.match(blocked, /\nblocked: lines\.item must point at an items record$/);
     const whole = lib.formatClearPreview('shop', { dry_run: true, mode: 'empty', matches: 5, total: 5, collections: [{ name: 'a', records: 2 }, { name: 'b', records: 3 }], samples: [], cascade: [{ collection: 'c', field: 'a', records: 1, deletes: false }], warnings: [] });
     assert.match(whole, /^Dry run: emptying a, b deletes 5 records\. Nothing was deleted\.\n {2}c: 1 record would lose their link \(c\.a\)$/);
   });

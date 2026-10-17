@@ -55,6 +55,11 @@ describe('previewModel()', () => {
     assert.equal(p.headline, 'Matches 12 of 40 records in tasks.');
     assert.equal(p.nothing, false);
   });
+  test('a required relation that would point at nothing blocks the clear', () => {
+    const p = v.previewModel({ ...base, mode: 'ids', collections: [{ name: 'items', records: 1 }], matches: 1, total: 2, blocked: ['lines.item must point at an items record'] });
+    assert.deepEqual(p.blocked, ['lines.item must point at an items record']);
+    assert.deepEqual(v.previewModel({ ...base, mode: 'ids', collections: [{ name: 'items', records: 1 }], matches: 1, total: 2 }).blocked, []);
+  });
   test('ids that are gone already are counted', () => {
     const p = v.previewModel({ ...base, mode: 'ids', collections: [{ name: 'tasks', records: 2 }], matches: 2, total: 40, missing: ['zz'] });
     assert.equal(p.headline, 'Matches 2 of 40 records in tasks. 1 of the ticked records is gone already.');
@@ -109,6 +114,9 @@ describe('clearGate()', () => {
   test('the preview is mandatory, and must be of the request as it is now', () => {
     assert.match(v.clearGate({ ...ready, preview: null }).why, /^Preview first/);
     assert.match(v.clearGate({ ...ready, key: 'other' }).why, /^Preview first/);
+  });
+  test('blocked by a required relation: nothing can be deleted until it is dealt with', () => {
+    assert.equal(v.clearGate({ ...ready, preview: { ...preview, blocked: ['x'] } }).why, "PocketBase would refuse this: see what blocks it above.");
   });
   test('nothing matching: nothing to delete', () => {
     assert.equal(v.clearGate({ ...ready, preview: { ...preview, nothing: true } }).why, 'Nothing matches, so there is nothing to delete.');

@@ -151,6 +151,7 @@ function clearForm(cols, { slug, needsReason, done }) {
       h('p', {}, h('b', {}, p.headline)),
       p.cascade.length ? h('ul', { class: 'small plain' }, p.cascade.map((c) => h('li', {}, c))) : null,
       ...p.warnings.map((w) => h('p', { class: 'warn small' }, w)),
+      ...p.blocked.map((b) => h('p', { class: 'error small' }, `Blocked: ${b}`)),
       p.big ? h('label', { class: 'check small' }, h('input', { type: 'checkbox', checked: s.bigConfirmed, onchange: (e) => { s.bigConfirmed = e.target.checked; update(); } }), `Yes, all ${fmtCount(result.matches)} records`) : null,
       p.samples.length ? h('div', { class: 'table-wrap' }, h('table', { 'aria-label': 'Sample records' },
         h('caption', { class: 'muted small cap' }, `${p.samples.length === result.matches ? 'Every record' : `${p.samples.length} of them`}${tickable ? ' (tick some to delete only those)' : ''}`),

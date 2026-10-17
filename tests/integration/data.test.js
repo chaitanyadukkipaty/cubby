@@ -456,6 +456,28 @@ describe('whatever a clear deletes, a restore brings back (real PocketBase casca
     await clearAndRestore('multi', { collection: 'tags', ids: ['tag000000000001'] });
     await clearAndRestore('multi', { collections: ['tags'] });
   });
+  test('a required relation that doesn\'t cascade: previewed as blocking, refused (409) with nothing deleted or kept', async () => {
+    await make('required', [
+      { name: 'products', fields: [{ name: 'price', type: 'number' }] },
+      { name: 'orders', fields: [{ name: 'product', type: 'relation', collection: 'products', required: true }] },
+    ]);
+    await C('required', 'products').create({ id: '0000000000000aa', price: 1 });
+    await C('required', 'products').create({ id: 'prod00000000002', price: 2 });
+    await C('required', 'orders').create({ id: 'ordr00000000001', product: 'prod00000000002' });
+    const before = await dump('required');
+    const dry = await owner('POST', '/api/projects/required/data/clear', { body: { collection: 'products', ids: ['prod00000000002'], dry_run: true } });
+    assert.match(dry.data.blocked.join('\n'), /^orders\.product must point at a products record and doesn't cascade: 1 record \(ordr00000000001\)/);
+    for (const body of [{ collection: 'products', ids: ['prod00000000002'] }, { collection: 'products', filter: 'price > 0' }, { collections: ['products'] }]) {
+      const r = await owner('POST', '/api/projects/required/data/clear', { body });
+      assert.equal(r.status, 409, JSON.stringify(r.data));
+      assert.match(r.data.details.join('\n'), /orders\.product/);
+    }
+    const cli = await cubby(['data', 'clear', 'required', '--collection', 'products', '--ids', 'prod00000000002', '--dry-run']);
+    assert.match(cli.stdout, /\nblocked: orders\.product must point at a products record/);
+    assert.deepEqual(await dump('required'), before, 'nothing deleted');
+    assert.ok(!existsSync(join(srv.dataDir, 'snapshots', 'required')) || !readdirSync(join(srv.dataDir, 'snapshots', 'required')).length, 'no snapshot left');
+    assert.ok(!(await owner('GET', '/api/activity?app=required')).data.some((a) => a.action === 'data.clear'));
+  });
   test('a link the clear removed from a record that stays comes back; edits made since stay', async () => {
     await make('relink', [
       { name: 'people', fields: [{ name: 'n', type: 'text' }] },

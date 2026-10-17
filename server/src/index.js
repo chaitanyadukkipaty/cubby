@@ -18,7 +18,7 @@ import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
 import { recordActivity, listActivity } from './activity.js';
-import { listData, clearData } from './data.js';
+import { listData, clearData, oneAtATime } from './data.js';
 import { removeAppSnapshots, listSnapshots, findSnapshot, removeSnapshot } from './snapshots.js';
 import { restoreSnapshot } from './restore.js';
 import { loadDashboard } from './dashboard.js';
@@ -63,6 +63,23 @@ function requireAdmin(user) {
 
 // Page views, visitors, active now and /pb health per app: counted in memory, flushed to cubby_metrics every minute.
 const metrics = createMetrics({ store: pocketbaseStore(admin), now: metricsClock(process.env.CUBBY_TEST_CLOCK_FILE) });
+
+// After a clear that deleted something (`note` is added when it stopped early): like `cubby schema drop` (and a wipe),
+// a drop makes the next deploy push schema.json again; an admin's clear flags the app for its owner; it's logged.
+async function clearDone(user, project, actor, result, reason, note = '') {
+  const patch = result.mode === 'drop' ? { schema_hash: '' } : {};
+  if (actor.admin) patch.admin_clear = logic.adminClearFlag(user, result, reason);
+  if (Object.keys(patch).length) await admin.collection('cubby_projects').update(project.id, patch);
+  storageCache.clear();
+  const slug = project.slug;
+  if (actor.admin) {
+    const summary = logic.adminClearSummary(user, result, reason) + note;
+    await recordActivity(user, { action: 'admin.data.clear', app: slug, summary });
+    await recordActivity({ id: project.owner }, { action: 'admin.data.clear', app: slug, summary });
+  } else {
+    await recordActivity(user, { action: 'data.clear', app: slug, summary: logic.clearSummary(result) + note });
+  }
+}
 
 // Owners see their apps' metrics; admins see any app's.
 async function appForOwnerOrAdmin(user, slug) {
@@ -128,14 +145,14 @@ const routes = [
   ['PUT', '/api/projects/:slug/schema', 'user', async (req, user, { slug }) => {
     const project = await ownedProject(user, slug);
     const body = await readJson(req, 2 * 1024 * 1024);
-    const changes = await applySchema(slug, body);
+    const changes = await oneAtATime(slug, () => applySchema(slug, body));
     if (typeof body.hash === 'string') await admin.collection('cubby_projects').update(project.id, { schema_hash: body.hash });
     await recordActivity(user, { action: 'schema.push', app: slug, summary: logic.schemaSummary(changes) });
     return changes;
   }],
   ['DELETE', '/api/projects/:slug/schema/:target', 'user', async (req, user, { slug, target }) => {
     const project = await ownedProject(user, slug);
-    const result = await dropFromSchema(slug, target);
+    const result = await oneAtATime(slug, () => dropFromSchema(slug, target));
     await admin.collection('cubby_projects').update(project.id, { schema_hash: '' });
     await recordActivity(user, { action: 'schema.drop', app: slug, summary: `Dropped ${target} and its data` });
     return result;
@@ -221,20 +238,16 @@ const routes = [
     const actor = { id: user.id, email: user.email, admin: project.owner !== user.id };
     // An admin clearing someone else's app must say why: the owner is told (activity, and a flag for the dashboard).
     const reason = body.dry_run ? '' : logic.clearReason(user, project, body.reason);
-    const result = await clearData(project.slug, body, { pb: admin, dataDir: config.dataDir, project, actor, reason });
-    if (!result.snapshot) return result; // a dry run, or nothing matched: nothing changed
-    // Like `cubby schema drop` (and a wipe): the next deploy pushes schema.json again.
-    const patch = result.mode === 'drop' ? { schema_hash: '' } : {};
-    if (actor.admin) patch.admin_clear = logic.adminClearFlag(user, result, reason);
-    if (Object.keys(patch).length) await admin.collection('cubby_projects').update(project.id, patch);
-    storageCache.clear();
-    if (actor.admin) {
-      const summary = logic.adminClearSummary(user, result, reason);
-      await recordActivity(user, { action: 'admin.data.clear', app: slug, summary });
-      await recordActivity({ id: project.owner }, { action: 'admin.data.clear', app: slug, summary });
-    } else {
-      await recordActivity(user, { action: 'data.clear', app: slug, summary: logic.clearSummary(result) });
+    let result;
+    try {
+      result = await oneAtATime(project.slug, () => clearData(project.slug, body, { pb: admin, dataDir: config.dataDir, project, actor, reason }));
+    } catch (err) {
+      // PocketBase refused partway (something changed meanwhile): what was deleted is in the snapshot, and logged.
+      if (err.cleared) await clearDone(user, project, actor, err.cleared, reason, ` Stopped early: ${err.message}`);
+      throw err;
     }
+    if (!result.snapshot) return result; // a dry run, or nothing matched: nothing changed
+    await clearDone(user, project, actor, result, reason);
     return result;
   }],
   // The owner dismisses the "data cleared by admin" banner.
@@ -256,7 +269,7 @@ const routes = [
     const project = await appForOwnerOrAdmin(user, snap.meta.app);
     const { overwrite, dry_run } = await readJson(req);
     const actor = { id: user.id, email: user.email, admin: project.owner !== user.id };
-    const result = await restoreSnapshot(snap, { overwrite: Boolean(overwrite), dry_run: Boolean(dry_run) }, { pb: admin, dataDir: config.dataDir, project, actor });
+    const result = await oneAtATime(project.slug, () => restoreSnapshot(snap, { overwrite: Boolean(overwrite), dry_run: Boolean(dry_run) }, { pb: admin, dataDir: config.dataDir, project, actor }));
     if (dry_run) return result;
     storageCache.clear();
     await recordActivity(user, { action: 'data.restore', app: project.slug, summary: logic.restoreSummary(result) });

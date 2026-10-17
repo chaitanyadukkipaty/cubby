@@ -41,7 +41,8 @@ export function clearRequest({ scope, names = [], drop = false, collection, filt
 
 /**
  * What a dry run (POST …/data/clear with dry_run) found, in words: the headline ("Matches 12 of 40 records in tasks."),
- * the cascade lines, the warnings and samples, whether `nothing` matches and whether it's `big` (over 10,000).
+ * the cascade lines, what `blocked` it (required relations left empty: the server refuses those), the warnings and
+ * samples, whether `nothing` matches and whether it's `big` (over 10,000).
  */
 export function previewModel(r) {
   const names = r.collections.map((c) => c.name);
@@ -56,7 +57,7 @@ export function previewModel(r) {
   const cascade = (r.cascade ?? []).filter((c) => c.records > 0).map((c) => (c.deletes
     ? `${plural(c.records, 'record')} of ${c.collection} go${c.records === 1 ? 'es' : ''} too: their ${c.field} relation deletes on cascade.`
     : `${plural(c.records, 'record')} of ${c.collection} lose${c.records === 1 ? 's its' : ' their'} ${c.field} reference.`));
-  return { headline, cascade, warnings: r.warnings ?? [], samples: r.samples ?? [], nothing: r.matches === 0, big: r.matches > MAX_MATCHES };
+  return { headline, cascade, blocked: r.blocked ?? [], warnings: r.warnings ?? [], samples: r.samples ?? [], nothing: r.matches === 0, big: r.matches > MAX_MATCHES };
 }
 
 /** The match count in the server's refusal of a filter or ids over 10,000 matches (409), or null for another error. */
@@ -75,6 +76,7 @@ export const requestKey = ({ reason, ...body }) => JSON.stringify(body);
 export function clearGate({ preview, previewedKey, key, typed = '', slug, needsReason = false, reason = '', bigConfirmed = false }) {
   const no = (why) => ({ ok: false, why });
   if (!preview || previewedKey !== key) return no("Preview first: the delete button unlocks once you've seen what goes.");
+  if (preview.blocked?.length) return no('PocketBase would refuse this: see what blocks it above.');
   if (preview.nothing) return no('Nothing matches, so there is nothing to delete.');
   if (preview.big && !bigConfirmed) return no('Over 10,000 records: tick the box to confirm.');
   if (needsReason && !reason.trim()) return no('Give a reason: the owner sees it.');

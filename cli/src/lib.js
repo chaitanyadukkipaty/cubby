@@ -401,6 +401,7 @@ export function formatClearPreview(app, r) {
     ...r.samples.map(sample),
     ...r.cascade.map((c) => cascadeLine(c, true)),
     ...r.warnings.map((w) => `warning: ${w}`),
+    ...(r.blocked ?? []).map((b) => `blocked: ${b}`),
   ].join('\n');
 }
 
