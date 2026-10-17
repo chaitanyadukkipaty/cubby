@@ -35,9 +35,10 @@ All notable changes to Cubby are documented here. The format follows
 - Each app has a **Data** tab (`/apps/<app>/data`): its collections with record counts and uploaded file sizes (the
   app's user accounts unticked, with the new-passwords warning when ticked); Empty, Drop, or delete records of one
   collection by a filter (with examples and a "created before" date); a mandatory preview (matches N of M, up to five
-  records to tick and delete only those, cascades, an extra tick above 10,000 records) that goes stale when the form
-  changes; the app's name typed to confirm; then the snapshot it saved. Snapshots are listed with Restore (dry run
-  first, with schema drift and Overwrite) and Purge (not for an admin's snapshot, unless you're an admin).
+  records to tick and delete only those, cascades, what blocks it, an extra tick above 10,000 records) that goes
+  stale when the form changes; the app's name typed to confirm; then the snapshot it saved. Snapshots are listed with
+  Restore (dry run first, with schema drift and Overwrite) and Purge (not for an admin's snapshot, unless you're an
+  admin; one whose uploads were over the cap says they weren't kept).
 - Admins clear any app's data from **Admin → Apps → Clear data** (`/admin/apps/<app>`), with a required reason. The
   owner sees a banner on the app's page and an item at the top of Home, linking to the snapshots, until they dismiss it.
 - Scheduled jobs. An app can run code on a cron schedule (UTC): one file per job in `cubby/jobs/`, bundled with its
@@ -109,23 +110,30 @@ All notable changes to Cubby are documented here. The format follows
 - Clear an app's data without deleting the app. `cubby data list [app]` shows its collections with record counts
   and uploaded file sizes; `cubby data clear [app] --collections a,b [--drop] --yes` empties them (keeping fields and
   rules) or drops them (which clears the schema hash, so the next deploy pushes `schema.json`). Before anything is
-  deleted, a snapshot is written to `DATA_DIR/snapshots/<app>/<id>/`: schema, records as JSON lines, records of other
-  collections that point at them (cascades are reported), and uploaded files when they total 100 MB or less
-  (otherwise a warning says they can't be restored). Snapshots are kept 7 days (pruned by the nightly maintenance),
+  deleted, Cubby works out what PocketBase deletes along with it (cascades however many hops away, self-relations and
+  relations holding several ids included) and what only loses a link, and writes a snapshot to
+  `DATA_DIR/snapshots/<app>/<id>/`: schema, deleted records as JSON lines, the unlinked records as they were, and the
+  uploaded files of everything deleted, cascades included, when they total 100 MB or less (otherwise a warning says
+  they can't be restored). A required relation that doesn't cascade and would be left pointing at nothing blocks the
+  clear: the preview names it and the clear is refused with a 409 before anything is snapshotted or deleted.
+  Emptying collections with no records changes nothing. Clears, restores and schema changes of one app run one at a
+  time. Snapshots are kept 7 days (pruned by the nightly maintenance),
   deleted with the app, and listed as their own category in `cubby admin storage`. The app's users collection is only
   cleared when named, with a warning about passwords. Owners or admins only; each clear is in the activity log. API:
   `GET /api/projects/<app>/data`, `POST /api/projects/<app>/data/clear`.
 - Delete only some records: `cubby data clear [app] --collection c --filter "<PocketBase filter>"` or `--ids a,b`.
   Only the matched records (with their files, within the cap) and what cascades from them are snapshotted.
-  `--dry-run` (and any clear without `--yes`) reports "matches N of M", 5 sample rows and cascades, deleting
-  nothing. More than 10,000 matches are refused without `--all-matching`. Filters run as superuser, so they pass
+  `--dry-run` (and any clear without `--yes`) reports "matches N of M", 5 sample rows, cascades and what blocks
+  the clear, deleting nothing. More than 10,000 matches are refused without `--all-matching`. Filters run as superuser, so they pass
   the proxy's `checkForeignRefs` (plus a check on back-relations) and only ever target the app's own collection.
 - Undo a clear: `cubby data snapshots [app]` lists snapshots (who, why, what, counts, expiry) and
   `cubby data restore <id> [--overwrite --yes] [--dry-run]` brings one back. Restores are additive: records keep
   their ids and existing ids are skipped, so restoring twice is harmless; `--overwrite` replaces them after
-  snapshotting the versions it replaces. Dropped collections are recreated from the snapshot's schema, fields
-  removed since are skipped, and fields whose type changed refuse the restore; `--dry-run` reports all of it.
-  Links between restored records come back too, even when collections point at each other.
+  snapshotting the versions it replaces. Dropped collections are recreated from the snapshot's schema (a wipe's
+  too, with or without records), fields removed since are skipped, and fields whose type changed refuse the
+  restore; `--dry-run` runs the same checks and reports all of it. Links between restored records come back too,
+  even when collections point at each other, and records that stayed but lost a link get the removed ids back
+  (in place, keeping ids added since; a single relation only while it's empty).
   Checked against the bundled PocketBase (0.40): a superuser can't read password hashes, and writing one back
   just sets it as a new password, so restored accounts get new random passwords, which the restore lists. Files
   come back under new names and `created`/`updated` are new. API: `GET /api/snapshots[?app=]`,
