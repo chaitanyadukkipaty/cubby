@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { startServer, ADMIN, SIGNUP_CODE, ROOT } from '../helpers/server.js';
 import { api, signup, adminToken, deployTo } from '../helpers/integration.js';
 
-let srv, anon, adminCall, alice, aliceToken, bob, bobToken;
+let srv, anon, adminCall, alice, aliceToken, bob, bobToken, erin, fay;
 before(async () => {
   srv = await startServer({ CUBBY_SERVER_NAME: '  Test   Cubby ' });
   anon = api(srv.url);
@@ -15,6 +15,9 @@ before(async () => {
   alice = api(srv.url, aliceToken);
   bobToken = await signup(srv.url, 'bob@test.dev');
   bob = api(srv.url, bobToken);
+  // For the agents tests, which run after the admin tests rotate the signup code.
+  erin = await signup(srv.url, 'erin@test.dev');
+  fay = await signup(srv.url, 'fay@test.dev');
 });
 after(() => srv?.stop());
 
@@ -207,7 +210,14 @@ describe('admin', () => {
 });
 
 describe('browser-approval login', () => {
-  test('start → approve as a user → poll returns that user\'s token, once', async () => {
+  // Start → approve as `user` → poll; returns the token the CLI would get.
+  async function deviceLogin(user, body) {
+    const d = (await anon('POST', '/api/device/start', { body })).data;
+    assert.equal((await user('POST', '/api/device/approve', { body: { code: d.user_code } })).status, 200);
+    return (await anon('POST', '/api/device/poll', { body: { device_id: d.device_id } })).data.token;
+  }
+
+  test('start → approve as a user → poll returns a new key for that agent, once', async () => {
     const d = (await anon('POST', '/api/device/start')).data;
     assert.match(d.verify_url, new RegExp(`^${srv.url}/connect\\?code=`));
     assert.equal((await anon('GET', `/api/device/${d.user_code}`)).status, 200);
@@ -215,9 +225,49 @@ describe('browser-approval login', () => {
     assert.equal((await anon('POST', '/api/device/approve', { body: { code: d.user_code } })).status, 401, 'approval needs a logged-in user');
     assert.equal((await alice('POST', '/api/device/approve', { body: { code: d.user_code } })).status, 200);
     const p = (await anon('POST', '/api/device/poll', { body: { device_id: d.device_id } })).data;
-    assert.deepEqual(p, { status: 'approved', token: aliceToken });
+    assert.equal(p.status, 'approved');
+    assert.match(p.token, /^hk_/);
+    assert.notEqual(p.token, aliceToken, 'an agent gets its own key, not the manual token');
+    assert.equal((await api(srv.url, p.token)('GET', '/api/me')).data.email, 'alice@test.dev');
     assert.equal((await anon('POST', '/api/device/poll', { body: { device_id: d.device_id } })).status, 410);
     assert.equal((await anon('GET', '/api/device/ZZZZ-ZZZZ')).status, 404);
+  });
+  test('/connect learns which agent is asking from the hint the CLI sent', async () => {
+    const d = (await anon('POST', '/api/device/start', { body: { tool: 'Claude Code', machine: 'chaitanya-mbp' } })).data;
+    const info = await anon('GET', `/api/device/${d.user_code}`);
+    assert.deepEqual(info.data, { ok: true, agent: { name: 'Claude Code · chaitanya-mbp', tool: 'Claude Code', machine: 'chaitanya-mbp' } });
+    const old = (await anon('POST', '/api/device/start')).data;
+    assert.equal((await anon('GET', `/api/device/${old.user_code}`)).data.agent, null, 'older CLIs send no hint');
+  });
+  test('two logins from two machines are two agents with distinct, working keys; the manual token stays put', async () => {
+    const asErin = api(srv.url, erin);
+    const one = await deviceLogin(asErin, { tool: 'Claude Code', machine: 'laptop' });
+    const two = await deviceLogin(asErin, { tool: 'Codex', machine: 'desktop' });
+    const legacy = await deviceLogin(asErin);
+    assert.equal(new Set([erin, one, two, legacy]).size, 4);
+    for (const t of [erin, one, two, legacy]) assert.equal((await api(srv.url, t)('GET', '/api/me')).status, 200);
+    // Dashboard login still hands back the manual token, not the newest agent's key.
+    assert.equal((await anon('POST', '/api/login', { body: { email: 'erin@test.dev', password: 'password1234' } })).data.key, erin);
+
+    const list = await api(srv.url, two)('GET', '/api/agents');
+    assert.equal(list.status, 200);
+    const today = new Date().toISOString().slice(0, 10);
+    assert.deepEqual(list.data.map(({ name, tool, machine, manual, current }) => ({ name, tool, machine, manual, current })), [
+      { name: 'Manual token', tool: null, machine: null, manual: true, current: false },
+      { name: 'Claude Code · laptop', tool: 'Claude Code', machine: 'laptop', manual: false, current: false },
+      { name: 'Codex · desktop', tool: 'Codex', machine: 'desktop', manual: false, current: true },
+      { name: `Agent · ${today}`, tool: null, machine: null, manual: false, current: false },
+    ]);
+    assert.ok(list.data.every((a) => a.id && a.created && !('key' in a)), 'keys are never listed');
+    assert.equal((await asErin('GET', '/api/agents')).data[0].current, true, 'the manual token is current when used');
+    assert.equal((await alice('GET', '/api/agents')).data.filter((a) => a.name === 'Codex · desktop').length, 0, 'only your own agents');
+    assert.equal((await anon('GET', '/api/agents')).status, 401);
+  });
+  test('regenerating the token revokes every key, agents included (the way to cut everything off)', async () => {
+    const agent = await deviceLogin(api(srv.url, fay), { tool: 'Cursor', machine: 'box' });
+    const r = await api(srv.url, fay)('POST', '/api/token/regenerate');
+    assert.equal((await api(srv.url, agent)('GET', '/api/me')).status, 401);
+    assert.deepEqual((await api(srv.url, r.data.token)('GET', '/api/agents')).data.map((a) => a.name), ['Manual token']);
   });
 });
 

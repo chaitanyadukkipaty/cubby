@@ -33,10 +33,19 @@ All notable changes to Cubby are documented here. The format follows
   `prune [--keep <n>] --yes` deletes them oldest first (sparing the newest n), `delete <id> --yes` deletes one. Their
   jobs folders go too and they leave the app's rollback list. API: `GET /api/admin/apps/<app>/deploys`,
   `POST /api/admin/apps/<app>/deploys/prune`, `DELETE /api/admin/apps/<app>/deploys/<id>`.
+- Every approved `cubby login` becomes its own named agent with its own key, instead of handing out your one token.
+  The CLI tells the server which agent tool it runs under (Claude Code, Codex, Cursor, otherwise "Terminal";
+  `--client` overrides it) and the machine's name, so agents are named like "Claude Code · chaitanya-mbp". Logins
+  from older CLIs still work and get a dated name ("Agent · 2026-10-17"). The approval page says which agent is
+  asking. `cubby agents` (and `GET /api/agents`) lists your agents and marks the current one; the dashboard's token,
+  and tokens from before this release, show up as "Manual token" and keep working. API keys gain an empty `scopes`
+  field, reserved for limiting keys later.
 
 ### Changed
 
 - `cubby rollback` restores the jobs a deploy shipped, not just the frontend.
+- Regenerating the dashboard token now also revokes every agent's key (agents used to share that token, so this
+  keeps Regenerate the way to cut every agent off). Reconnect the agents you still use with `cubby login`.
 
 ### Fixed
 

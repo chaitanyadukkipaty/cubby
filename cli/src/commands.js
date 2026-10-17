@@ -7,6 +7,7 @@ export const COMMANDS = [
   { name: 'login', usage: 'cubby login <server-url> [--no-wait | --wait | --token <token>]', summary: 'Log in by approving a link in the browser; --no-wait prints the link and exits, --wait finishes. --token for CI.', flags: ['--no-wait', '--wait', '--token', '--email', '--password', '--no-skill'] },
   { name: 'signup', usage: 'cubby signup <server-url> --email <e> --password <p> --code <signup-code>', summary: 'Create an account with the signup code from the admin.', flags: ['--email', '--password', '--code'] },
   { name: 'whoami', usage: 'cubby whoami', summary: 'Who you are on the server.', flags: [] },
+  { name: 'agents', usage: 'cubby agents', summary: 'Your agents: one per approved `cubby login`, named after the tool and machine (* = this agent).', flags: [] },
   { name: 'servers', usage: 'cubby servers', summary: "Servers you've added (* = default).", flags: [] },
   { name: 'use', usage: 'cubby use <name|url>', summary: 'Make a server the default for new apps.', flags: [] },
   { name: 'logout', usage: 'cubby logout [--server <name|url>] [--all]', summary: 'Forget one server (the current one by default) or all of them.', flags: ['--all'] },
@@ -34,7 +35,7 @@ export const COMMANDS = [
 export const GLOBAL_FLAGS = [
   { name: '--json', summary: 'Machine-readable output.' },
   { name: '--server', summary: 'Which server: a name or URL. Default order: --server, CUBBY_SERVER, the app\'s cubby.json, the default server, the only server.' },
-  { name: '--client', summary: 'Your agent\'s name, recorded on deploys.' },
+  { name: '--client', summary: 'Your agent\'s name, recorded on deploys and used to name the agent at `cubby login` (detected if unset).' },
 ];
 
 export function helpJson(version, name) {

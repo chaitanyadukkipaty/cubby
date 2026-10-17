@@ -3,7 +3,7 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, lstatSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, hostname } from 'node:os';
 import { join } from 'node:path';
 import { startServer, ROOT, SIGNUP_CODE, ADMIN } from '../helpers/server.js';
 import { api, signup, adminToken, deployTo } from '../helpers/integration.js';
@@ -103,13 +103,16 @@ describe('login', () => {
     const st = ok(await cubby(['skill', 'status', '--json'])).json;
     assert.equal(st.installed, true);
   });
-  test('browser approval: --no-wait prints the link, --wait finishes after approval', async () => {
+  test('browser approval: --no-wait prints the link, --wait finishes after approval as a new named agent', async () => {
     const h2 = mkdtempSync(join(tmpdir(), 'cubby-cli-home2-'));
     try {
-      const start = ok(await cubby(['login', srv.url, '--no-wait', '--json', '--no-skill'], { home: h2 })).json;
+      const start = ok(await cubby(['login', srv.url, '--no-wait', '--json', '--no-skill'], { home: h2, env: { CLAUDECODE: '1' } })).json;
       assert.equal(start.status, 'approval_required');
       assert.match(start.verify_url, /\/connect\?code=/);
       assert.ok(existsSync(join(h2, '.cubby/pending-login.json')));
+      const machine = hostname().replace(/\.local$/i, '');
+      assert.deepEqual((await api(srv.url)('GET', `/api/device/${start.user_code}`)).data.agent,
+        { name: `Claude Code · ${machine}`, tool: 'Claude Code', machine }, 'the approval page can say who is asking');
       const waiting = cubby(['login', '--wait', '--json', '--no-skill'], { home: h2 });
       await new Promise((r) => setTimeout(r, 500));
       assert.equal((await api(srv.url, token)('POST', '/api/device/approve', { body: { code: start.user_code } })).status, 200);
@@ -117,7 +120,12 @@ describe('login', () => {
       ok(done);
       assert.equal(done.json.email, 'cli@test.dev');
       assert.ok(!existsSync(join(h2, '.cubby/pending-login.json')), 'pending login cleaned up');
-      assert.equal(JSON.parse(readFileSync(join(h2, '.cubby/config.json'), 'utf8')).servers[`localhost:${srv.port}`].token, token);
+      const saved = JSON.parse(readFileSync(join(h2, '.cubby/config.json'), 'utf8')).servers[`localhost:${srv.port}`].token;
+      assert.notEqual(saved, token, 'the agent got its own key');
+      const agents = ok(await cubby(['agents', '--json'], { home: h2 })).json;
+      assert.deepEqual(agents.filter((a) => a.current).map((a) => a.name), [`Claude Code · ${machine}`]);
+      assert.ok(agents.some((a) => a.name === 'Manual token' && !a.current), 'the manual token still works and is listed');
+      assert.match(ok(await cubby(['agents'], { home: h2 })).stdout, new RegExp(`^\\* Claude Code · ${machine}`, 'm'));
     } finally {
       rmSync(h2, { recursive: true, force: true });
     }

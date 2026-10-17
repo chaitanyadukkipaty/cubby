@@ -20,7 +20,7 @@ class FakeElement extends Node {
 function load() {
   const ctx = vm.createContext({ Node, document: { createElement: (t) => new FakeElement(t) }, URLSearchParams, Date, String, Object });
   vm.runInContext(block, ctx);
-  return vm.runInContext('({ h, fmtBytes, ago, maskToken, installCommand, setupPrompt, tokenLoginCommand, inviteText, isHttps, parseConnectCode, apiErrorMessage, displayName, connectHeading })', ctx);
+  return vm.runInContext('({ h, fmtBytes, ago, maskToken, installCommand, setupPrompt, tokenLoginCommand, inviteText, isHttps, parseConnectCode, apiErrorMessage, displayName, connectHeading, connectAsker })', ctx);
 }
 
 test('the helper block exists and has no DOM-state or network access', () => {
@@ -141,6 +141,14 @@ describe('server names', () => {
     test(`displayName falls back to Cubby for ${JSON.stringify(blank)}`, () => assert.equal(f.displayName(blank), 'Cubby'));
   test('connectHeading names the server', () => assert.equal(f.connectHeading("Priya's Cubby"), "Connect your agent to Priya's Cubby?"));
   test('connectHeading without a name says "this server"', () => assert.equal(f.connectHeading(''), 'Connect your agent to this server?'));
+  test('connectAsker names the agent that is asking, from the hint its CLI sent', () => {
+    assert.equal(f.connectAsker({ tool: 'Claude Code', machine: 'chaitanya-mbp' }), 'Claude Code on chaitanya-mbp wants access');
+    assert.equal(f.connectAsker({ tool: 'Codex', machine: null }), 'Codex wants access');
+    assert.equal(f.connectAsker({ tool: null, machine: 'build-box' }), 'An agent on build-box wants access');
+  });
+  test('connectAsker falls back to the generic wording for CLIs that sent no hint', () => {
+    for (const none of [null, undefined, {}]) assert.equal(f.connectAsker(none), 'An AI agent on your computer wants access');
+  });
 });
 
 describe('jobState', () => {

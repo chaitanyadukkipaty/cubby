@@ -336,10 +336,19 @@ After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to c
         <div>
           <p>The agent installs the <code>cubby</code> CLI from your server by itself, then sends you one message:</p>
           <p class="prompt">To connect me to your Cubby account, open this link and click Approve (you can sign up there if you're new).</p>
-          <p>You open the link, check the code matches, and click <b>Approve</b>. The agent carries on by itself. You never paste passwords or tokens into a chat.</p>
+          <p>You open the link, check the code matches, and click <b>Approve</b>. The page says which agent is asking, like <i>“Claude Code on chaitanya-mbp wants access”</i>. The agent carries on by itself. You never paste passwords or tokens into a chat.</p>
         </div>
         <figure class="shot"><img src="assets/connect-approve.png?v=fd35d280" alt="Approval page asking to connect an AI agent, showing a matching code and an Approve button" loading="lazy" width="1280" height="820"><figcaption>The approval page your agent links you to.</figcaption></figure>
       </div>
+      <h3>Every login is its own agent</h3>
+      <p>Each approved <code>cubby login</code> gets its own key and a name from the agent tool it runs under (Claude Code, Codex or Cursor, otherwise “Terminal”; <code>--client</code> sets it) and the machine it's on. Connect Claude Code on your laptop and Codex on your desktop and Cubby sees two agents, not one shared token. Agents that ran an older CLI get a dated name like “Agent · 2026-10-17”.</p>
+      <div class="code"><pre>cubby agents
+<span class="c">#   NAME                         TOOL         MACHINE        CREATED</span>
+<span class="c">#   Manual token                 -            -              2026-10-01</span>
+<span class="c"># * Claude Code · chaitanya-mbp  Claude Code  chaitanya-mbp  2026-10-17</span>
+<span class="c">#   Codex · desktop              Codex        desktop        2026-10-17</span>
+<span class="c"># * = this agent</span></pre></div>
+      <p>The <code>*</code> marks the agent asking. The token on your dashboard, for scripts and CI, shows up as <b>Manual token</b>; tokens from before agents existed keep working and appear there too.</p>
     </section>
 
     <section id="build">
@@ -388,11 +397,12 @@ export default async ({ pb, env, log, fetch }) =&gt; {
       <div class="table"><table>
         <thead><tr><th>Command</th><th>What it does</th></tr></thead>
         <tbody>
-          <tr><td><code>cubby login &lt;server&gt;</code></td><td>Log in by approving a link in the browser. <code>--no-wait</code> prints the link and exits; <code>--wait</code> finishes.</td></tr>
+          <tr><td><code>cubby login &lt;server&gt;</code></td><td>Log in by approving a link in the browser; each approval is a new named agent. <code>--no-wait</code> prints the link and exits; <code>--wait</code> finishes.</td></tr>
           <tr><td><code>cubby login &lt;server&gt; --token &lt;t&gt;</code></td><td>Log in with the token from the dashboard (scripts and CI). Or set <code>CUBBY_TOKEN</code>.</td></tr>
           <tr><td><code>cubby servers</code></td><td>List the servers you've added, with the default marked.</td></tr>
           <tr><td><code>cubby use &lt;name|url&gt;</code></td><td>Make a server the default for new apps.</td></tr>
           <tr><td><code>cubby whoami</code></td><td>Show the account and server you're using.</td></tr>
+          <tr><td><code>cubby agents</code></td><td>List your agents (one per approved login) with tool, machine and date; <code>*</code> marks this one.</td></tr>
           <tr><td><code>cubby logout [--server &lt;name&gt;] [--all]</code></td><td>Forget one server (the current one by default) or all of them.</td></tr>
           <tr><td><code>cubby version</code></td><td>Show which CLI version runs for the current server, and the server's version.</td></tr>
           <tr><td><code>cubby help [&lt;command&gt;] [--json]</code></td><td>Every command and flag the targeted server supports. Agents use <code>--json</code>.</td></tr>
@@ -516,7 +526,7 @@ cubby admin deploys blog delete &lt;id&gt; --yes</pre></div>
         <li><b>Deploys are inert files.</b> Uploads are unpacked as plain files only (no symlinks), into folders that can't be escaped. Job code is moved out of the site, so it's never served.</li>
         <li><b>Jobs are sandboxed.</b> Each run is a separate Node.js process with the permission model on: it can't read the server's files, start processes or see its environment, and it can only connect to public internet addresses, never to the database or anything else on the server's network. Its database client reaches only its own app's records, checked by the same code as the proxy. Runs have a time limit and a 128 MB memory cap, and at most two run at once. This stops accidents and snooping between apps; like the rest of Cubby, it assumes people with accounts aren't attackers.</li>
         <li><b>Secrets are encrypted</b> with a server key that's kept outside the database (and backed up with it). The database admin UI shows only ciphertext, and values are never shown again after they're set.</li>
-        <li><b>Tokens</b> are stored so the dashboard can show yours again. <b>Regenerate</b> revokes the old one immediately.</li>
+        <li><b>Every agent has its own key.</b> Each approved login gets a separate token, named after its tool and machine. Your manual token is stored so the dashboard can show it again. <b>Regenerate</b> replaces it and revokes every agent's key immediately; revoking one agent at a time isn't supported yet.</li>
         <li><b>Use a domain.</b> On an IP-only server, traffic is unencrypted.</li>
         <li><b>One outbound request of its own.</b> The daily release check to GitHub is the only request Cubby itself makes, and it sends nothing about your server or users. Admins can turn it off. Apps' scheduled jobs make the requests their owners write.</li>
       </ul>
