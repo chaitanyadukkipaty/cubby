@@ -47,9 +47,12 @@ test('a stale session goes back to the sign-in card', async ({ page, authPage, d
   await expect(dashboard.logOutButton).toHaveCount(0);
 });
 
-test('the token can be revealed and copied, and regenerating it revokes the old one', async ({ page, context, api, dashboard }) => {
+test('the token can be revealed and copied, and regenerating it revokes the old one but leaves agents connected', async ({ page, context, api, dashboard }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const user = await api.createUser('tok');
+  const device = await api.startDeviceLogin({ tool: 'Codex', machine: 'e2e' });
+  await api.as(user.token)('POST', '/api/device/approve', { body: { code: device.user_code } });
+  const agent = (await api.pollDeviceLogin(device.device_id)).token;
   await dashboard.openAs(user.token);
 
   await expect(dashboard.myApps.token).toHaveText(/^hk_\S{3}•+$/);
@@ -59,10 +62,12 @@ test('the token can be revealed and copied, and regenerating it revokes the old 
   await expect(dashboard.toast).toHaveText('Prompt copied');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^I'd like you to set up Cubby: [\s\S]*\/docs\.md and ask me what I'd like to build\.$/);
 
-  answerNextDialog(page);
+  const asked = new Promise((resolve) => page.once('dialog', (d) => { resolve(d.message()); d.accept(); }));
   await dashboard.myApps.regenerateButton.click();
+  expect(await asked).toBe('Regenerate your token for scripts and CI? The old one stops working immediately. Agents you connected with cubby login have their own keys and stay connected (revoke one with cubby agents revoke).');
   await expect(dashboard.toast).toHaveText('New token created');
   expect(await api.meStatus(user.token)).toBe(401);
+  expect(await api.meStatus(agent)).toBe(200);
 
   const fresh = await page.evaluate(() => localStorage.getItem('cubby_token'));
   expect(fresh).not.toBe(user.token);

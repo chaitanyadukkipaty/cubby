@@ -186,11 +186,26 @@ describe('logic patches', () => {
     assert.ok(logic.agentName(longest, now).length <= 100);
     assert.ok(logic.agentName({ machine: longest.machine }, now).length <= 100);
   });
+  test('agentLabel cleans a new agent name like a hint and refuses blank or overlong names', () => {
+    assert.equal(logic.agentLabel('  CI  runner\n'), 'CI runner');
+    for (const bad of ['', '   ', '\u0007', undefined, 42, 'x'.repeat(61)]) rejects(() => logic.agentLabel(bad), 400, /Agent name must be 1-60 characters/);
+    assert.equal(logic.agentLabel('x'.repeat(60)).length, 60);
+  });
+  test('touchThrottle lets a key record its use at most once per interval, each key on its own clock', () => {
+    const t = logic.touchThrottle(60_000);
+    assert.equal(t.due('a', 0), true, 'first use is recorded');
+    assert.equal(t.due('a', 59_999), false, 'not again within the minute');
+    assert.equal(t.due('b', 30_000), true, 'other keys are independent');
+    assert.equal(t.due('a', 60_000), true, 'again once the minute is up');
+    assert.equal(t.due('a', 60_001), false);
+    t.forget('a');
+    assert.equal(t.due('a', 60_002), true, 'a forgotten (revoked) key starts over');
+  });
   test('agentView shows agents by name, pre-agent keys as "Manual token", flags the current one and never the key', () => {
-    const agent = { id: 'a1', kind: 'agent', label: 'Codex · box', tool: 'Codex', machine: 'box', key: 'hk_secret', created: 'c1' };
-    const legacy = { id: 'k0', kind: '', label: 'default', tool: '', machine: '', key: 'hk_old', created: 'c0' };
-    assert.deepEqual(logic.agentView(agent, 'a1'), { id: 'a1', name: 'Codex · box', tool: 'Codex', machine: 'box', manual: false, current: true, created: 'c1' });
-    assert.deepEqual(logic.agentView(legacy, 'a1'), { id: 'k0', name: 'Manual token', tool: null, machine: null, manual: true, current: false, created: 'c0' });
+    const agent = { id: 'a1', kind: 'agent', label: 'Codex · box', tool: 'Codex', machine: 'box', key: 'hk_secret', created: 'c1', last_used: 'u1' };
+    const legacy = { id: 'k0', kind: '', label: 'default', tool: '', machine: '', key: 'hk_old', created: 'c0', last_used: '' };
+    assert.deepEqual(logic.agentView(agent, 'a1'), { id: 'a1', name: 'Codex · box', tool: 'Codex', machine: 'box', manual: false, current: true, created: 'c1', last_used_at: 'u1' });
+    assert.deepEqual(logic.agentView(legacy, 'a1'), { id: 'k0', name: 'Manual token', tool: null, machine: null, manual: true, current: false, created: 'c0', last_used_at: null }, 'never used');
     assert.equal(logic.agentView({ ...legacy, kind: undefined }).manual, true, 'rows from before the kind field');
   });
   test('settingsPatch validates limits and rotates the code', () => {

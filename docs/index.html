@@ -343,12 +343,16 @@ After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to c
       <h3>Every login is its own agent</h3>
       <p>Each approved <code>cubby login</code> gets its own key and a name from the agent tool it runs under (Claude Code, Codex or Cursor, otherwise “Terminal”; <code>--client</code> sets it) and the machine it's on. Connect Claude Code on your laptop and Codex on your desktop and Cubby sees two agents, not one shared token. Agents that ran an older CLI get a dated name like “Agent · 2026-10-17”.</p>
       <div class="code"><pre>cubby agents
-<span class="c">#   NAME                         TOOL         MACHINE        CREATED</span>
-<span class="c">#   Manual token                 -            -              2026-10-01</span>
-<span class="c"># * Claude Code · chaitanya-mbp  Claude Code  chaitanya-mbp  2026-10-17</span>
-<span class="c">#   Codex · desktop              Codex        desktop        2026-10-17</span>
-<span class="c"># * = this agent</span></pre></div>
-      <p>The <code>*</code> marks the agent asking. The token on your dashboard, for scripts and CI, shows up as <b>Manual token</b>; tokens from before agents existed keep working and appear there too.</p>
+<span class="c">#   ID               NAME                         TOOL         MACHINE        CREATED     LAST SEEN</span>
+<span class="c">#   k0m2c8d1x4e5f6g  Manual token                 -            -              2026-10-01  2 days ago</span>
+<span class="c"># * r8a2kq0m1vx7c3d  Claude Code · chaitanya-mbp  Claude Code  chaitanya-mbp  2026-10-17  just now</span>
+<span class="c">#   p3n7w9s2t5u8v1y  Codex · desktop              Codex        desktop        2026-10-17  3 hours ago</span></pre></div>
+      <p>The <code>*</code> marks the agent asking. The token on your dashboard, for scripts and CI, shows up as <b>Manual token</b>; tokens from before agents existed keep working and appear there too. <i>Last seen</i> is when the agent last used its key, updated at most once a minute.</p>
+      <h3>Rename or revoke an agent</h3>
+      <p>Done with an agent, or lost the laptop it ran on? Revoke it, and its key stops working on its very next request. Your other agents keep working, and any of them can do it for you: just ask.</p>
+      <div class="code"><pre>cubby agents rename p3n7w9s2t5u8v1y "Old desktop"
+cubby agents revoke p3n7w9s2t5u8v1y --yes   <span class="c"># refuses without --yes</span></pre></div>
+      <p>An agent can revoke itself too; the CLI then forgets the dead token, like <code>cubby logout</code>. You can only see, rename and revoke your own agents. <b>Regenerate</b> on the dashboard replaces only your manual token; agents keep their own keys.</p>
     </section>
 
     <section id="build">
@@ -402,7 +406,9 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           <tr><td><code>cubby servers</code></td><td>List the servers you've added, with the default marked.</td></tr>
           <tr><td><code>cubby use &lt;name|url&gt;</code></td><td>Make a server the default for new apps.</td></tr>
           <tr><td><code>cubby whoami</code></td><td>Show the account and server you're using.</td></tr>
-          <tr><td><code>cubby agents</code></td><td>List your agents (one per approved login) with tool, machine and date; <code>*</code> marks this one.</td></tr>
+          <tr><td><code>cubby agents</code></td><td>List your agents (one per approved login) with tool, machine, date and last seen; <code>*</code> marks this one.</td></tr>
+          <tr><td><code>cubby agents rename &lt;id&gt; &lt;name&gt;</code></td><td>Give an agent a name you'll recognize.</td></tr>
+          <tr><td><code>cubby agents revoke &lt;id&gt; --yes</code></td><td>Revoke an agent's key at once; the others keep working. Revoking this agent logs it out here.</td></tr>
           <tr><td><code>cubby logout [--server &lt;name&gt;] [--all]</code></td><td>Forget one server (the current one by default) or all of them.</td></tr>
           <tr><td><code>cubby version</code></td><td>Show which CLI version runs for the current server, and the server's version.</td></tr>
           <tr><td><code>cubby help [&lt;command&gt;] [--json]</code></td><td>Every command and flag the targeted server supports. Agents use <code>--json</code>.</td></tr>
@@ -519,7 +525,7 @@ cubby admin backups delete 2026-10-01 --yes</pre></div>
         <li><b>Deploys are inert files.</b> Uploads are unpacked as plain files only (no symlinks), into folders that can't be escaped. Job code is moved out of the site, so it's never served.</li>
         <li><b>Jobs are sandboxed.</b> Each run is a separate Node.js process with the permission model on: it can't read the server's files, start processes or see its environment, and it can only connect to public internet addresses, never to the database or anything else on the server's network. Its database client reaches only its own app's records, checked by the same code as the proxy. Runs have a time limit and a 128 MB memory cap, and at most two run at once. This stops accidents and snooping between apps; like the rest of Cubby, it assumes people with accounts aren't attackers.</li>
         <li><b>Secrets are encrypted</b> with a server key that's kept outside the database (and backed up with it). The database admin UI shows only ciphertext, and values are never shown again after they're set.</li>
-        <li><b>Every agent has its own key.</b> Each approved login gets a separate token, named after its tool and machine. Your manual token is stored so the dashboard can show it again. <b>Regenerate</b> replaces it and revokes every agent's key immediately; revoking one agent at a time isn't supported yet.</li>
+        <li><b>Every agent has its own key.</b> Each approved login gets a separate token, named after its tool and machine. Your manual token is stored so the dashboard can show it again. <code>cubby agents revoke</code> cuts one agent off immediately, and <b>Regenerate</b> replaces the manual token without touching agents.</li>
         <li><b>Use a domain.</b> On an IP-only server, traffic is unencrypted.</li>
         <li><b>One outbound request of its own.</b> The daily release check to GitHub is the only request Cubby itself makes, and it sends nothing about your server or users. Admins can turn it off. Apps' scheduled jobs make the requests their owners write.</li>
       </ul>

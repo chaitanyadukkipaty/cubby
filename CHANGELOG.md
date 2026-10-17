@@ -32,12 +32,17 @@ All notable changes to Cubby are documented here. The format follows
   asking. `cubby agents` (and `GET /api/agents`) lists your agents and marks the current one; the dashboard's token,
   and tokens from before this release, show up as "Manual token" and keep working. API keys gain an empty `scopes`
   field, reserved for limiting keys later.
+- Rename and revoke agents one at a time: `cubby agents rename <id> <name>` and `cubby agents revoke <id> --yes`
+  (`PATCH` / `DELETE /api/agents/:id`). A revoked key gets 401 on its next request while your other agents keep
+  working; an agent may revoke itself, which logs it out like `cubby logout`. You can only see and change your own
+  agents. `cubby agents` shows each agent's ID and when it was last seen.
 
 ### Changed
 
 - `cubby rollback` restores the jobs a deploy shipped, not just the frontend.
-- Regenerating the dashboard token now also revokes every agent's key (agents used to share that token, so this
-  keeps Regenerate the way to cut every agent off). Reconnect the agents you still use with `cubby login`.
+- Regenerate on the dashboard replaces only the manual token (for scripts and CI). Agents keep their own keys; revoke
+  them one at a time with `cubby agents revoke`.
+- A key's last use is now written at most once a minute instead of on every request.
 
 ### Fixed
 

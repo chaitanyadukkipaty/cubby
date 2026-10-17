@@ -265,9 +265,33 @@ const commands = {
     const me = await api('GET', '/api/me');
     out(`${me.email}${me.is_admin ? ' (admin)' : ''} @ ${await where()}`, { email: me.email, is_admin: me.is_admin, server: serverUrl(), server_name: await serverName() });
   },
-  async agents() {
-    const list = await api('GET', '/api/agents');
-    out(formatAgents(list), list);
+  async agents(sub, id, ...nameWords) {
+    const usage = 'Usage: cubby agents [rename <id> <name> | revoke <id> --yes]';
+    if (!sub || sub === 'list') {
+      const list = await api('GET', '/api/agents');
+      return out(formatAgents(list), list);
+    }
+    if (sub === 'rename') {
+      const name = nameWords.join(' ');
+      if (!id || !name) throw new CliError('Usage: cubby agents rename <id> <name>');
+      const r = await api('PATCH', `/api/agents/${encodeURIComponent(id)}`, { body: { name } });
+      return out(`Renamed ${id} to "${r.name}"`, r);
+    }
+    if (sub === 'revoke') {
+      if (!id) throw new CliError('Usage: cubby agents revoke <id> --yes');
+      if (!flags.yes) throw new CliError(`This revokes agent ${id}: its key stops working at once and it has to \`cubby login\` again. Re-run with --yes.`);
+      const name = (await api('GET', '/api/agents')).find((a) => a.id === id)?.name ?? id;
+      const r = await api('DELETE', `/api/agents/${encodeURIComponent(id)}`);
+      // Revoking this agent's own key: forget it here, like `cubby logout`, so later commands say to log in.
+      const t = target();
+      const loggedOut = Boolean(r.current && t.server?.token && !process.env.CUBBY_TOKEN);
+      if (loggedOut) writeConfig(GLOBAL_CONFIG, removeServer(config(), t.id));
+      const human = r.current
+        ? `Revoked ${name} (this agent).${loggedOut ? ` Logged out of ${describeServer(t.id, t.server)}.` : ''}`
+        : `Revoked ${name}. It can't use this server until it runs \`cubby login\` again.`;
+      return out(human, { ...r, logged_out: loggedOut });
+    }
+    throw new CliError(usage);
   },
 
   async init(slug) {

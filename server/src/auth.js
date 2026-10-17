@@ -6,7 +6,11 @@ import { admin } from './pb.js';
 import { config } from './config.js';
 import { HttpError } from './http.js';
 import { getSettings } from './settings.js';
-import { checkSignup, agentName, agentView } from './logic.js';
+import { checkSignup, agentName, agentView, agentLabel, isAgentKey, touchThrottle } from './logic.js';
+
+// Last-used times ("last seen" in `cubby agents`) are written at most once a minute per key.
+const LAST_USED_EVERY_MS = 60_000;
+const lastUsed = touchThrottle(LAST_USED_EVERY_MS);
 
 const hash = (key) => createHash('sha256').update(key).digest('hex');
 const userView = (u) => ({ id: u.id, email: u.email, is_admin: Boolean(u.is_admin) });
@@ -38,9 +42,39 @@ export async function listAgents(user) {
   return keys.map((k) => agentView(k, user.keyId));
 }
 
+// One of this user's agents by id. Anyone else's looks like it doesn't exist; the manual token isn't an agent.
+async function ownedAgent(user, id) {
+  let k;
+  try {
+    k = await admin.collection('cubby_api_keys').getFirstListItem(admin.filter('id = {:id} && owner = {:u}', { id: String(id), u: user.id }));
+  } catch {
+    throw new HttpError(404, `No agent ${String(id).slice(0, 40)} in your account. See \`cubby agents\`.`);
+  }
+  if (!isAgentKey(k)) throw new HttpError(400, 'That is your manual token, not an agent. Replace it with Regenerate on the dashboard.');
+  return k;
+}
+
+export async function renameAgent(user, id, name) {
+  const label = agentLabel(name);
+  const k = await ownedAgent(user, id);
+  return agentView(await admin.collection('cubby_api_keys').update(k.id, { label }), user.keyId);
+}
+
+// Deleting the key is the revoke: authenticate looks every request up by hash, so it fails from the next request.
+export async function revokeAgent(user, id) {
+  const k = await ownedAgent(user, id);
+  await admin.collection('cubby_api_keys').delete(k.id);
+  lastUsed.forget(k.id);
+  return { ok: true, id: k.id, current: k.id === user.keyId };
+}
+
+// Replaces the manual token. Agents keep their own keys; they're revoked one at a time (revokeAgent).
 export async function regenerateToken(userId) {
-  const old = await admin.collection('cubby_api_keys').getFullList({ filter: admin.filter('owner = {:u}', { u: userId }) });
-  for (const k of old) await admin.collection('cubby_api_keys').delete(k.id);
+  const old = await admin.collection('cubby_api_keys').getFullList({ filter: admin.filter('owner = {:u} && kind != "agent"', { u: userId }) });
+  for (const k of old) {
+    await admin.collection('cubby_api_keys').delete(k.id);
+    lastUsed.forget(k.id);
+  }
   return issueKey(userId);
 }
 
@@ -80,6 +114,9 @@ export async function authenticate(req) {
   }
   const owner = record.expand?.owner;
   if (!owner || owner.disabled) throw new HttpError(403, 'This account has been disabled by the admin');
-  admin.collection('cubby_api_keys').update(record.id, { last_used: new Date().toISOString() }).catch(() => {});
+  // Awaited (once a minute at most) so a listing right after a request already shows it.
+  if (lastUsed.due(record.id, Date.now())) {
+    await admin.collection('cubby_api_keys').update(record.id, { last_used: new Date().toISOString() }).catch(() => {});
+  }
   return { ...userView(owner), key, keyId: record.id };
 }

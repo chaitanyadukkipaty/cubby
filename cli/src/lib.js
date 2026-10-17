@@ -64,15 +64,30 @@ export const loginHint = ({ client, env, hostname }) => ({
   machine: hostname.replace(/\.local$/i, ''),
 });
 
-export function formatAgents(list) {
+// "5 min ago" from a key's last_used_at (the server writes it at most once a minute, hence "just now").
+export function lastSeen(at, now = Date.now()) {
+  const t = Date.parse(at ?? '');
+  if (Number.isNaN(t)) return 'never';
+  const units = [['day', 86_400_000], ['hour', 3_600_000], ['min', 60_000]];
+  for (const [unit, ms] of units) {
+    const n = Math.floor((now - t) / ms);
+    if (n >= 1) return `${n} ${unit}${n > 1 && unit !== 'min' ? 's' : ''} ago`;
+  }
+  return 'just now';
+}
+
+export function formatAgents(list, now = Date.now()) {
   if (!list.length) return 'No agents yet. Connect one with `cubby login <server-url>`.';
-  const cols = [['NAME', (a) => a.name], ['TOOL', (a) => a.tool ?? '-'], ['MACHINE', (a) => a.machine ?? '-']];
+  const cols = [
+    ['ID', (a) => a.id], ['NAME', (a) => a.name], ['TOOL', (a) => a.tool ?? '-'], ['MACHINE', (a) => a.machine ?? '-'],
+    ['CREATED', (a) => String(a.created).slice(0, 10)],
+  ];
   const widths = cols.map(([head, get]) => Math.max(head.length, ...list.map((a) => get(a).length)) + 2);
   const row = (mark, cells) => `${mark} ${cells.map((c, i) => c.padEnd(widths[i])).join('')}`;
   return [
-    row(' ', cols.map(([head]) => head)) + 'CREATED',
-    ...list.map((a) => row(a.current ? '*' : ' ', cols.map(([, get]) => get(a))) + String(a.created).slice(0, 10)),
-    '* = this agent',
+    row(' ', cols.map(([head]) => head)) + 'LAST SEEN',
+    ...list.map((a) => row(a.current ? '*' : ' ', cols.map(([, get]) => get(a))) + lastSeen(a.last_used_at, now)),
+    '* = this agent. Rename one with `cubby agents rename <id> <name>`, revoke it with `cubby agents revoke <id> --yes`.',
   ].join('\n');
 }
 

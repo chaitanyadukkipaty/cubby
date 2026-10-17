@@ -361,7 +361,7 @@ function setupCard() {
           h('button', { onclick: () => { revealed = !revealed; draw(); } }, 'Reveal'),
           h('button', { onclick: () => copy(me.token, 'Token copied') }, 'Copy'),
           h('button', { class: 'danger', onclick: async () => {
-            if (!confirm('Regenerate your token? The old one stops working immediately, and every agent you connected is logged out (they can reconnect with cubby login).')) return;
+            if (!confirm('Regenerate your token for scripts and CI? The old one stops working immediately. Agents you connected with cubby login have their own keys and stay connected (revoke one with cubby agents revoke).')) return;
             const r = await api('POST', '/api/token/regenerate');
             setToken(r.token);
             me.token = r.token;

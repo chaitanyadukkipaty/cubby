@@ -185,8 +185,19 @@ account" error.
    The approval page says which agent is asking ("Claude Code on chaitanya-mbp wants access"): the CLI tells the
    server which agent tool it runs under (Claude Code, Codex, Cursor, otherwise "Terminal"; `--client` overrides it)
    and the machine's name. Each approved login becomes its own **agent** with its own key, so your laptop's Claude
-   Code and your desktop's Codex are two agents, not one shared token. `cubby agents` lists them and marks the one
-   asking. The token on your dashboard (for scripts and CI) is listed as "Manual token".
+   Code and your desktop's Codex are two agents, not one shared token. `cubby agents` lists them with when each was
+   last seen and marks the one asking. The token on your dashboard (for scripts and CI) is listed as "Manual token".
+
+   Lost a laptop, or done with an agent? Ask any of your agents to revoke it, or run it yourself:
+
+   ```sh
+   cubby agents                                      # ID, name, tool, machine, created, last seen
+   cubby agents rename p3n7w9s2t5u8v1y "Old laptop"
+   cubby agents revoke p3n7w9s2t5u8v1y --yes         # that key stops working on its next request
+   ```
+
+   Your other agents keep working. An agent can revoke itself too, which logs it out like `cubby logout`.
+   **Regenerate** on the dashboard replaces only the manual token; agents keep their own keys.
 3. Ask your agent for an app in plain words, naming the server if you have more than one. That's it.
 
 <details>
@@ -195,7 +206,8 @@ account" error.
 | Command | What it does |
 | --- | --- |
 | `cubby login <server>` | Log in by approving a link in the browser (`--token` for CI). Adds the server to your list. Each approved login is a new named agent. |
-| `cubby agents` | Your agents: one per approved login, with tool, machine and date; `*` marks this one |
+| `cubby agents` | Your agents: one per approved login, with tool, machine, date and last seen; `*` marks this one |
+| `cubby agents rename <id> <name>` / `cubby agents revoke <id> --yes` | Rename an agent, or revoke its key at once (revoking this agent logs it out here) |
 | `cubby servers` / `cubby use <name>` | List your servers with their names and versions, set the default |
 | `cubby logout [--server <name>] [--all]` | Forget one server (the current one by default) or all of them |
 | `cubby init <app>` | Create an app from the template |
@@ -332,7 +344,7 @@ for groups who trust each other, not as a hostile multi-tenant cloud.
 - All apps share one SQLite database, which suits a group of friends or a small team.
 - Jobs are for groups who trust each other too: the sandbox stops accidents and snooping between apps, not a
   determined attacker with an account. At most two run at once per server.
-- Agents can't be renamed or revoked one at a time yet. **Regenerate** on the dashboard replaces your manual token
-  and revokes every agent's key with it; reconnect the agents you still use with `cubby login`.
+- Agents are managed from the CLI (`cubby agents`); the dashboard doesn't list them yet. "Last seen" is updated at
+  most once a minute per agent.
 - Not yet supported: server code that runs per request (API endpoints, hooks), custom domains per app, single sign-on
   across apps, app emails.

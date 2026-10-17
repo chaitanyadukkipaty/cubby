@@ -76,19 +76,36 @@ describe('formatters', () => {
     assert.equal(t, '* d2  t2  3 files  [claude-code] two\n  d1  t1  1 files  one');
     assert.equal(lib.formatDeploys([]), 'No deploys');
   });
-  test('formatAgents lists name, tool, machine and created date, and marks this agent', () => {
+  test('formatAgents lists id, name, tool, machine, created date and last seen, and marks this agent', () => {
+    const now = Date.parse('2026-10-17T12:00:00Z');
     const t = lib.formatAgents([
-      { name: 'Manual token', tool: null, machine: null, created: '2026-10-01 10:00:00.000Z', current: false },
-      { name: 'Claude Code · mbp', tool: 'Claude Code', machine: 'mbp', created: '2026-10-17 09:00:00.000Z', current: true },
-    ]);
+      { id: 'k0', name: 'Manual token', tool: null, machine: null, created: '2026-10-01 10:00:00.000Z', last_used_at: '2026-10-15 09:00:00.000Z', current: false },
+      { id: 'a1', name: 'Claude Code · mbp', tool: 'Claude Code', machine: 'mbp', created: '2026-10-17 09:00:00.000Z', last_used_at: '2026-10-17 11:59:30.000Z', current: true },
+      { id: 'a2', name: 'Codex', tool: 'Codex', machine: null, created: '2026-10-17 09:00:00.000Z', last_used_at: null, current: false },
+    ], now);
     const w = 'Claude Code · mbp'.length + 2;
     assert.equal(t, [
-      `  ${'NAME'.padEnd(w)}${'TOOL'.padEnd(13)}${'MACHINE'.padEnd(9)}CREATED`,
-      `  ${'Manual token'.padEnd(w)}${'-'.padEnd(13)}${'-'.padEnd(9)}2026-10-01`,
-      `* ${'Claude Code · mbp'.padEnd(w)}${'Claude Code'.padEnd(13)}${'mbp'.padEnd(9)}2026-10-17`,
-      '* = this agent',
+      `  ${'ID'.padEnd(4)}${'NAME'.padEnd(w)}${'TOOL'.padEnd(13)}${'MACHINE'.padEnd(9)}${'CREATED'.padEnd(12)}LAST SEEN`,
+      `  ${'k0'.padEnd(4)}${'Manual token'.padEnd(w)}${'-'.padEnd(13)}${'-'.padEnd(9)}${'2026-10-01'.padEnd(12)}2 days ago`,
+      `* ${'a1'.padEnd(4)}${'Claude Code · mbp'.padEnd(w)}${'Claude Code'.padEnd(13)}${'mbp'.padEnd(9)}${'2026-10-17'.padEnd(12)}just now`,
+      `  ${'a2'.padEnd(4)}${'Codex'.padEnd(w)}${'Codex'.padEnd(13)}${'-'.padEnd(9)}${'2026-10-17'.padEnd(12)}never`,
+      '* = this agent. Rename one with `cubby agents rename <id> <name>`, revoke it with `cubby agents revoke <id> --yes`.',
     ].join('\n'));
     assert.equal(lib.formatAgents([]), 'No agents yet. Connect one with `cubby login <server-url>`.');
+  });
+  test('lastSeen says how long ago a key was used, in rough units', () => {
+    const now = Date.parse('2026-10-17T12:00:00Z');
+    const at = (ms) => new Date(now - ms).toISOString();
+    assert.equal(lib.lastSeen(null, now), 'never');
+    assert.equal(lib.lastSeen(at(59_000), now), 'just now');
+    assert.equal(lib.lastSeen(at(60_000), now), '1 min ago');
+    assert.equal(lib.lastSeen(at(59 * 60_000), now), '59 min ago');
+    assert.equal(lib.lastSeen(at(60 * 60_000), now), '1 hour ago');
+    assert.equal(lib.lastSeen(at(5 * 3600_000), now), '5 hours ago');
+    assert.equal(lib.lastSeen(at(24 * 3600_000), now), '1 day ago');
+    assert.equal(lib.lastSeen(at(40 * 24 * 3600_000), now), '40 days ago');
+    assert.equal(lib.lastSeen(at(-5000), now), 'just now', 'a server clock slightly ahead');
+    assert.equal(lib.lastSeen('garbage', now), 'never');
   });
   test('formatProjects flags undeployed apps', () => {
     assert.equal(lib.formatProjects([{ slug: 'a', url: 'u1', current_deploy: 'd' }, { slug: 'b', url: 'u2' }]),
