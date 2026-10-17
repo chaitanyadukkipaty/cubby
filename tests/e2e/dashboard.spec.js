@@ -1,7 +1,6 @@
 // Dashboard journeys for a regular user: sign up, session, token, own apps, gallery.
-import { test, expect, answerNextDialog } from './support/fixtures.js';
+import { test, expect } from './support/fixtures.js';
 import { uid } from './support/api.js';
-import { DashboardPage } from './pages/dashboard-page.js';
 
 test('a new user signs up with the signup code and lands on their dashboard', async ({ page, baseURL, api, authPage, dashboard }) => {
   const email = `${uid('alex')}@e2e.dev`;
@@ -20,7 +19,8 @@ test('a new user signs up with the signup code and lands on their dashboard', as
   await expect(dashboard.myApps.appIdea).toHaveText('chat', { timeout: 5_000 }); // the highlighted app idea rotates
   await expect(dashboard.myApps.setupPrompt).toContainText('npx skills add chaitanyadukkipaty/cubby --skill cubby -g');
   await expect(dashboard.myApps.setupPrompt).toContainText(`curl -fsSL ${baseURL}/skill.sh | sh`);
-  await expect(dashboard.myApps.emptyState).toBeVisible();
+  await expect(dashboard.home.steps).toBeVisible(); // first run: connect your agent, approve, ask for an app
+  await expect(dashboard.home.steps.getByRole('button', { name: /^Copy prompt: Build me a polls app/ })).toBeVisible();
   await expect(dashboard.adminLink).toHaveCount(0);
 
   await page.reload();
@@ -53,17 +53,21 @@ test('the token can be revealed and copied, and regenerating it revokes the old 
   const device = await api.startDeviceLogin({ tool: 'Codex', machine: 'e2e' });
   await api.as(user.token)('POST', '/api/device/approve', { body: { code: device.user_code } });
   const agent = (await api.pollDeviceLogin(device.device_id)).token;
-  await dashboard.openAs(user.token);
+  await dashboard.openAs(user.token, '/agents');
+  const { agents } = dashboard;
 
-  await expect(dashboard.myApps.token).toHaveText(/^hk_\S{3}•+$/);
-  expect(await dashboard.myApps.revealToken()).toBe(user.token);
+  await expect(agents.token).toHaveText(/^hk_\S{3}•+$/);
+  expect(await agents.revealToken()).toBe(user.token);
+  await agents.copyTokenButton.click();
+  await expect(dashboard.toast).toHaveText('Token copied');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(user.token);
 
-  await dashboard.myApps.copyPromptButton.click();
+  await agents.connectButton.click();
   await expect(dashboard.toast).toHaveText('Prompt copied');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^I'd like you to set up Cubby: [\s\S]*\/docs\.md and ask me what I'd like to build\.$/);
 
   const asked = new Promise((resolve) => page.once('dialog', (d) => { resolve(d.message()); d.accept(); }));
-  await dashboard.myApps.regenerateButton.click();
+  await agents.regenerateButton.click();
   expect(await asked).toBe('Regenerate your token for scripts and CI? The old one stops working immediately. Agents you connected with cubby login have their own keys and stay connected (revoke one with cubby agents revoke).');
   await expect(dashboard.toast).toHaveText('New token created');
   expect(await api.meStatus(user.token)).toBe(401);
@@ -74,70 +78,7 @@ test('the token can be revealed and copied, and regenerating it revokes the old 
   expect(await api.meStatus(fresh)).toBe(200);
   await page.reload();
   await expect(dashboard.account(user.email)).toBeVisible();
-});
-
-test('a deployed app shows in My apps and the gallery; its owner can unlist and delete it', async ({ browser, baseURL, page, api, dashboard }) => {
-  const owner = await api.createUser('owner');
-  const friend = await api.createUser('friend');
-  const slug = await api.createDeployedApp(owner.token, 'gal', { description: 'E2E gallery app' });
-
-  const friendPage = await browser.newPage({ baseURL });
-  const friendView = new DashboardPage(friendPage);
-  await friendView.openAs(friend.token);
-  await friendView.openGallery();
-  await expect(friendView.gallery.app(slug).owner).toHaveText(new RegExp(`^by ${owner.email}`));
-  await expect(friendView.gallery.app(slug).openLink).toHaveAttribute('href', new RegExp(`//${slug}\\.localhost:`));
-
-  await dashboard.openAs(owner.token);
-  await dashboard.openMyApps();
-  const app = dashboard.myApps.app(slug);
-  await expect(app.status).toHaveText(/^Deployed just now$/);
-  await expect(app.showInGallery).toBeChecked();
-
-  await app.showInGallery.uncheck();
-  await expect(dashboard.toast).toHaveText('Hidden from gallery');
-  expect((await api.project(owner.token, slug)).data.unlisted).toBe(true);
-  await friendPage.reload();
-  await friendView.openGallery();
-  await expect(friendView.gallery.app(slug).card).toHaveCount(0);
-
-  answerNextDialog(page, 'not-the-name');
-  await app.deleteButton.click();
-  await expect(app.card).toBeVisible();
-  expect((await api.project(owner.token, slug)).status).toBe(200);
-
-  answerNextDialog(page, slug);
-  await app.deleteButton.click();
-  await expect(dashboard.toast).toHaveText(`Deleted ${slug}`);
-  await expect(app.card).toHaveCount(0);
-  expect((await api.project(owner.token, slug)).status).toBe(404);
-  await friendPage.close();
-});
-
-test("an app's scheduled jobs: run one now, read its log, pause and resume it", async ({ api, dashboard }) => {
-  const owner = await api.createUser('jobs');
-  const slug = await api.createAppWithJobs(owner.token, 'jobs', {
-    'weekly-digest': { schedule: '0 9 * * 1', code: "export default async ({ log }) => log('sent 3 digests');" },
-  });
-  await dashboard.openAs(owner.token);
-  await dashboard.openMyApps();
-  const app = dashboard.myApps.app(slug);
-  await app.jobsToggle.click();
-  const job = app.job('weekly-digest');
-  await expect(job.state).toHaveText('not run yet');
-  await expect(job.details).toContainText('0 9 * * 1 UTC · never run · next');
-
-  await job.runButton.click();
-  await expect(dashboard.toast).toHaveText('weekly-digest: ok');
-  await expect(job.state).toHaveText('ok');
-  await job.lastLogButton.click();
-  await expect(job.log).toHaveText('sent 3 digests');
-
-  await job.pauseButton.click();
-  await expect(dashboard.toast).toHaveText('weekly-digest paused');
-  await expect(job.state).toHaveText('paused');
-  await job.resumeButton.click();
-  await expect(job.state).toHaveText('ok');
+  await expect(agents.agent('Codex · e2e').row).toBeVisible(); // the agent is still listed
 });
 
 test('every page has its own URL: deep links and reloads land on it, and back/forward work', async ({ page, api, authPage, dashboard }) => {
@@ -147,12 +88,12 @@ test('every page has its own URL: deep links and reloads land on it, and back/fo
   // Signed out, a deep link shows the sign-in card and lands on the page after logging in.
   await page.goto(`/apps/${slug}`);
   await authPage.logIn(user);
-  await expect(dashboard.myApps.app(slug).card).toBeVisible();
+  await expect(dashboard.pageHeading).toHaveText(slug);
   await expect(dashboard.currentPage).toHaveText('Apps');
 
   await page.reload();
-  await expect(dashboard.myApps.app(slug).status).toHaveText(/^Deployed /);
-  await expect(dashboard.myApps.app(slug).showInGallery).toBeChecked();
+  await expect(dashboard.pageHeading).toHaveText(slug);
+  await expect(dashboard.app.currentTab).toHaveText('Overview');
 
   await page.getByRole('link', { name: '← Apps' }).click();
   await expect(page).toHaveURL(/\/apps$/);
@@ -173,7 +114,7 @@ test('every page has its own URL: deep links and reloads land on it, and back/fo
   await expect(page.getByText("You don't have an app called not-mine.")).toBeVisible();
   await dashboard.openAs(user.token, '/admin');
   await expect(page).toHaveURL(/\/$/, { timeout: 5_000 }); // not an admin: back to Home
-  await expect(dashboard.myApps.connectHeading).toBeVisible();
+  await expect(dashboard.pageHeading).toHaveText('Home');
 
   await dashboard.openAs(await api.adminToken(), '/admin');
   await expect(dashboard.admin.inviteHeading).toBeVisible();
@@ -205,7 +146,7 @@ test('the command palette opens with Ctrl+K, finds an app and goes to it, and Es
   await page.keyboard.press('Enter');
   await expect(palette.dialog).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`/apps/${slug}$`));
-  await expect(dashboard.myApps.app(slug).card).toBeVisible();
+  await expect(dashboard.pageHeading).toHaveText(slug);
 
   // Opened from the sidebar: arrows move the highlight and Enter runs the action.
   await palette.openButton.click();

@@ -126,4 +126,15 @@ export class Api {
   async pollDeviceLogin(deviceId) {
     return (await this.as()('POST', '/api/device/poll', { body: { device_id: deviceId } })).data;
   }
+
+  /** Connects an agent the way `cubby login` does (start, approve as the user, poll). Returns the agent's token. */
+  async connectAgent(userToken, hint = { tool: 'Claude Code', machine: 'e2e-mbp' }) {
+    const device = await this.startDeviceLogin(hint);
+    await ok(await this.as(userToken)('POST', '/api/device/approve', { body: { code: device.user_code } }), 'approve');
+    return (await this.pollDeviceLogin(device.device_id)).token;
+  }
+
+  async deploys(token, slug) {
+    return ok(await this.as(token)('GET', `/api/projects/${slug}/deploys`), 'list deploys');
+  }
 }

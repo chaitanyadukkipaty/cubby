@@ -1,4 +1,4 @@
-// Home (the connect-your-agent card and the token) and /apps (the user's own apps as cards).
+// Home's connect-your-agent card, and /apps (the user's own apps, one table row each).
 export class MyAppsSection {
   constructor(page) {
     this.page = page;
@@ -6,42 +6,19 @@ export class MyAppsSection {
     this.appIdea = this.connectHeading.locator('.chip');
     this.setupPrompt = page.getByLabel('Setup prompt');
     this.copyPromptButton = page.getByRole('button', { name: 'Copy prompt for agent' });
-    this.tokenToggle = page.getByText('Token for scripts and CI');
-    this.token = page.getByLabel('Your token');
-    this.revealButton = page.getByRole('button', { name: 'Reveal' });
-    this.regenerateButton = page.getByRole('button', { name: 'Regenerate' });
+    this.table = page.getByRole('table', { name: 'Your apps' });
     this.emptyState = page.getByText('No apps yet.');
   }
 
   app(name) {
-    const card = this.page.getByRole('article', { name, exact: true });
+    const row = this.table.getByRole('row', { name, exact: true });
     return {
-      card,
-      status: card.getByText(/^Deployed |^Not deployed yet$/),
-      openLink: card.getByRole('link', { name: /Open/ }),
-      showInGallery: card.getByLabel('Show in gallery'),
-      unlistedBadge: card.getByText('unlisted', { exact: true }),
-      deleteButton: card.getByRole('button', { name: 'Delete' }),
-      jobsToggle: card.getByText(/^Scheduled jobs \(\d+\)$/),
-      job: (job) => {
-        const group = card.getByRole('group', { name: `Job ${job}` });
-        return {
-          group,
-          state: group.locator('.badge'),
-          details: group.getByText(/ UTC · /),
-          runButton: group.getByRole('button', { name: 'Run now' }),
-          pauseButton: group.getByRole('button', { name: 'Pause' }),
-          resumeButton: group.getByRole('button', { name: 'Resume' }),
-          lastLogButton: group.getByRole('button', { name: 'Last log' }),
-          log: group.locator('pre'),
-        };
-      },
+      row,
+      link: row.getByRole('link', { name, exact: true }),
+      status: row.getByText(/^Deployed |^Not deployed yet$/),
+      openLink: row.getByRole('link', { name: `Open ${name}` }),
+      unlistedBadge: row.getByText('unlisted', { exact: true }),
+      sparkline: row.getByRole('img', { name: new RegExp(`^${name} views per day`) }),
     };
-  }
-
-  async revealToken() {
-    await this.tokenToggle.click();
-    await this.revealButton.click();
-    return (await this.token.textContent()).trim();
   }
 }
