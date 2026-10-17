@@ -19,7 +19,13 @@ test('dashboard and admin fit a phone screen without sideways scrolling, in ligh
     await dashboard.agents.connectButton.waitFor();
     expect(await fitsWidth(), `Agents overflows at 390px (${colorScheme})`).toBe(true);
     await dashboard.openAdmin();
+    await page.waitForLoadState('networkidle');
     expect(await fitsWidth(), `Admin overflows at 390px (${colorScheme})`).toBe(true);
+    for (const tab of ['Users', 'Apps', 'Agents', 'Jobs', 'Settings', 'Storage']) {
+      await dashboard.admin.openTab(tab);
+      await page.waitForLoadState('networkidle');
+      expect(await fitsWidth(), `Admin ${tab} overflows at 390px (${colorScheme})`).toBe(true);
+    }
 
     backgrounds[colorScheme] = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     await context.close();
@@ -36,7 +42,7 @@ test("an app's page fits a phone: the tabs scroll sideways inside their bar, the
     const dashboard = new DashboardPage(page);
     await dashboard.openAs(user.token, `/apps/${slug}`);
     await expect(dashboard.app.chart('Views')).toBeVisible();
-    for (const path of [`/apps/${slug}`, `/apps/${slug}/deploys`, `/apps/${slug}/env`, '/apps', '/']) {
+    for (const path of [`/apps/${slug}`, `/apps/${slug}/deploys`, `/apps/${slug}/env`, `/apps/${slug}/data`, '/apps', '/']) {
       await page.goto(path);
       await page.waitForLoadState('networkidle');
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${path} overflows at 390px (${colorScheme})`).toBe(true);

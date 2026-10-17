@@ -6,6 +6,7 @@ import { CommandPalette } from './command-palette.js';
 import { HomeSection } from './home-page.js';
 import { AgentsSection } from './agents-page.js';
 import { AppPage } from './app-page.js';
+import { DataPanel } from './data-panel.js';
 
 export class DashboardPage {
   constructor(page) {
@@ -28,6 +29,7 @@ export class DashboardPage {
     this.home = new HomeSection(page);
     this.agents = new AgentsSection(page);
     this.app = new AppPage(page);
+    this.data = new DataPanel(page);
   }
 
   /** Opens the dashboard already signed in, the way a returning user arrives (or follows a link to `path`). */
@@ -52,8 +54,10 @@ export class DashboardPage {
     await this.page.waitForURL('**/explore');
   }
 
-  async openAdmin() {
+  /** Opens Admin from the sidebar (its Overview), then `tab` if given ('Settings', 'Storage', …). */
+  async openAdmin(tab) {
     await this.adminLink.click();
-    await this.admin.inviteHeading.waitFor();
+    await this.admin.kpis.waitFor();
+    if (tab) await this.admin.openTab(tab);
   }
 }

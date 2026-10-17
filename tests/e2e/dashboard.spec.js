@@ -112,14 +112,36 @@ test('every page has its own URL: deep links and reloads land on it, and back/fo
 
   await dashboard.openAs(user.token, '/apps/not-mine');
   await expect(page.getByText("You don't have an app called not-mine.")).toBeVisible();
-  await dashboard.openAs(user.token, '/admin');
-  await expect(page).toHaveURL(/\/$/, { timeout: 5_000 }); // not an admin: back to Home
-  await expect(dashboard.pageHeading).toHaveText('Home');
+  for (const path of ['/admin', '/admin/storage', '/admin/apps/not-mine']) {
+    await dashboard.openAs(user.token, path);
+    await expect(page).toHaveURL(/\/$/, { timeout: 5_000 }); // not an admin: back to Home
+    await expect(dashboard.pageHeading).toHaveText('Home');
+  }
+  expect((await api.as(user.token)('GET', '/api/admin/storage')).status).toBe(403);
+});
 
-  await dashboard.openAs(await api.adminToken(), '/admin');
-  await expect(dashboard.admin.inviteHeading).toBeVisible();
+test('admin tabs are in the URL: a reload, back and forward keep the tab', async ({ page, api, dashboard }) => {
+  const { admin } = dashboard;
+  await dashboard.openAs(await api.adminToken(), '/admin/settings');
+  await expect(admin.inviteHeading).toBeVisible();
+  await expect(admin.currentTab).toHaveText('Settings');
   await page.reload();
-  await expect(dashboard.admin.inviteHeading).toBeVisible();
+  await expect(admin.inviteHeading).toBeVisible();
+  await expect(admin.currentTab).toHaveText('Settings');
+
+  await admin.openTab('Storage');
+  await expect(admin.diskBar).toBeVisible();
+  await page.reload();
+  await expect(admin.currentTab).toHaveText('Storage');
+  await expect(admin.diskBar).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/admin\/settings$/);
+  await expect(admin.inviteHeading).toBeVisible();
+  await admin.openTab('Overview');
+  await expect(admin.kpis).toBeVisible();
+  await expect(page.getByRole('img', { name: /^Views: / })).toBeVisible();
+  await expect(dashboard.currentPage).toHaveText('Admin');
 });
 
 test('the command palette opens with Ctrl+K, finds an app and goes to it, and Esc closes it', async ({ page, context, api, dashboard }) => {

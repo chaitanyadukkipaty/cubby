@@ -607,6 +607,21 @@ describe('admin totals', () => {
     assert.equal(s.api_error_rate, 0);
   });
   test('no apps: zeros', () => {
-    assert.deepEqual(summarizeMetrics([], {}), { from: null, to: null, apps: 0, views: 0, visitors: 0, active_now: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_apps: [] });
+    assert.deepEqual(summarizeMetrics([], {}), { from: null, to: null, apps: 0, views: 0, visitors: 0, active_now: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_apps: [], hours: [], days: [] });
+  });
+  test("every app's hours and days added up by bucket, for the server-wide chart", () => {
+    const projects = [{ id: 'a', slug: 'ant' }, { id: 'b', slug: 'bee' }];
+    const day = (start, views, visitors) => ({ start, views, visitors, api_requests: 1, api_errors: 0, peak_active: 2 });
+    const hour = (start, views) => ({ start, views, peak_active: 1, api_requests: 2, api_errors: 1 });
+    const report = {
+      a: { ...rep(3, 2, 0, 0), days: [day('D1', 1, 1), day('D2', 2, 1)], hours: [hour('H1', 3)] },
+      b: { ...rep(5, 2, 0, 0), days: [day('D1', 4, 2), day('D2', 1, 0)], hours: [hour('H1', 5)] },
+    };
+    const s = summarizeMetrics(projects, report);
+    assert.deepEqual(s.days, [
+      { start: 'D1', views: 5, visitors: 3, api_requests: 2, api_errors: 0, peak_active: 4 },
+      { start: 'D2', views: 3, visitors: 1, api_requests: 2, api_errors: 0, peak_active: 4 },
+    ]);
+    assert.deepEqual(s.hours, [{ start: 'H1', views: 8, peak_active: 2, api_requests: 4, api_errors: 2 }]);
   });
 });

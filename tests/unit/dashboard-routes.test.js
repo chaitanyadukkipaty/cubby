@@ -2,7 +2,7 @@
 // a path the server serves the shell for is always a path the router can draw.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchRoute, navItems, appPath } from '../../server/public/js/routes.js';
+import { matchRoute, navItems, appPath, adminPath, ADMIN_TABS, APP_TABS } from '../../server/public/js/routes.js';
 
 describe('matchRoute()', () => {
   test('top-level pages', () => {
@@ -10,7 +10,7 @@ describe('matchRoute()', () => {
     assert.deepEqual(matchRoute('/apps'), { name: 'apps' });
     assert.deepEqual(matchRoute('/agents'), { name: 'agents' });
     assert.deepEqual(matchRoute('/explore'), { name: 'explore' });
-    assert.deepEqual(matchRoute('/admin'), { name: 'admin' });
+    assert.deepEqual(matchRoute('/admin'), { name: 'admin', tab: 'overview' });
     assert.deepEqual(matchRoute('/connect'), { name: 'connect' });
   });
   test('an app page carries its slug', () => {
@@ -19,6 +19,20 @@ describe('matchRoute()', () => {
   });
   test('an app page tab is part of the path, so a reload keeps it', () => {
     assert.deepEqual(matchRoute('/apps/polls/deploys'), { name: 'app', slug: 'polls', tab: 'deploys' });
+  });
+  test('the Data tab of an app page', () => {
+    assert.deepEqual(matchRoute('/apps/polls/data'), { name: 'app', slug: 'polls', tab: 'data' });
+    assert.ok(APP_TABS.indexOf('data') < APP_TABS.indexOf('settings'));
+  });
+  test('an admin tab is part of the path, so a reload keeps it', () => {
+    assert.deepEqual(ADMIN_TABS, ['overview', 'users', 'apps', 'agents', 'jobs', 'settings', 'storage']);
+    for (const tab of ADMIN_TABS.slice(1)) assert.deepEqual(matchRoute(`/admin/${tab}`), { name: 'admin', tab });
+    assert.deepEqual(matchRoute('/admin/storage/'), { name: 'admin', tab: 'storage' });
+  });
+  test("an admin's data page for any app lives under Admin → Apps", () => {
+    assert.deepEqual(matchRoute('/admin/apps/polls'), { name: 'admin', tab: 'apps', slug: 'polls' });
+    for (const p of ['/admin/overview', '/admin/nope', '/admin/users/polls', '/admin/apps/Polls', '/admin/apps/polls/x', '/admin/constructor'])
+      assert.equal(matchRoute(p), null, p);
   });
   test("an agent's page carries its id (a PocketBase id: 15 lowercase letters and digits)", () => {
     assert.deepEqual(matchRoute('/agents/a1b2c3d4e5f6g7h'), { name: 'agent', id: 'a1b2c3d4e5f6g7h' });
@@ -49,6 +63,16 @@ describe('appPath()', () => {
   });
 });
 
+describe('adminPath()', () => {
+  test('the overview is the bare /admin; other tabs add a segment; an app adds its slug under apps', () => {
+    assert.equal(adminPath(), '/admin');
+    assert.equal(adminPath('overview'), '/admin');
+    assert.equal(adminPath('storage'), '/admin/storage');
+    assert.equal(adminPath('apps', 'polls'), '/admin/apps/polls');
+    assert.deepEqual(matchRoute(adminPath('apps', 'polls')), { name: 'admin', tab: 'apps', slug: 'polls' });
+  });
+});
+
 describe('navItems()', () => {
   const labels = (items) => items.map((i) => i.label);
   const current = (items) => items.filter((i) => i.current).map((i) => i.href);
@@ -62,6 +86,7 @@ describe('navItems()', () => {
     assert.deepEqual(current(navItems({}, matchRoute('/apps/polls'))), ['/apps']);
     assert.deepEqual(current(navItems({}, matchRoute('/agents/a1b2c3d4e5f6g7h'))), ['/agents']);
     assert.deepEqual(current(navItems({ is_admin: true }, matchRoute('/admin'))), ['/admin']);
+    assert.deepEqual(current(navItems({ is_admin: true }, matchRoute('/admin/storage'))), ['/admin']);
     assert.deepEqual(current(navItems({}, null)), []);
   });
 });

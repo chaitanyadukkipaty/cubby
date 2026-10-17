@@ -103,6 +103,14 @@ describe('needsAttention()', () => {
     assert.match(items[0].prompt, /weekly-digest/);
     assert.match(items[1].prompt, /9 API errors/);
   });
+  test("an app whose data an admin cleared comes first, linking to its Data tab instead of a prompt", () => {
+    const items = feed.needsAttention({
+      apps: [{ slug: 'polls', admin_clear: { by: 'admin@x.dev', reason: 'spam', snapshot: 's1' } }, { slug: 'quiet', admin_clear: null }],
+      jobs: [{ app: 'polls', name: 'nightly', last_run: { status: 'error' } }],
+    });
+    assert.deepEqual(items[0], { app: 'polls', kind: 'admin_clear', text: 'had data cleared by an admin (admin@x.dev): spam', prompt: null, href: '/apps/polls/data' });
+    assert.equal(items.length, 2);
+  });
 });
 
 describe('feedEntries()', () => {
