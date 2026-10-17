@@ -192,8 +192,8 @@ async function ensurePlatformCollections() {
     indexes: ['CREATE INDEX idx_cubby_job_runs_job ON cubby_job_runs (project, job, started)'],
   });
 
-  // App metrics (metrics.js): per-app counts in hourly and UTC-daily buckets ("hour" / "day"), added to on every
-  // flush. Never holds IPs. Later counters (API requests, errors, peaks) are new number fields on the same buckets.
+  // App metrics (metrics.js): per-app counts added to on every flush. "hour" buckets have views only; "day" (UTC)
+  // buckets have views and unique visitors (visitors stays 0 on hourly rows). Never holds IPs. Later counters (API requests, errors, peaks) are new number fields on the same buckets.
   await upsertCollection({
     name: 'cubby_metrics',
     type: 'base',

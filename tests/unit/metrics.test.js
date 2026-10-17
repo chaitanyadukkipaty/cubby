@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { createMetrics, countsAsView, parseRange, pocketbaseStore } from '../../server/src/metrics.js';
+import { createHash } from 'node:crypto';
+import { createMetrics, countsAsView, parseRange, pocketbaseStore, visitorId } from '../../server/src/metrics.js';
 
 // In-memory stand-in for the cubby_metrics collection.
 function memoryStore() {
@@ -30,34 +31,40 @@ function setup({ at = T0, ...opts } = {}) {
 const bucket = (store, period, start) => store.rows.find((r) => r.period === period && r.start === start);
 
 describe('counting page views', () => {
-  test('a recorded view lands in its hourly bucket when flushed', async () => {
+  test('a recorded view lands in its hourly bucket (views only) and its daily bucket when flushed', async () => {
     const { m, store } = setup();
     m.record('p1', visit());
     await m.flush();
     assert.deepEqual(
       { ...bucket(store, 'hour', '2026-10-17T10:00:00.000Z'), id: undefined },
-      { id: undefined, project: 'p1', period: 'hour', start: '2026-10-17T10:00:00.000Z', views: 1, visitors: 1 },
+      { id: undefined, project: 'p1', period: 'hour', start: '2026-10-17T10:00:00.000Z', views: 1 },
+    );
+    assert.deepEqual(
+      { ...bucket(store, 'day', '2026-10-17T00:00:00.000Z'), id: undefined },
+      { id: undefined, project: 'p1', period: 'day', start: '2026-10-17T00:00:00.000Z', views: 1, visitors: 1 },
     );
   });
-  test('the same visitor counts once; a different IP or browser is another visitor', async () => {
+  test('the same visitor counts once a day; a different IP or browser is another visitor', async () => {
     const { m, store } = setup();
     m.record('p1', visit());
     m.record('p1', visit());
     m.record('p1', visit('198.51.100.1'));
     m.record('p1', visit('203.0.113.7', 'Mozilla/5.0 (Windows NT 10.0) Firefox/130'));
     await m.flush();
-    const h = bucket(store, 'hour', '2026-10-17T10:00:00.000Z');
-    assert.deepEqual([h.views, h.visitors], [4, 3]);
+    const d = bucket(store, 'day', '2026-10-17T00:00:00.000Z');
+    assert.deepEqual([d.views, d.visitors], [4, 3]);
+    assert.equal(bucket(store, 'hour', '2026-10-17T10:00:00.000Z').views, 4);
   });
-  test('daily unique visitors are kept separately: a visitor in two hours counts in each hour but once that day', async () => {
+  test('views are counted per hour, unique visitors only per day', async () => {
     const { m, store, clock } = setup();
     m.record('p1', visit());
     clock.t += 3_600_000;
     m.record('p1', visit());
     m.record('p1', visit('198.51.100.1'));
     await m.flush();
-    assert.equal(bucket(store, 'hour', '2026-10-17T10:00:00.000Z').visitors, 1);
-    assert.equal(bucket(store, 'hour', '2026-10-17T11:00:00.000Z').visitors, 2);
+    assert.equal(bucket(store, 'hour', '2026-10-17T10:00:00.000Z').views, 1);
+    assert.equal(bucket(store, 'hour', '2026-10-17T11:00:00.000Z').views, 2);
+    assert.ok(store.rows.filter((r) => r.period === 'hour').every((r) => !('visitors' in r)));
     const day = bucket(store, 'day', '2026-10-17T00:00:00.000Z');
     assert.deepEqual([day.views, day.visitors], [3, 2]);
   });
@@ -79,10 +86,8 @@ describe('counting page views', () => {
     for (const ip of ['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.1']) m.record('p1', visit(ip));
     m.record('p2', visit('10.0.0.3')); // the cap is per app
     await m.flush();
-    for (const period of ['hour', 'day']) {
-      const b = store.rows.find((r) => r.project === 'p1' && r.period === period);
-      assert.deepEqual([b.views, b.visitors], [4, 2], period);
-    }
+    const day = store.rows.find((r) => r.project === 'p1' && r.period === 'day');
+    assert.deepEqual([day.views, day.visitors], [4, 2]);
     assert.equal(store.rows.find((r) => r.project === 'p2' && r.period === 'day').visitors, 1);
   });
   test('stored buckets never contain the IP or user agent', async () => {
@@ -91,6 +96,13 @@ describe('counting page views', () => {
     await m.flush();
     const stored = JSON.stringify(store.rows);
     assert.doesNotMatch(stored, /203\.0\.113\.7|Safari/);
+  });
+  test('a visitor id is the first 6 bytes of the salted sha256, as a number', () => {
+    const id = visitorId('salt', '203.0.113.7', BROWSER);
+    const expected = createHash('sha256').update(`salt\n203.0.113.7\n${BROWSER}`).digest().readUIntBE(0, 6);
+    assert.equal(id, expected);
+    assert.ok(Number.isSafeInteger(id) && id >= 0 && id < 2 ** 48);
+    assert.notEqual(visitorId('other-salt', '203.0.113.7', BROWSER), id);
   });
   test('the default cap is 200k visitors per app and day', async () => {
     const { VISITOR_CAP } = await import('../../server/src/metrics.js');
@@ -108,8 +120,9 @@ describe('flushing', () => {
     await m.flush();
     await m.flush(); // nothing new: no writes
     assert.equal(store.rows.length, 2);
-    const h = bucket(store, 'hour', '2026-10-17T10:00:00.000Z');
-    assert.deepEqual([h.views, h.visitors], [3, 2]);
+    assert.equal(bucket(store, 'hour', '2026-10-17T10:00:00.000Z').views, 3);
+    const d = bucket(store, 'day', '2026-10-17T00:00:00.000Z');
+    assert.deepEqual([d.views, d.visitors], [3, 2]);
   });
   test('a started counter flushes on its own every interval (60s by default), and a failure is logged, not thrown', async (t) => {
     const { FLUSH_MS } = await import('../../server/src/metrics.js');
@@ -139,8 +152,9 @@ describe('flushing', () => {
     store.create = create;
     await m.flush();
     const h = bucket(store, 'hour', '2026-10-17T10:00:00.000Z');
-    assert.deepEqual([h.views, h.visitors], [2, 2]);
-    assert.equal(bucket(store, 'day', '2026-10-17T00:00:00.000Z').views, 2);
+    assert.equal(h.views, 2);
+    const d = bucket(store, 'day', '2026-10-17T00:00:00.000Z');
+    assert.deepEqual([d.views, d.visitors], [2, 2]);
   });
   test('overlapping flushes run one after the other, so a bucket is never created twice', async () => {
     const { m, store } = setup();
@@ -170,9 +184,9 @@ describe('reports', () => {
     assert.equal(p1.from, '2026-10-16T11:00:00.000Z');
     assert.equal(p1.to, new Date(T0).toISOString());
     assert.equal(p1.hours.length, 24);
-    assert.deepEqual(p1.hours[1], { start: '2026-10-16T12:00:00.000Z', views: 1, visitors: 1 });
-    assert.deepEqual(p1.hours[0], { start: '2026-10-16T11:00:00.000Z', views: 0, visitors: 0 });
-    assert.deepEqual(p1.hours[23], { start: '2026-10-17T10:00:00.000Z', views: 3, visitors: 2 });
+    assert.deepEqual(p1.hours[1], { start: '2026-10-16T12:00:00.000Z', views: 1 });
+    assert.deepEqual(p1.hours[0], { start: '2026-10-16T11:00:00.000Z', views: 0 });
+    assert.deepEqual(p1.hours[23], { start: '2026-10-17T10:00:00.000Z', views: 3 });
     assert.deepEqual(p1.days, [
       { start: '2026-10-16T00:00:00.000Z', views: 2, visitors: 1 },
       { start: '2026-10-17T00:00:00.000Z', views: 3, visitors: 2 },
@@ -184,7 +198,7 @@ describe('reports', () => {
     const { m } = setup();
     const { p9 } = await m.report(['p9'], 1);
     assert.deepEqual(p9, { from: '2026-10-17T10:00:00.000Z', to: new Date(T0).toISOString(), views: 0, visitors: 0,
-      hours: [{ start: '2026-10-17T10:00:00.000Z', views: 0, visitors: 0 }], days: [{ start: '2026-10-17T00:00:00.000Z', views: 0, visitors: 0 }] });
+      hours: [{ start: '2026-10-17T10:00:00.000Z', views: 0 }], days: [{ start: '2026-10-17T00:00:00.000Z', views: 0, visitors: 0 }] });
   });
 });
 

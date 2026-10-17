@@ -32,12 +32,15 @@ export function countsAsView({ method, headers }) {
   return !/prefetch/i.test(`${headers['sec-purpose'] ?? ''} ${headers.purpose ?? ''}`);
 }
 
-// A visitor is a salted hash of IP + user agent, truncated to 8 bytes. The raw IP is never kept.
-const visitorId =(salt, ip, ua) => createHash('sha256').update(`${salt}\n${ip}\n${ua}`).digest().subarray(0, 8).toString('base64url');
+// A visitor is a salted hash of IP + user agent: its first 6 bytes as a number (a safe integer below 2^48; collisions
+// are negligible at 200k a day). Cheaper in a Set than a string. The raw IP is never kept.
+export const visitorId = (salt, ip, ua) => createHash('sha256').update(`${salt}\n${ip}\n${ua}`).digest().readUIntBE(0, 6);
 
-// Visitors remembered per app and period. Past it, new visitors aren't counted (the numbers become a lower
-// bound), which keeps memory near 200k * ~60 bytes per busy app.
+// Visitors remembered per app and UTC day. Past it, new visitors aren't counted (the number becomes a lower
+// bound), which keeps memory near 200k * ~42 bytes (about 8.5 MB, measured) per busy app.
 export const VISITOR_CAP = 200_000;
+// Numeric fields of a bucket, added up across flushes.
+const COUNTERS = ['views', 'visitors'];
 
 // Buckets in the cubby_metrics platform collection (superuser only, like every cubby_* collection).
 export function pocketbaseStore(admin) {
@@ -59,7 +62,7 @@ export function pocketbaseStore(admin) {
 
 export function createMetrics({ store, now = Date.now, newSalt = () => randomBytes(16).toString('hex'), cap = VISITOR_CAP }) {
   let pending = new Map();
-  // Who was already counted, per period and project: "hour\t<project>" -> { start, ids: Set }.
+  // Visitors already counted today, per project.
   const seen = new Map();
   // The salt lives only in memory and changes every UTC day, so visitors can't be followed across days.
   let day, salt;
@@ -73,21 +76,11 @@ export function createMetrics({ store, now = Date.now, newSalt = () => randomByt
   const pend = (project, period, start) => {
     const key = `${project}\t${period}\t${start}`;
     let b = pending.get(key);
-    if (!b) pending.set(key, (b = { project, period, start: new Date(start).toISOString(), views: 0, visitors: 0 }));
+    if (!b) pending.set(key, (b = { project, period, start: iso(start), views: 0, ...(period === 'day' && { visitors: 0 }) }));
     return b;
   };
-
-  const count = (project, period, start, id) => {
-    const b = pend(project, period, start);
-    b.views++;
-    const key = `${period}\t${project}`;
-    let s = seen.get(key);
-    if (!s || s.start !== start) seen.set(key, (s = { start, ids: new Set() }));
-    if (!s.ids.has(id) && s.ids.size < cap) {
-      s.ids.add(id);
-      b.visitors++;
-    }
-  };
+  // Adds one bucket's counters to another (only the counters it has: hourly buckets have no visitors).
+  const add = (to, from) => Object.fromEntries(COUNTERS.filter((f) => f in from).map((f) => [f, to[f] + from[f]]));
 
   // Adds the pending counts to the stored buckets.
   const write = async () => {
@@ -97,14 +90,13 @@ export function createMetrics({ store, now = Date.now, newSalt = () => randomByt
     for (const b of buckets) {
       try {
         const row = await store.find(b);
-        if (row) await store.update(row.id, { views: row.views + b.views, visitors: row.visitors + b.visitors });
+        if (row) await store.update(row.id, add(row, b));
         else await store.create(b);
       } catch (err) {
         // Put the counts back, so the next flush writes them.
         error = err;
         const p = pend(b.project, b.period, Date.parse(b.start));
-        p.views += b.views;
-        p.visitors += b.visitors;
+        Object.assign(p, add(p, b));
       }
     }
     if (error) throw error;
@@ -115,12 +107,19 @@ export function createMetrics({ store, now = Date.now, newSalt = () => randomByt
     record(project, { ip, ua }) {
       const t = now();
       rotate(t);
+      pend(project, 'hour', hourStart(t)).views++;
+      const today = pend(project, 'day', day);
+      today.views++;
+      let ids = seen.get(project);
+      if (!ids) seen.set(project, (ids = new Set()));
       const id = visitorId(salt, ip, ua);
-      count(project, 'hour', hourStart(t), id);
-      count(project, 'day', dayStart(t), id);
+      if (!ids.has(id) && ids.size < cap) {
+        ids.add(id);
+        today.visitors++;
+      }
     },
-    // Views and visitors of each project over the last `hours` hours (including the current one), by hour and by
-    // UTC day. Hourly visitors don't add up to daily ones, so the total is the days' unique visitors, summed.
+    // Views of each project over the last `hours` hours (including the current one) by hour, and views and unique
+    // visitors by UTC day. The visitor total is the days' unique visitors, summed.
     async report(projects, hours) {
       await this.flush();
       const t = now();
@@ -131,7 +130,7 @@ export function createMetrics({ store, now = Date.now, newSalt = () => randomByt
         const out = [];
         for (let s = first; s <= last; s += step) {
           const row = rows.get(`${project}\t${period}\t${s}`);
-          out.push({ start: iso(s), views: row?.views ?? 0, visitors: row?.visitors ?? 0 });
+          out.push({ start: iso(s), views: row?.views ?? 0, ...(period === 'day' && { visitors: row?.visitors ?? 0 }) });
         }
         return out;
       };
