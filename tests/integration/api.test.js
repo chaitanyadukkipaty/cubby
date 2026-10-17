@@ -222,9 +222,22 @@ describe('browser-approval login', () => {
 });
 
 describe('public pages and files', () => {
+  const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+  test('agents and curl get the setup steps as plain text at /; browsers get the dashboard', async () => {
+    const r = await anon('GET', '/', { headers: { 'user-agent': 'curl/8.7.1' } });
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^text\/plain/);
+    assert.equal(r.headers.get('vary'), 'User-Agent');
+    const { name } = (await anon('GET', '/api/info')).data;
+    assert.ok(r.text.startsWith(`${name} is a Cubby server`));
+    assert.ok(r.text.includes('npx skills add chaitanyadukkipaty/cubby --skill cubby -g'));
+    assert.ok(r.text.includes(`curl -fsSL ${srv.url}/skill.sh | sh`));
+    assert.ok(r.text.includes(`Docs:  ${srv.url}/docs.md`));
+    assert.match((await anon('GET', '/connect', { headers: { 'user-agent': 'curl/8.7.1' } })).headers.get('content-type'), /text\/html/, '/connect is only ever opened in a browser');
+  });
   test('dashboard, connect page, docs, skill, CLI tarball', async () => {
     for (const p of ['/', '/connect']) {
-      const r = await anon('GET', p);
+      const r = await anon('GET', p, { headers: { 'user-agent': BROWSER_UA } });
       assert.equal(r.status, 200);
       assert.match(r.headers.get('content-type'), /text\/html/);
       assert.ok(r.text.includes(srv.url), 'server URL is filled in');

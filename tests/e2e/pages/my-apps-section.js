@@ -2,9 +2,10 @@
 export class MyAppsSection {
   constructor(page) {
     this.page = page;
-    this.connectHeading = page.getByRole('heading', { name: 'Connect your AI agent' });
-    this.installCommand = page.getByText(/^curl -fsSL \S+\/skill\.sh \| sh$/);
-    this.copyCommandButton = page.getByRole('button', { name: 'Copy command' });
+    this.connectHeading = page.getByRole('heading', { name: /^A home for every/ });
+    this.appIdea = this.connectHeading.locator('.chip');
+    this.setupPrompt = page.getByLabel('Setup prompt');
+    this.copyPromptButton = page.getByRole('button', { name: 'Copy prompt for agent' });
     this.tokenToggle = page.getByText('Token for scripts and CI');
     this.token = page.getByLabel('Your token');
     this.revealButton = page.getByRole('button', { name: 'Reveal' });

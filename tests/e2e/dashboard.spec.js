@@ -16,7 +16,10 @@ test('a new user signs up with the signup code and lands on their dashboard', as
   await authPage.createAccountButton.click();
   await expect(dashboard.account(email)).toBeVisible();
   await expect(dashboard.myApps.connectHeading).toBeVisible();
-  await expect(dashboard.myApps.installCommand).toHaveText(`curl -fsSL ${baseURL}/skill.sh | sh`);
+  await expect(dashboard.myApps.appIdea).toHaveText('polls');
+  await expect(dashboard.myApps.appIdea).toHaveText('chat', { timeout: 5_000 }); // the highlighted app idea rotates
+  await expect(dashboard.myApps.setupPrompt).toContainText('npx skills add chaitanyadukkipaty/cubby --skill cubby -g');
+  await expect(dashboard.myApps.setupPrompt).toContainText(`curl -fsSL ${baseURL}/skill.sh | sh`);
   await expect(dashboard.myApps.emptyState).toBeVisible();
   await expect(dashboard.adminTab).toHaveCount(0);
 
@@ -52,9 +55,9 @@ test('the token can be revealed and copied, and regenerating it revokes the old 
   await expect(dashboard.myApps.token).toHaveText(/^hk_\S{3}•+$/);
   expect(await dashboard.myApps.revealToken()).toBe(user.token);
 
-  await dashboard.myApps.copyCommandButton.click();
-  await expect(dashboard.toast).toHaveText('Command copied');
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/\/skill\.sh \| sh$/);
+  await dashboard.myApps.copyPromptButton.click();
+  await expect(dashboard.toast).toHaveText('Prompt copied');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^I'd like you to set up Cubby: [\s\S]*\/docs\.md and ask me what I'd like to build\.$/);
 
   answerNextDialog(page);
   await dashboard.myApps.regenerateButton.click();

@@ -70,6 +70,19 @@
   th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
   th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
   .table-wrap { overflow-x: auto; }
+  .connect { padding: 28px 28px 20px; }
+  .connect .headline { font-size: 44px; line-height: 1.22; letter-spacing: -0.02em; font-weight: 650; margin: 0 0 10px; }
+  .connect .chip { display: inline-block; background: var(--code); border-radius: 8px; padding: 0 10px; transition: opacity .25s, transform .25s; }
+  .connect .chip.out { opacity: 0; transform: translateY(-0.25em); }
+  @media (prefers-reduced-motion: reduce) { .connect .chip { transition: none; } .connect .chip.out { transform: none; } }
+  .connect .lede { color: var(--muted); max-width: 560px; margin-bottom: 22px; }
+  button.pill { background: var(--fg); color: var(--bg); border-color: var(--fg); border-radius: 999px; padding: 14px 24px;
+    font-size: 16px; font-weight: 500; display: inline-flex; align-items: center; gap: 14px; }
+  button.pill:hover { opacity: .88; border-color: var(--fg); }
+  .agents-label { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; margin: 30px 0 10px; }
+  .agents { display: flex; flex-wrap: wrap; gap: 8px; }
+  .agents span { border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 14px; font-weight: 500; }
+  @media (max-width: 760px) { .connect { padding: 20px; } .connect .headline { font-size: 30px; } }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
   .stat b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
   .empty { text-align: center; padding: 32px; color: var(--muted); }
@@ -107,6 +120,17 @@ function ago(date, now = Date.now()) {
 }
 const maskToken = (t) => `${String(t).slice(0, 6)}${'•'.repeat(20)}`;
 const installCommand = (server) => `curl -fsSL ${server}/skill.sh | sh`;
+const SKILL_REPO = 'chaitanyadukkipaty/cubby';
+// What a user pastes into their agent. Stating the intent and the server up front (and letting the agent read the
+// installer) is what keeps agents from flagging a bare `curl | sh` from an unknown domain as malicious.
+function setupPrompt(server, name) {
+  const named = displayName(name) !== 'Cubby' ? `${displayName(name)} at ` : '';
+  return `I'd like you to set up Cubby: ${named}${server}, a self-hosted server where you build and host web apps for me.\n`
+    + `Install it as a skill if I have npm: npx skills add ${SKILL_REPO} --skill cubby -g\n`
+    + `If not, do this instead: ${installCommand(server)}\n`
+    + `After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to connect to ${server} `
+    + `(you'll send me a link to approve), review the docs at ${server}/docs.md and ask me what I'd like to build.`;
+}
 const tokenLoginCommand = (server) => `cubby login ${server} --token <token>`;
 const displayName = (name) => (typeof name === 'string' && name.trim()) || 'Cubby';
 const inviteText = (server, code, name) => `Join ${name ? displayName(name) : 'my Cubby server'}: ${server}\nSignup code: ${code}`;
@@ -277,22 +301,40 @@ function render() {
   ({ apps: renderMyApps, gallery: renderGallery, admin: renderAdmin })[tab](body);
 }
 
+const APP_IDEAS = ['polls', 'chat', 'team tracker', 'booking', 'recipe', 'trivia', 'expense', 'quiz'];
+const AGENTS = ['Claude Code', 'Codex', 'Cursor', 'OpenCode'];
+// Cycles the highlighted word (fading out, swapping, fading back in) and stops once the card is re-rendered away.
+// Reduced motion keeps the swap but drops the fade and slide (see the .chip CSS).
+function rotate(el, words, ms = 1800) {
+  let i = 0;
+  const t = setInterval(() => {
+    if (!el.isConnected) return clearInterval(t);
+    el.classList.add('out');
+    setTimeout(() => { el.textContent = words[(i = (i + 1) % words.length)]; el.classList.remove('out'); }, 250);
+  }, ms);
+}
+
 function setupCard() {
-  const install = installCommand(SERVER);
+  const prompt = setupPrompt(SERVER, info.name);
   const masked = () => maskToken(me.token);
   let revealed = false;
   const tokenEl = h('code', { class: 'mono', 'aria-label': 'Your token' });
   const draw = () => { tokenEl.textContent = revealed ? me.token : masked(); };
   draw();
-  return h('div', { class: 'card stack' },
+  const idea = h('span', { class: 'chip' }, APP_IDEAS[0]);
+  rotate(idea, APP_IDEAS);
+  const copyIcon = h('span', { 'aria-hidden': 'true', style: 'display:inline-flex' });
+  copyIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+  return h('div', { class: 'card stack connect' },
     h('div', {},
-      h('h2', {}, 'Connect your AI agent'),
-      h('p', { class: 'muted small' }, 'Run this once on your computer. It teaches Claude Code, Codex, Cursor or OpenCode how to use this server:'),
-      h('pre', {}, install),
-      h('button', { class: 'primary', onclick: () => copy(install, 'Command copied') }, 'Copy command'),
-      h('p', { class: 'small', style: 'margin-top:12px' }, 'Then just ask your agent, for example: ',
-        h('i', {}, '“Build me a polls app for my friends and host it on Cubby.”'),
-        ' It sets itself up, sends you a link to approve, builds the app and gives you the URL.'),
+      h('h2', { class: 'headline' }, 'A home for', h('br'), 'every ', idea, h('br'), 'app you build with your agent'),
+      h('p', { class: 'lede' }, `Paste the prompt into your agent once. It installs the Cubby skill, sends you a link to approve, and builds on ${displayName(info.name)} from then on.`),
+      h('button', { class: 'pill', onclick: () => copy(prompt, 'Prompt copied') }, 'Copy prompt for agent', copyIcon),
+      h('details', { class: 'small', style: 'margin-top:14px' },
+        h('summary', { class: 'muted', style: 'cursor:pointer' }, 'See what the prompt says'),
+        h('pre', { 'aria-label': 'Setup prompt', style: 'word-break:normal;overflow-wrap:anywhere' }, prompt)),
+      h('p', { class: 'agents-label' }, 'Works with every agent'),
+      h('div', { class: 'agents' }, ...AGENTS.map((a) => h('span', {}, a))),
     ),
     h('details', { class: 'small', style: 'border-top:1px solid var(--line);padding-top:12px' },
       h('summary', { class: 'muted', style: 'cursor:pointer' }, 'Token for scripts and CI'),

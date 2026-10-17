@@ -108,6 +108,18 @@ describe('server names', () => {
     const out = logic.renderSkillInstaller(tpl, { publicUrl: 'https://p.dev', name: `Priya's "$(rm -rf ~)" \`x\`` });
     assert.equal(out, 'SERVER="https://p.dev"\nconst name = "Priya\'s \\"$(rm -rf ~)\\" `x`";\n# https://p.dev');
   });
+  test('isBrowser: only Mozilla/ user agents count; curl, agents and a missing header do not', () => {
+    assert.equal(logic.isBrowser('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/130 Safari/537.36'), true);
+    for (const ua of ['curl/8.7.1', 'node', 'Claude-User', '', undefined, 'python-requests/2.32']) assert.equal(logic.isBrowser(ua), false, String(ua));
+  });
+  test('agentLanding names the server and gives npm, curl and docs steps for its URL', () => {
+    const out = logic.agentLanding({ publicUrl: 'https://p.dev', name: "Priya's Cubby" });
+    assert.ok(out.startsWith("Priya's Cubby is a Cubby server"));
+    assert.ok(out.includes('  npx skills add chaitanyadukkipaty/cubby --skill cubby -g\n'));
+    assert.ok(out.includes('  curl -fsSL https://p.dev/skill.sh | sh\n'));
+    assert.ok(out.includes('connect to https://p.dev\n'));
+    assert.ok(out.endsWith('Docs:  https://p.dev/docs.md\n'));
+  });
   test('settingsPatch validates server_name and leaves it out when absent', () => {
     assert.deepEqual(logic.settingsPatch({ server_name: ' Acme ' }, () => 'x'), { server_name: 'Acme' });
     assert.ok(!('server_name' in logic.settingsPatch({ open_signup: true }, () => 'x')));

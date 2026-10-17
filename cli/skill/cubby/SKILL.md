@@ -37,10 +37,11 @@ command, edit a file, or answer a technical question.
 Do this yourself before building. Never ask the user to run anything.
 
 1. **Find the servers.** Run `cubby servers --json` (a list of `{ name, url, logged_in, default }`).
-   - `command not found`: read `~/.cubby/config.json` (`servers` → `url`); installing this skill
-     adds the server there. Install the CLI from that server (needs Node.js 20+):
-     `npm i -g {url}/cli.tgz`, then run `cubby servers --json` again.
-   - No servers anywhere: ask the user once: *"What's the URL of your Cubby server?"*
+   - `command not found`: take the server URL from the user's message (the setup prompt on their
+     dashboard names it), else from `~/.cubby/config.json` (`servers` → `url`). Install the CLI from
+     that server (needs Node.js 20+): `npm i -g {url}/cli.tgz`, then run `cubby servers --json` again.
+   - The user gave a server URL that isn't listed: logging in to it (step 3) adds it.
+   - No servers anywhere and no URL from the user: ask once: *"What's the URL of your Cubby server?"*
 2. **Pick one** (call it `{server}`, the name, or the URL if it has none):
    - Inside an app folder (has `cubby.json`): that app's server is fixed. Don't pass `--server`.
    - The user named one ("on Acme Cubby", "on Priya's server"): match it to a `name`.

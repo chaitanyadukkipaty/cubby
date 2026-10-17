@@ -8,7 +8,7 @@
 <link rel="icon" href="assets/logo.svg?v=aa679b5d" type="image/svg+xml">
 <meta property="og:title" content="Cubby: a home for the apps your agents build">
 <meta property="og:description" content="Self-host one server, invite your friends, and let AI coding agents build, deploy and share full-stack apps.">
-<meta property="og:image" content="assets/dashboard-my-apps.png?v=2a8e741c">
+<meta property="og:image" content="assets/dashboard-my-apps.png?v=7efca832">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -301,7 +301,7 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
       <h2>Invite people</h2>
       <p>Send your friends the server URL and the signup code. In the dashboard's <b>Admin</b> tab, <b>Copy invite</b> copies both. They open the URL, sign up with the code, and land on their dashboard, headed with your server's name.</p>
       <div class="two">
-        <figure class="shot"><img src="assets/dashboard-my-apps.png?v=2a8e741c" alt="Cubby dashboard showing the Connect your AI agent card and the user's Friend Polls app" loading="lazy" width="1280" height="820"><figcaption>What a friend sees after signing up.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-my-apps.png?v=7efca832" alt="Cubby dashboard showing the Copy prompt for agent button and the user's Friend Polls app" loading="lazy" width="1280" height="1040"><figcaption>What a friend sees after signing up.</figcaption></figure>
         <div>
           <p><b>Rotate code</b> invalidates the old code for new signups; existing accounts keep working.</p>
           <p><b>Open signup</b> drops the code requirement entirely. Leave it off for a server on the public internet: bots find open signup forms within days.</p>
@@ -313,9 +313,12 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
     <section id="agents">
       <p class="kicker">Everyone · once</p>
       <h2>Connect your agent</h2>
-      <p>Each person runs one command on their own computer. It's shown on their dashboard with the right server URL filled in:</p>
-      <div class="code"><pre>curl -fsSL https://cubby.example.com/skill.sh | sh</pre></div>
-      <p>This installs the <b>cubby skill</b>, instructions that teach your coding agent how to use Cubby, and adds this server to your list by name. The skill goes in <code>~/.agents/skills/cubby</code> and is linked into every agent it finds:</p>
+      <p>Each person pastes one prompt into their coding agent. It's shown on their dashboard with the server's name and URL filled in:</p>
+      <div class="code"><pre style="white-space:pre-wrap">I&#39;d like you to set up Cubby: Priya&#39;s Cubby at https://cubby.example.com, a self-hosted server where you build and host web apps for me.
+Install it as a skill if I have npm: npx skills add chaitanyadukkipaty/cubby --skill cubby -g
+If not, do this instead: curl -fsSL https://cubby.example.com/skill.sh | sh
+After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to connect to https://cubby.example.com (you&#39;ll send me a link to approve), review the docs at https://cubby.example.com/docs.md and ask me what I&#39;d like to build.</pre></div>
+      <p>The agent installs the <b>cubby skill</b>, instructions that teach it how to use Cubby, with <code>npx skills add</code> from GitHub (or the server's own <code>/skill.sh</code> without npm), sends you a link to approve, and adds the server to your list by name. It's a prompt, not a bare <code>curl … | sh</code>, so your agent knows what you're asking for instead of flagging an unknown script. Giving your agent just the server URL works too: anything that isn't a browser gets the setup steps as plain text from the root page. The skill goes in <code>~/.agents/skills/cubby</code> and is linked into every agent it finds:</p>
       <div class="grid">
         <div class="card"><h4>Claude Code</h4><p><code>~/.claude/skills</code></p></div>
         <div class="card"><h4>Codex</h4><p><code>~/.codex/skills</code></p></div>
@@ -481,7 +484,7 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
       <details class="faq"><summary>How big can it get?</summary><p>All apps share one SQLite database, which comfortably serves a group of friends or a small team. One very busy app slows the others. There's no per-app data quota yet; the Admin tab shows disk use so you can clean up.</p></details>
       <details class="faq"><summary>Which agents work?</summary><p>Any agent that supports skills (Claude Code, Codex, Cursor, OpenCode). Others can still use Cubby by reading <code>&lt;server&gt;/docs.md</code> and running the CLI.</p></details>
       <details class="faq"><summary>What's not supported yet?</summary><p>Server-side code, cron jobs, custom domains per app, single sign-on across apps, and app emails (verification, password reset).</p></details>
-      <details class="faq"><summary>Can I use several Cubby servers?</summary><p>Yes. Run each server's <code>skill.sh</code> command once; your agent then picks a server by its name, and asks if it isn't sure. <code>cubby servers</code> lists them and <code>cubby use</code> sets the default. Servers on different Cubby versions work side by side: the CLI always matches the server it's talking to (in an app folder, the server in <code>cubby.json</code>), downloading that server's version of the CLI once. Agents find out what a server supports with <code>cubby help --json</code>. Servers older than Cubby 0.1.1 aren't supported; the CLI tells you to ask the admin to run <code>sudo cubby-server upgrade</code>.</p></details>
+      <details class="faq"><summary>Can I use several Cubby servers?</summary><p>Yes. Paste each server's setup prompt into your agent once; the first one becomes the default for new apps; your agent then picks a server by its name, and asks if it isn't sure. <code>cubby servers</code> lists them and <code>cubby use</code> sets the default. Servers on different Cubby versions work side by side: the CLI always matches the server it's talking to (in an app folder, the server in <code>cubby.json</code>), downloading that server's version of the CLI once. Agents find out what a server supports with <code>cubby help --json</code>. Servers older than Cubby 0.1.1 aren't supported; the CLI tells you to ask the admin to run <code>sudo cubby-server upgrade</code>.</p></details>
       <details class="faq"><summary>A server moved to a new address. How do I move my app?</summary><p>Each app's <code>cubby.json</code> remembers its server's address. Log in to the new address, then run <code>cubby link &lt;app&gt; --server &lt;new-url&gt;</code> in the app's folder.</p></details>
       <details class="faq"><summary>Which version am I on, and how do I update?</summary><p>The Admin tab shows the version at the bottom and tells you when a newer release is out. On the server, <code>sudo cubby-server version</code> shows the details and <code>sudo cubby-server upgrade</code> updates (it backs up first). Normal releases go 0.1.1 → 0.1.2; only a major change moves to 0.2.0.</p></details>
       <details class="faq"><summary>My agent's login link expired.</summary><p>Links last 10 minutes. Ask the agent to try again; it starts a fresh one.</p></details>

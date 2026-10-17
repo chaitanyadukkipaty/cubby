@@ -278,8 +278,12 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/x-shellscript; charset=utf-8', 'cache-control': 'no-cache' });
       return res.end(logic.renderSkillInstaller(skillInstaller, { publicUrl: config.publicUrl, name: logic.serverName(await getSettings()) }));
     }
+    if (url.pathname === '/' && req.method === 'GET' && !logic.isBrowser(req.headers['user-agent'])) {
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache', vary: 'User-Agent' });
+      return res.end(logic.agentLanding({ publicUrl: config.publicUrl, name: logic.serverName(await getSettings()) }));
+    }
     if ((url.pathname === '/' || url.pathname === '/connect') && req.method === 'GET') {
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', vary: 'User-Agent' });
       return res.end(dashboard.replaceAll('{{PUBLIC_URL}}', config.publicUrl).replaceAll('{{VERSION}}', config.version));
     }
     sendPage(res, 404, 'Not found');

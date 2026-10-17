@@ -20,7 +20,7 @@ class FakeElement extends Node {
 function load() {
   const ctx = vm.createContext({ Node, document: { createElement: (t) => new FakeElement(t) }, URLSearchParams, Date, String, Object });
   vm.runInContext(block, ctx);
-  return vm.runInContext('({ h, fmtBytes, ago, maskToken, installCommand, tokenLoginCommand, inviteText, isHttps, parseConnectCode, apiErrorMessage, displayName, connectHeading })', ctx);
+  return vm.runInContext('({ h, fmtBytes, ago, maskToken, installCommand, setupPrompt, tokenLoginCommand, inviteText, isHttps, parseConnectCode, apiErrorMessage, displayName, connectHeading })', ctx);
 }
 
 test('the helper block exists and has no DOM-state or network access', () => {
@@ -89,6 +89,16 @@ describe('tokens and commands', () => {
   test('install and login commands use the server URL', () => {
     assert.equal(f.installCommand('https://cubby.example.com'), 'curl -fsSL https://cubby.example.com/skill.sh | sh');
     assert.equal(f.tokenLoginCommand('http://1-2-3-4.sslip.io'), 'cubby login http://1-2-3-4.sslip.io --token <token>');
+  });
+  test('setupPrompt names the server, installs the skill (npm first, skill.sh as fallback) and points at its docs', () => {
+    const p = f.setupPrompt('https://cubby.example.com', "Priya's Cubby");
+    assert.match(p, /^I'd like you to set up Cubby: Priya's Cubby at https:\/\/cubby\.example\.com, /);
+    assert.ok(p.includes('npx skills add chaitanyadukkipaty/cubby --skill cubby -g'));
+    assert.ok(p.includes('If not, do this instead: curl -fsSL https://cubby.example.com/skill.sh | sh'));
+    assert.ok(p.includes('connect to https://cubby.example.com '));
+    assert.ok(p.includes('https://cubby.example.com/docs.md'));
+    assert.match(f.setupPrompt('https://c.dev', null), /^I'd like you to set up Cubby: https:\/\/c\.dev, /, 'no name: just the URL');
+    assert.match(f.setupPrompt('https://c.dev', 'Cubby'), /^I'd like you to set up Cubby: https:\/\/c\.dev, /, 'the default name adds nothing');
   });
   test('inviteText contains URL and code on separate lines', () => {
     assert.equal(f.inviteText('https://c.dev', 'otter-maple-42'), 'Join my Cubby server: https://c.dev\nSignup code: otter-maple-42');
