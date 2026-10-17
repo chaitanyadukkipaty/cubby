@@ -426,6 +426,8 @@ export function formatRestore(r) {
   return [
     r.dry_run ? `Dry run of snapshot ${r.snapshot} (nothing changed):` : `Restored snapshot ${r.snapshot}:`,
     ...r.collections.map((c) => `  ${c.name}: ${counts(c).join(', ')}`),
+    ...(r.links ?? []).map((l) => (r.dry_run ? `  ${l.name}: ${plural(l.records, 'record')} lost links, put back where still missing`
+      : `  ${l.name}: links put back on ${l.relinked} of ${plural(l.records, 'record')} that lost them`)),
     ...(r.recreated.length ? [`${r.dry_run ? 'Would recreate' : 'Recreated'}: ${r.recreated.join(', ')}`] : []),
     ...(r.skipped_fields.length ? [`Skipped fields (removed since): ${r.skipped_fields.join(', ')}`] : []),
     ...(r.refused_fields.length ? [`Refused (type changed): ${r.refused_fields.join('; ')}`] : []),

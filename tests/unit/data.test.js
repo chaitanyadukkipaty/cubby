@@ -246,17 +246,19 @@ describe('relations holding several ids', () => {
     await pb.collection('shop__bundles').create({ id: 'bu1', items: ['pa'] });
     await pb.collection('shop__bundles').create({ id: 'bu2', items: ['pa', 'pb'] });
   });
-  const snapshotted = (r, name) => lines(join(dataDir, 'snapshots', 'shop', r.snapshot.id, 'records', `${name}.jsonl`)).map((x) => x.id);
+  const snapshotted = (r, name, part = 'records') => lines(join(dataDir, 'snapshots', 'shop', r.snapshot.id, part, `${name}.jsonl`)).map((x) => x.id);
   test('by id: a cascading one deletes records left with no ids, and the others lose one; both are snapshotted', async () => {
     const r = await clearData('shop', { collection: 'posts', ids: ['pa'] }, deps());
     assert.deepEqual(r.cascade, [{ collection: 'bundles', field: 'items', records: 1, deletes: true }, { collection: 'bundles', field: 'items', records: 1, deletes: false }]);
     assert.deepEqual(pb.records('shop__bundles').map((x) => [x.id, x.items]), [['bu2', ['pb']]], 'PocketBase deleted bu1 and unlinked bu2');
-    assert.deepEqual(snapshotted(r, 'bundles').sort(), ['bu1', 'bu2']);
+    assert.deepEqual(snapshotted(r, 'bundles'), ['bu1'], 'what was deleted');
+    assert.deepEqual(snapshotted(r, 'bundles', 'links'), ['bu2'], 'what stayed but lost a link, as it was');
+    assert.deepEqual(lines(join(dataDir, 'snapshots', 'shop', r.snapshot.id, 'links', 'bundles.jsonl'))[0].items, ['pa', 'pb']);
   });
   test('by filter: records that lose one of their ids by a relation that doesn\'t cascade are counted and snapshotted', async () => {
     const r = await clearData('shop', { collection: 'tags', filter: 'n = "x"' }, deps());
     assert.deepEqual(r.cascade, [{ collection: 'posts', field: 'tags', records: 2, deletes: false }]);
-    assert.deepEqual(snapshotted(r, 'posts'), ['pa', 'pb']);
+    assert.deepEqual(snapshotted(r, 'posts', 'links'), ['pa', 'pb']);
   });
 });
 

@@ -199,9 +199,10 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     }
     // What goes by cascade, and what stays but loses links, as it is before the clear.
     for (const col of others) {
-      const ids = [...(plan.deleted.get(col.id) ?? []), ...(plan.unlinked.get(col.id) ?? [])];
-      for (const part of chunks(ids)) await eachPage(pb, col.name, byIds(pb, part), (items) => snap.records(short(col), items));
-      if (withFiles && plan.deleted.has(col.id)) await snap.files(short(col), storageDir(dataDir, col.id), plan.deleted.get(col.id));
+      const deleted = plan.deleted.get(col.id) ?? [];
+      for (const part of chunks(deleted)) await eachPage(pb, col.name, byIds(pb, part), (items) => snap.records(short(col), items));
+      if (withFiles && deleted.length) await snap.files(short(col), storageDir(dataDir, col.id), deleted);
+      for (const part of chunks(plan.unlinked.get(col.id) ?? [])) await eachPage(pb, col.name, byIds(pb, part), (items) => snap.links(short(col), items));
     }
     await snap.finish(meta);
   } catch (err) {

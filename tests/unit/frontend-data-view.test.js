@@ -168,6 +168,7 @@ describe('restoreResultText()', () => {
     assert.equal(v.restoreResultText(r), 'Restored 38 records from s1 (2 already there).');
     assert.equal(v.restoreResultText({ ...r, collections: [{ name: 'u', records: 3, existing: 1, restored: 1, replaced: 1, failed: 1 }], accounts: [{}] }),
       'Restored 1 record from s1 (1 replaced, 1 failed, 1 account with a new password).');
+    assert.equal(v.restoreResultText({ ...r, links: [{ name: 'notes', records: 2, relinked: 2 }] }), 'Restored 38 records from s1 (2 already there, 2 records relinked).');
   });
 });
 

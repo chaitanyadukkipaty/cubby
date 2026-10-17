@@ -91,6 +91,8 @@ describe('activity summaries', () => {
       'Restored 43 records from snapshot 20261017T101500-a1b2c3 (2 already there, 1 failed, 3 accounts with new passwords)');
     assert.equal(logic.restoreSummary({ snapshot: 's', overwrite: true, collections: [{ name: 'polls', restored: 1, replaced: 2, existing: 2, failed: 0 }], accounts: [] }),
       'Restored 1 record from snapshot s (2 replaced)');
+    assert.equal(logic.restoreSummary({ snapshot: 's', collections: [], links: [{ name: 'notes', records: 3, relinked: 2 }], accounts: [] }),
+      'Restored 0 records from snapshot s (2 records relinked)');
   });
   test('a restore with nothing to note is one plain line; a bare snapshot lists without who or why', () => {
     assert.equal(logic.restoreSummary({ snapshot: 's', collections: [{ restored: 1, replaced: 0, existing: 0, failed: 0 }], accounts: [] }), 'Restored 1 record from snapshot s');

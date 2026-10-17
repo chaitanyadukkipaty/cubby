@@ -275,6 +275,9 @@ describe('jobs and env helpers', () => {
     assert.equal(lib.formatRestore({ ...base, dry_run: true, overwrite: true, collections: [{ name: 'p', records: 2, existing: 1 }, { name: 'q', records: 1, existing: 0 }], recreated: ['q'] }),
       'Dry run of snapshot s (nothing changed):\n  p: 2 records, 1 already there (replaced)\n  q: 1 record\nWould recreate: q');
     assert.equal(lib.formatRestore({ ...base, overwrite: true, collections: [{ name: 'p', records: 2, existing: 1, restored: 1, replaced: 1, failed: 0 }] }), 'Restored snapshot s:\n  p: 1 restored, 1 replaced');
+    const links = [{ name: 'notes', records: 3, relinked: 2 }];
+    assert.equal(lib.formatRestore({ ...base, collections: [], links }), 'Restored snapshot s:\n  notes: links put back on 2 of 3 records that lost them');
+    assert.equal(lib.formatRestore({ ...base, dry_run: true, collections: [], links }), 'Dry run of snapshot s (nothing changed):\n  notes: 3 records lost links, put back where still missing');
   });
   test('formatClearPreview: matches N of M, samples, cascades and warnings, deleting nothing', () => {
     const text = lib.formatClearPreview('shop', {

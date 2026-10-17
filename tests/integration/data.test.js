@@ -451,5 +451,24 @@ describe('whatever a clear deletes, a restore brings back (real PocketBase casca
     assert.deepEqual(dry.data.cascade, [{ collection: 'bundles', field: 'items', records: 1, deletes: true }, { collection: 'bundles', field: 'items', records: 1, deletes: false }]);
     const tag = await owner('POST', '/api/projects/multi/data/clear', { body: { collection: 'tags', filter: 'n = "x"', dry_run: true } });
     assert.deepEqual(tag.data.cascade, [{ collection: 'posts', field: 'tags', records: 2, deletes: false }]);
+    // Deleted bundles come back, and the ids PocketBase took out of the others go back in place.
+    await clearAndRestore('multi', { collection: 'posts', ids: ['posta0000000001'] });
+    await clearAndRestore('multi', { collection: 'tags', ids: ['tag000000000001'] });
+    await clearAndRestore('multi', { collections: ['tags'] });
+  });
+  test('a link the clear removed from a record that stays comes back; edits made since stay', async () => {
+    await make('relink', [
+      { name: 'people', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'notes', fields: [{ name: 't', type: 'text' }, { name: 'author', type: 'relation', collection: 'people' }] },
+    ]);
+    await C('relink', 'people').create({ id: 'pers00000000001', n: 'ann' });
+    await C('relink', 'notes').create({ id: 'note00000000001', t: 'hi', author: 'pers00000000001' });
+    const { restored } = await clearAndRestore('relink', { collection: 'people', ids: ['pers00000000001'] });
+    assert.deepEqual(restored.links, [{ name: 'notes', records: 1, relinked: 1 }]);
+    const cleared = await owner('POST', '/api/projects/relink/data/clear', { body: { collections: ['people'] } });
+    await C('relink', 'notes').update('note00000000001', { t: 'edited' });
+    assert.equal((await owner('POST', `/api/snapshots/${cleared.data.snapshot.id}/restore`, { body: {} })).status, 200);
+    const note = await C('relink', 'notes').getOne('note00000000001');
+    assert.deepEqual([note.t, note.author], ['edited', 'pers00000000001']);
   });
 });

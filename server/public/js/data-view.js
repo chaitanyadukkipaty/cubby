@@ -108,14 +108,16 @@ export function restoreModel(r) {
 }
 
 /** "Restored 38 records from s1 (2 already there)." from a restore's result. */
-export function restoreResultText({ snapshot, collections, accounts = [] }) {
+export function restoreResultText({ snapshot, collections, links = [], accounts = [] }) {
   const replaced = sum(collections, 'replaced');
+  const relinked = sum(links, 'relinked');
   const there = sum(collections, 'existing') - replaced;
   const failed = sum(collections, 'failed');
   const notes = [
     ...(replaced ? [`${fmtCount(replaced)} replaced`] : []),
     ...(there > 0 ? [`${fmtCount(there)} already there`] : []),
     ...(failed ? [`${fmtCount(failed)} failed`] : []),
+    ...(relinked ? [`${plural(relinked, 'record')} relinked`] : []),
     ...(accounts.length ? [accounts.length === 1 ? '1 account with a new password' : `${fmtCount(accounts.length)} accounts with new passwords`] : []),
   ];
   return `Restored ${plural(sum(collections, 'restored'), 'record')} from ${snapshot}${notes.length ? ` (${notes.join(', ')})` : ''}.`;

@@ -1,7 +1,9 @@
 // Snapshots: what a data clear deleted, kept 7 days so it can be restored. One folder per snapshot:
 //   DATA_DIR/snapshots/<app>/<id>/meta.json        who, why, what, counts, created, expires (written last)
 //                                  schema.json      the cleared collections as `cubby schema pull` shows them
-//                                  records/<c>.jsonl one record per line, as PocketBase returned it
+//                                  records/<c>.jsonl what was deleted, one record per line, as PocketBase returned it
+//                                  links/<c>.jsonl   records that stayed but lost links (ids of deleted records), as
+//                                                    they were before
 //                                  files/<c>/<record id>/…  uploaded files, only when they total ≤ 100 MB
 // Plain files on purpose: no database rows, nothing running in the background; the nightly maintenance prunes them.
 import { randomBytes } from 'node:crypto';
@@ -24,14 +26,19 @@ export const newSnapshotId = (now, rand = () => randomBytes(3).toString('hex')) 
 export async function startSnapshot(dataDir, slug, id) {
   const dir = join(appSnapshotsDir(dataDir, slug), id);
   await mkdir(join(dir, 'records'), { recursive: true });
+  async function append(part, name, list) {
+    if (!list.length) return;
+    await mkdir(join(dir, part), { recursive: true });
+    await appendFile(join(dir, part, `${name}.jsonl`), list.map((r) => `${JSON.stringify(r)}\n`).join(''));
+  }
   return {
     id,
     dir,
     schema: (schema) => writeFile(join(dir, 'schema.json'), JSON.stringify(schema, null, 2)),
     // Appends records of collection `name` (unprefixed), one JSON line each.
-    async records(name, list) {
-      if (list.length) await appendFile(join(dir, 'records', `${name}.jsonl`), list.map((r) => `${JSON.stringify(r)}\n`).join(''));
-    },
+    records: (name, list) => append('records', name, list),
+    // Appends records of `name` that stay but lose links, as they are before the clear.
+    links: (name, list) => append('links', name, list),
     // Copies the uploaded files of `recordIds` from `storage` (a collection's storage folder), without thumbnails.
     async files(name, storage, recordIds) {
       for (const id of recordIds) {
