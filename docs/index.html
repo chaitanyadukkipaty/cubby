@@ -457,6 +457,19 @@ Snapshot 20261017T101500-a1b2c3 keeps them until 2026-10-24.</span></pre></div>
         <li><b>Accounts only when named.</b> The app's users collection is only cleared when you list it, and the result warns that restored accounts get new passwords: PocketBase never hands out password hashes, even to the server.</li>
         <li><b>Owners only.</b> Only the app's owner (and admins) can clear its data, the CLI needs <code>--yes</code>, and every clear is in <code>cubby activity</code>.</li>
       </ul>
+      <h3 id="restore">Undo a clear</h3>
+      <p>Cleared the wrong thing? Within 7 days, ask your agent to bring it back:</p>
+      <div class="code"><pre>cubby data snapshots friend-polls
+cubby data restore 20261017T101500-a1b2c3 --dry-run
+cubby data restore 20261017T101500-a1b2c3
+<span class="c">Restored snapshot 20261017T101500-a1b2c3:
+  polls: 42 restored
+  votes: 310 restored</span></pre></div>
+      <ul>
+        <li><b>Same ids, nothing doubled.</b> Records come back with their original ids, so links still work. Ids that exist again are skipped, so restoring twice is harmless; <code>--overwrite --yes</code> replaces them, after saving the current versions in a new snapshot.</li>
+        <li><b>Schema changes since.</b> A dropped collection is recreated from the snapshot, rules included. Fields removed since are skipped; a field whose type changed stops the restore until it's dropped or renamed. <code>--dry-run</code> shows all of it first.</li>
+        <li><b>What comes back different.</b> PocketBase sets <code>created</code> and <code>updated</code> itself and renames uploaded files, and it never hands out password hashes, not even to the server. So restored accounts get new random passwords, listed by the restore for you to hand out.</li>
+      </ul>
     </section>
 
     <section id="cli">
@@ -493,6 +506,8 @@ Snapshot 20261017T101500-a1b2c3 keeps them until 2026-10-24.</span></pre></div>
           <tr><td><code>cubby data list [&lt;app&gt;]</code></td><td>The app's collections with their record counts and uploaded file sizes.</td></tr>
           <tr><td><code>cubby data clear [&lt;app&gt;] --collections a,b [--drop] --yes</code></td><td>Empty collections (fields and rules stay) or drop them, after a snapshot kept for 7 days.</td></tr>
           <tr><td><code>cubby data clear [&lt;app&gt;] --collection c --filter "…" | --ids a,b [--dry-run] --yes</code></td><td>Delete only matching records. <code>--dry-run</code> shows matches N of M, samples and cascades.</td></tr>
+          <tr><td><code>cubby data snapshots [&lt;app&gt;]</code></td><td>Snapshots of clears: who, why, what, how many records, until when.</td></tr>
+          <tr><td><code>cubby data restore &lt;id&gt; [--overwrite --yes] [--dry-run]</code></td><td>Bring a snapshot back. Existing ids are skipped (or replaced with <code>--overwrite</code>); restored accounts get new passwords.</td></tr>
           <tr><td><code>cubby projects</code> · <code>info</code> · <code>link &lt;app&gt;</code></td><td>List your apps, show the current one, or attach this folder to an existing app.</td></tr>
           <tr><td><code>cubby delete &lt;app&gt; --yes</code></td><td>Delete an app, its data and deploys.</td></tr>
           <tr><td><code>cubby admin storage</code></td><td>Admins only: disk use by category (database, uploads, current and older deploys, backups) and per app, with free disk.</td></tr>

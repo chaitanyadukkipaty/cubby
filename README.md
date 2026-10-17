@@ -104,6 +104,7 @@ else's platform and you can't bring your own agent.
   for 30 days with the agent that made it, or "dashboard". `cubby activity` shows yours; admins can see everyone's.
 - **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), the top pages, API requests and errors next to each deploy, and accounts and signups per app, for up to a year, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them; each app's page in the dashboard charts them on one time axis with a line for every deploy; admins see every app with `--all`.
 - **Clear test data, safely.** Empty or drop collections without deleting the app (`cubby data clear`), always after a snapshot kept for 7 days.
+- **Clear test data, safely.** Empty or drop collections, or delete records by filter, without deleting the app (`cubby data clear`), always after a snapshot kept for 7 days that `cubby data restore` brings back.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps on Explore, and manage users, limits and disk from the Admin page.
 - **A dashboard that follows your agents.** Home is a timeline of what your agents did, one line each, grouped by day: a deploy you don't like is one **Roll back** away, and a failed job comes with a fix-it prompt to paste into your agent. Next to it: who's on your apps right now, views over the last 7 days, your agents, and ready-made prompts for what to ask next. **Agents** lists every agent you connected, with the apps it touched; rename or revoke one there, or open it to see everything it did. Each app has its own page with tabs (Overview charts, Activity, Deploys with rollback, Jobs, Env and Settings), and every tab has its own link.
@@ -281,6 +282,7 @@ account" error.
 | `cubby data list [<app>]` | Collections with their record counts and uploaded file sizes |
 | `cubby data clear [<app>] --collections a,b [--drop] --yes` | Empty collections (keeping fields and rules) or drop them, after a 7-day snapshot |
 | `cubby data clear [<app>] --collection c --filter "…" \| --ids a,b [--dry-run] --yes` | Delete matching records only; `--dry-run` shows matches N of M, samples and cascades |
+| `cubby data snapshots [<app>]` / `cubby data restore <id> [--overwrite --yes] [--dry-run]` | List snapshots of clears; restore one (additive: existing ids are skipped) |
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
 | `cubby admin storage` | Admins: disk use by category (database, uploads, current/older deploys, backups) and per app |
@@ -364,6 +366,30 @@ cubby data clear friend-polls --collections polls,votes --yes
   result warns that restored accounts get new passwords: PocketBase never hands out password hashes, even to the
   server.
 - Only the app's owner (and admins) can clear it, `--yes` is required, and each clear is in `cubby activity`.
+
+### Undo a clear
+
+Cleared the wrong thing? Within 7 days, ask *"bring back the polls I cleared this morning"*:
+
+```sh
+cubby data snapshots friend-polls          # id, when, what, how many records, who and why, until when
+cubby data restore 20261017T101500-a1b2c3 --dry-run
+cubby data restore 20261017T101500-a1b2c3
+# Restored snapshot 20261017T101500-a1b2c3:
+#   polls: 42 restored
+#   votes: 310 restored
+```
+
+- Records come back **with their original ids**, so links between them (and from other collections) still work.
+  Ids that exist again are skipped, so restoring twice is harmless. `--overwrite --yes` replaces them instead,
+  after saving the versions it replaces in a new snapshot.
+- A **dropped** collection is recreated from the snapshot's schema, rules included. Fields removed since are skipped;
+  a field whose type changed refuses the restore until it's dropped or renamed. `--dry-run` reports all of it.
+- What can't come back the same: PocketBase sets `created`/`updated` itself and renames uploaded files (their URLs
+  change), and it never hands out password hashes, not even to the server (we checked against the bundled
+  PocketBase: superusers can't read them, and writing one back just sets it as a new password). So **restored
+  accounts get new random passwords**, which the restore lists for you to hand out; everything else on the account
+  comes back.
 
 ## How it works
 

@@ -11,7 +11,7 @@ import {
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
   jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
-  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents, formatActivity, formatMetrics, formatMetricsList, formatAdminMetrics, formatData, formatClear, formatClearPreview,
+  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents, formatActivity, formatMetrics, formatMetricsList, formatAdminMetrics, formatData, formatClear, formatClearPreview, formatSnapshots, formatRestore,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -30,7 +30,7 @@ const { values: flags, positionals } = parseArgs({
     run: { type: 'string' }, limit: { type: 'string' }, agent: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
     keep: { type: 'string' }, range: { type: 'string' },
     collections: { type: 'string' }, drop: { type: 'boolean' }, reason: { type: 'string' },
-    collection: { type: 'string' }, filter: { type: 'string' }, ids: { type: 'string' }, 'dry-run': { type: 'boolean' }, 'all-matching': { type: 'boolean' },
+    collection: { type: 'string' }, filter: { type: 'string' }, ids: { type: 'string' }, 'dry-run': { type: 'boolean' }, 'all-matching': { type: 'boolean' }, overwrite: { type: 'boolean' },
   },
 });
 
@@ -417,6 +417,18 @@ const commands = {
 
   // An app's data: list collections, clear them (a snapshot is kept for 7 days). The app is the argument or cubby.json.
   async data(sub, appArg) {
+    if (sub === 'restore') {
+      const id = appArg;
+      if (!id) throw new CliError('Usage: cubby data restore <snapshot-id> [--overwrite --yes] [--dry-run]');
+      if (flags.overwrite && !flags.yes && !flags['dry-run']) throw new CliError(`--overwrite replaces records that exist again with the snapshot's versions (the current ones are saved in a new snapshot first). Re-run with --yes, or see what it does with --dry-run.`);
+      const r = await api('POST', `/api/snapshots/${encodeURIComponent(id)}/restore`, { body: { overwrite: Boolean(flags.overwrite), dry_run: Boolean(flags['dry-run']) } });
+      return out(formatRestore(r), r);
+    }
+    if (sub === 'snapshots') {
+      const app = appArg ?? projectConfig()?.project;
+      const list = await api('GET', `/api/snapshots${app ? `?${new URLSearchParams({ app })}` : ''}`);
+      return out(formatSnapshots(list), list);
+    }
     const app = appArg ?? requireProject();
     const base = `/api/projects/${encodeURIComponent(app)}/data`;
     if (!sub || sub === 'list') {
@@ -551,7 +563,7 @@ const commands = {
   },
 };
 
-const DATA_USAGE = 'Usage: cubby data list [app] | clear [app] (--collections a,b [--drop] | --collection c (--filter "<filter>" | --ids a,b) [--all-matching]) [--dry-run] --yes';
+const DATA_USAGE = 'Usage: cubby data list [app] | clear [app] (--collections a,b [--drop] | --collection c (--filter "<filter>" | --ids a,b) [--all-matching]) [--dry-run] --yes | snapshots [app] | restore <snapshot-id> [--overwrite --yes] [--dry-run]';
 const ADMIN_USAGE = 'Usage: cubby admin storage | backups [create [--no-wait] | delete <YYYY-MM-DD> --yes [--leave-none] | keep <n> [--yes]] | deploys <app> [prune [--keep <n>] --yes | delete <deploy-id> --yes]';
 
 const [cmd, ...rest] = positionals;

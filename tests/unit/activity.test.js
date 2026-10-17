@@ -80,6 +80,20 @@ describe('activity summaries', () => {
     assert.equal(logic.clearSummary({ mode: 'ids', collections: [{ name: 'polls', records: 2 }], snapshot }),
       'Deleted 2 records from polls by id · snapshot 20261017T101500-a1b2c3 until 2026-10-24');
   });
+  test('restores say how many records came back, how many were already there, and new passwords', () => {
+    const collections = [{ name: 'polls', restored: 40, replaced: 0, existing: 2, failed: 0 }, { name: 'users', restored: 3, replaced: 0, existing: 0, failed: 1 }];
+    assert.equal(logic.restoreSummary({ snapshot: '20261017T101500-a1b2c3', overwrite: false, collections, accounts: [1, 2, 3] }),
+      'Restored 43 records from snapshot 20261017T101500-a1b2c3 (2 already there, 1 failed, 3 accounts with new passwords)');
+    assert.equal(logic.restoreSummary({ snapshot: 's', overwrite: true, collections: [{ name: 'polls', restored: 1, replaced: 2, existing: 2, failed: 0 }], accounts: [] }),
+      'Restored 1 record from snapshot s (2 replaced)');
+  });
+  test('a snapshot as listed: who, why, what, counts, until when', () => {
+    const meta = { id: 's1', app: 'shop', created: 'C', expires: 'E', by: { id: 'u1', email: 'a@x.dev', admin: true }, reason: 'spam', mode: 'empty', collections: [{ name: 'polls', type: 'base', records: 3, files_bytes: 9 }], cascade: [{ collection: 'votes', records: 2 }], files: true, files_bytes: 9, warnings: [] };
+    assert.deepEqual(logic.snapshotView(meta), {
+      id: 's1', app: 'shop', created: 'C', expires: 'E', by: 'a@x.dev', by_admin: true, reason: 'spam', mode: 'empty',
+      collections: [{ name: 'polls', records: 3 }], records: 5, files: true, files_bytes: 9,
+    });
+  });
   test('app updates say what changed', () => {
     assert.equal(logic.patchSummary('todo', { unlisted: true }), 'Updated "todo": made it unlisted');
     assert.equal(logic.patchSummary('todo', { unlisted: false, name: 'Todo', description: 'x' }),

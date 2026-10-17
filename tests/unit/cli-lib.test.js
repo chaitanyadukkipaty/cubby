@@ -275,6 +275,41 @@ describe('jobs and env helpers', () => {
     const whole = lib.formatClearPreview('shop', { dry_run: true, mode: 'empty', matches: 5, total: 5, collections: [{ name: 'a', records: 2 }, { name: 'b', records: 3 }], samples: [], cascade: [{ collection: 'c', field: 'a', records: 1, deletes: false }], warnings: [] });
     assert.match(whole, /^Dry run: emptying a, b deletes 5 records\. Nothing was deleted\.\n {2}c: 1 record would lose their link \(c\.a\)$/);
   });
+  test('formatSnapshots: one line per snapshot, newest first, with who, why and until when', () => {
+    const text = lib.formatSnapshots([
+      { id: '20261017T101500-a1b2c3', app: 'shop', created: '2026-10-17T10:15:00.000Z', expires: '2026-10-24T10:15:00.000Z', by: 'admin@x.dev', by_admin: true, reason: 'spam flood', mode: 'empty', collections: [{ name: 'polls', records: 1204 }], records: 1210, files: false },
+      { id: '20261016T090000-ffffff', app: 'shop', created: '2026-10-16T09:00:00.000Z', expires: '2026-10-23T09:00:00.000Z', by: 'me@x.dev', by_admin: false, reason: '', mode: 'filter', collections: [{ name: 'votes', records: 3 }], records: 3, files: true },
+    ]);
+    assert.equal(text, [
+      '20261017T101500-a1b2c3  shop  2026-10-17 10:15  empty polls  1210 records (no files)  by admin@x.dev (admin): spam flood  until 2026-10-24',
+      '20261016T090000-ffffff  shop  2026-10-16 09:00  filter votes  3 records  by me@x.dev  until 2026-10-23',
+      'Restore one with: cubby data restore <id> [--dry-run]',
+    ].join('\n'));
+    assert.match(lib.formatSnapshots([]), /No snapshots/);
+  });
+  test('formatRestore: per collection, drift, accounts and failures; a dry run says nothing changed', () => {
+    const r = {
+      snapshot: 's1', overwrite: false, recreated: ['orders'], skipped_fields: ['polls.color'], refused_fields: [], files: true,
+      collections: [{ name: 'polls', records: 3, existing: 1, restored: 2, replaced: 0, failed: 0 }, { name: 'users', records: 1, existing: 0, restored: 1, replaced: 0, failed: 1 }],
+      accounts: [{ collection: 'users', id: 'u1', email: 'ann@x.dev', password: 'Zx9-pass-word123' }], failures: [{ collection: 'users', id: 'u2', error: 'email taken' }],
+      warnings: ['heads up'], backup: { id: 'b1', expires: '2026-10-24T10:15:00.000Z' },
+    };
+    assert.equal(lib.formatRestore(r), [
+      'Restored snapshot s1:',
+      '  polls: 2 restored, 1 already there',
+      '  users: 1 restored, 1 failed',
+      'Recreated: orders',
+      'Skipped fields (removed since): polls.color',
+      'New passwords (hand them out; they can change them in the app):',
+      '  users  ann@x.dev  Zx9-pass-word123',
+      'Failed: users u2: email taken',
+      'Replaced records were saved in snapshot b1 (until 2026-10-24).',
+      'warning: heads up',
+    ].join('\n'));
+    const dry = lib.formatRestore({ ...r, dry_run: true, accounts: [], failures: [], backup: undefined, refused_fields: ['polls.n was text, is number now'] });
+    assert.match(dry, /^Dry run of snapshot s1 \(nothing changed\):\n {2}polls: 3 records, 1 already there\n/);
+    assert.match(dry, /\nRefused \(type changed\): polls\.n was text, is number now\n/);
+  });
   test('formatMetricsList: one line per app', () => {
     const text = lib.formatMetricsList([
       { app: 'polls', range: '7d', views: 12, visitors: 5, active_now: 1, api_errors: 2 },

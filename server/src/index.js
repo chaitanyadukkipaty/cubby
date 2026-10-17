@@ -19,7 +19,8 @@ import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js'
 import * as logic from './logic.js';
 import { recordActivity, listActivity } from './activity.js';
 import { listData, clearData } from './data.js';
-import { removeAppSnapshots } from './snapshots.js';
+import { removeAppSnapshots, listSnapshots, findSnapshot } from './snapshots.js';
+import { restoreSnapshot } from './restore.js';
 import { loadDashboard } from './dashboard.js';
 import { matchRoute } from '../public/js/routes.js';
 import { commandsMarkdown } from '../../cli/src/commands.js';
@@ -227,6 +228,25 @@ const routes = [
     if (result.mode === 'drop') await admin.collection('cubby_projects').update(project.id, { schema_hash: '' });
     storageCache.clear();
     await recordActivity(user, { action: 'data.clear', app: slug, summary: logic.clearSummary(result) });
+    return result;
+  }],
+
+  // Snapshots of data clears: of one app (?app=), or of all your apps.
+  ['GET', '/api/snapshots', 'user', async (req, user, params, url) => {
+    const app = url.searchParams.get('app');
+    const slugs = app ? [(await appForOwnerOrAdmin(user, app)).slug]
+      : (await admin.collection('cubby_projects').getFullList({ filter: admin.filter('owner = {:u}', { u: user.id }), fields: 'slug' })).map((p) => p.slug);
+    return (await listSnapshots(config.dataDir, slugs)).map(logic.snapshotView);
+  }],
+  ['POST', '/api/snapshots/:id/restore', 'user', async (req, user, { id }) => {
+    const snap = await findSnapshot(config.dataDir, id);
+    const project = await appForOwnerOrAdmin(user, snap.meta.app);
+    const { overwrite, dry_run } = await readJson(req);
+    const actor = { id: user.id, email: user.email, admin: project.owner !== user.id };
+    const result = await restoreSnapshot(snap, { overwrite: Boolean(overwrite), dry_run: Boolean(dry_run) }, { pb: admin, dataDir: config.dataDir, project, actor });
+    if (dry_run) return result;
+    storageCache.clear();
+    await recordActivity(user, { action: 'data.restore', app: project.slug, summary: logic.restoreSummary(result) });
     return result;
   }],
 

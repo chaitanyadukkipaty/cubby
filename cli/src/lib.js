@@ -403,6 +403,38 @@ export function formatClearPreview(app, r) {
   ].join('\n');
 }
 
+const stamp = (at) => String(at).replace('T', ' ').slice(0, 16);
+
+// `cubby data snapshots`
+export function formatSnapshots(list) {
+  if (!list.length) return 'No snapshots. A data clear keeps one for 7 days.';
+  return [
+    ...list.map((s) => [
+      s.id, s.app, stamp(s.created), `${s.mode} ${s.collections.map((c) => c.name).join(',')}`, `${plural(s.records, 'record')}${s.files ? '' : ' (no files)'}`,
+      `by ${s.by ?? '?'}${s.by_admin ? ' (admin)' : ''}${s.reason ? `: ${s.reason}` : ''}`, `until ${s.expires.slice(0, 10)}`,
+    ].join('  ')),
+    'Restore one with: cubby data restore <id> [--dry-run]',
+  ].join('\n');
+}
+
+// `cubby data restore`
+export function formatRestore(r) {
+  const counts = (c) => (r.dry_run
+    ? [plural(c.records, 'record'), ...(c.existing ? [`${c.existing} already there${r.overwrite ? ' (replaced)' : ''}`] : [])]
+    : [`${c.restored} restored`, ...(c.replaced ? [`${c.replaced} replaced`] : []), ...(c.existing - c.replaced ? [`${c.existing - c.replaced} already there`] : []), ...(c.failed ? [`${c.failed} failed`] : [])]);
+  return [
+    r.dry_run ? `Dry run of snapshot ${r.snapshot} (nothing changed):` : `Restored snapshot ${r.snapshot}:`,
+    ...r.collections.map((c) => `  ${c.name}: ${counts(c).join(', ')}`),
+    ...(r.recreated.length ? [`${r.dry_run ? 'Would recreate' : 'Recreated'}: ${r.recreated.join(', ')}`] : []),
+    ...(r.skipped_fields.length ? [`Skipped fields (removed since): ${r.skipped_fields.join(', ')}`] : []),
+    ...(r.refused_fields.length ? [`Refused (type changed): ${r.refused_fields.join('; ')}`] : []),
+    ...(r.accounts.length ? ['New passwords (hand them out; they can change them in the app):', ...r.accounts.map((a) => `  ${a.collection}  ${a.email}  ${a.password}`)] : []),
+    ...r.failures.map((f) => `Failed: ${f.collection} ${f.id}: ${f.error}`),
+    ...(r.backup ? [`Replaced records were saved in snapshot ${r.backup.id} (until ${r.backup.expires.slice(0, 10)}).`] : []),
+    ...r.warnings.map((w) => `warning: ${w}`),
+  ].join('\n');
+}
+
 // `cubby env set NAME=value`
 export function parseEnvAssignment(text) {
   const i = String(text ?? '').indexOf('=');

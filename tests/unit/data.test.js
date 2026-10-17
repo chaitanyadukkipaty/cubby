@@ -65,7 +65,8 @@ describe('emptying collections', () => {
     assert.equal(meta.expires, '2026-10-24T10:15:00.000Z');
     assert.equal(r.snapshot.expires, meta.expires);
     const schema = JSON.parse(readFileSync(join(dir, 'schema.json'), 'utf8'));
-    assert.deepEqual(schema.collections.map((c) => [c.name, c.fields.map((f) => f.name)]), [['products', ['title', 'photo', 'created', 'updated']]]);
+    // The cleared collection, and the ones that lose records by cascade (so a restore can check them for drift).
+    assert.deepEqual(schema.collections.map((c) => [c.name, c.fields.map((f) => f.name)]), [['products', ['title', 'photo', 'created', 'updated']], ['orders', ['product', 'qty', 'created', 'updated']]]);
     assert.deepEqual(lines(join(dir, 'records', 'products.jsonl')).map((x) => [x.id, x.title]), [['p1', 'Mug'], ['p2', 'Hat']]);
     const photo = lines(join(dir, 'records', 'products.jsonl'))[0].photo;
     assert.equal(readFileSync(join(dir, 'files', 'products', 'p1', photo)).length, 100);

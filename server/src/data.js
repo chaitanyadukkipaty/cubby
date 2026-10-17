@@ -12,7 +12,7 @@ import { startSnapshot, newSnapshotId, expiresAt, FILES_CAP_BYTES } from './snap
 const PAGE = 500;
 
 // Every record of `name` matching `filter`, a page at a time (so a big collection never sits in memory whole).
-async function eachPage(pb, name, filter, fn) {
+export async function eachPage(pb, name, filter, fn) {
   for (let page = 1; ; page++) {
     const { items } = await pb.collection(name).getList(page, PAGE, { filter, sort: 'id', skipTotal: true });
     if (items.length) await fn(items);
@@ -69,11 +69,11 @@ function dependents(cols, targets) {
 export const MAX_MATCHES = 10_000;
 const ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const CHUNK = 100;
-const chunks = (list) => Array.from({ length: Math.ceil(list.length / CHUNK) }, (_, i) => list.slice(i * CHUNK, (i + 1) * CHUNK));
+export const chunks = (list) => Array.from({ length: Math.ceil(list.length / CHUNK) }, (_, i) => list.slice(i * CHUNK, (i + 1) * CHUNK));
 // `id = "a" || id = "b"`, or with `?=` records whose relation `field` holds any of `ids` (single or multiple).
 const anyOf = (pb, field, ids, op = '?=') =>
   pb.filter(ids.map((_, i) => `${field} ${op} {:i${i}}`).join(' || '), Object.fromEntries(ids.map((id, i) => [`i${i}`, id])));
-const byIds = (pb, ids) => anyOf(pb, 'id', ids, '=');
+export const byIds = (pb, ids) => anyOf(pb, 'id', ids, '=');
 
 // What a clear request asks for: whole collections (`collections`, emptied or with `drop` dropped) or records of one
 // `collection`, by `filter` or by `ids`.
@@ -174,8 +174,9 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     by: actor, reason, ...result, ...(req.ids && { ids: matched }),
   };
   try {
-    const names = new Set(summary.map((c) => c.name));
-    await snap.schema({ collections: (await readSchema(slug, pb.collections)).collections.filter((c) => names.has(c.name)) });
+    const names = [...summary.map((c) => c.name), ...new Set(refs.map((d) => short(d.col)))];
+    const live = (await readSchema(slug, pb.collections)).collections;
+    await snap.schema({ collections: names.map((n) => live.find((c) => c.name === n)) });
     for (const c of targets) {
       await eachMatch(c, async (items) => {
         await snap.records(short(c), items);

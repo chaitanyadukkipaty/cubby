@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
 import { startServer, ADMIN, ROOT } from '../helpers/server.js';
-import { api, signup, adminToken } from '../helpers/integration.js';
+import { api, signup, adminToken, app } from '../helpers/integration.js';
 
 let srv, pb, ownerToken, owner, stranger, adminCall;
 
@@ -49,7 +49,7 @@ const cubby = (args, token = ownerToken) => new Promise((resolve) => {
 });
 
 before(async () => {
-  srv = await startServer();
+  srv = await startServer({ MAX_APPS_PER_USER: '30' });
   pb = new PocketBase(srv.pbUrl);
   pb.autoCancellation(false);
   await pb.collection('_superusers').authWithPassword(srv.env.PB_SUPERUSER_EMAIL, srv.env.PB_SUPERUSER_PASSWORD);
@@ -169,6 +169,113 @@ describe('deleting by filter or ids', () => {
     assert.equal(r.status, 200, JSON.stringify(r.data));
     assert.deepEqual([r.data.matches, r.data.missing], [1, ['missing0000000x']]);
     assert.equal((await pb.collection('picky__products').getList(1, 1)).totalItems, 0);
+  });
+});
+
+describe('restoring', () => {
+  const clear = async (slug, body) => {
+    const r = await owner('POST', `/api/projects/${slug}/data/clear`, { body });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    return r.data.snapshot.id;
+  };
+  const restore = (id, body = {}, call = owner) => call('POST', `/api/snapshots/${id}/restore`, { body });
+  const count = async (name) => (await pb.collection(name).getList(1, 1)).totalItems;
+
+  test('clear then restore brings back records with their ids, cascaded ones and uploaded files; twice is harmless', async () => {
+    await newApp('undo');
+    const id = await clear('undo', { collections: ['products'] });
+    const listed = await cubby(['data', 'snapshots', 'undo', '--json']);
+    assert.equal(listed.code, 0, listed.stderr);
+    assert.deepEqual(listed.json.map((x) => [x.id, x.mode, x.records, x.by]), [[id, 'empty', 3, 'owner-data@test.dev']]);
+    const r = await cubby(['data', 'restore', id, '--json']);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual(r.json.collections.map((c) => [c.name, c.restored]), [['products', 2], ['orders', 1]]);
+    const mug = await pb.collection('undo__products').getOne('prodmug00000001');
+    assert.match(mug.photo, /^mug_\w+\.png$/);
+    const photo = await fetch(pb.files.getURL(mug, mug.photo));
+    assert.equal((await photo.arrayBuffer()).byteLength, 1234);
+    assert.equal((await pb.collection('undo__orders').getOne('order0000000001')).product, 'prodmug00000001');
+    const again = await restore(id);
+    assert.deepEqual(again.data.collections.map((c) => [c.restored, c.existing, c.failed]), [[0, 2, 0], [0, 1, 0]]);
+    assert.equal(await count('undo__products'), 2);
+    const activity = (await owner('GET', '/api/activity?app=undo')).data;
+    assert.equal(activity[0].action, 'data.restore');
+    assert.match(activity[0].summary, /^Restored 0 records from snapshot \S+ \(3 already there\)$/);
+  });
+  test('a dropped collection is recreated with its rules; a dry run changes nothing', async () => {
+    await newApp('redo');
+    const before = (await owner('GET', '/api/projects/redo/schema')).data.collections.find((c) => c.name === 'products');
+    const id = await clear('redo', { collections: ['products', 'orders'], drop: true });
+    const dry = await cubby(['data', 'restore', id, '--dry-run']);
+    assert.equal(dry.code, 0, dry.stderr);
+    assert.match(dry.stdout, /^Dry run of snapshot \S+ \(nothing changed\):[\s\S]*Would recreate: products, orders/);
+    assert.ok(!(await owner('GET', '/api/projects/redo/schema')).data.collections.some((c) => c.name === 'products'));
+    assert.equal((await restore(id)).status, 200);
+    const after = (await owner('GET', '/api/projects/redo/schema')).data.collections.find((c) => c.name === 'products');
+    assert.deepEqual([after.listRule, after.viewRule, after.fields.map((f) => f.name)], [before.listRule, before.viewRule, before.fields.map((f) => f.name)]);
+    assert.equal(await count('redo__products'), 2);
+    assert.equal(await count('redo__orders'), 1);
+    // The app reaches the recreated collection right away (the proxy's collection index is refreshed).
+    assert.equal((await app(srv, 'redo')('GET', '/pb/api/collections/redo__products/records')).status, 200);
+  });
+  test('schema drift: removed fields are skipped, a field whose type changed refuses the restore', async () => {
+    await newApp('drift');
+    const id = await clear('drift', { collections: ['products'] });
+    assert.equal((await owner('DELETE', '/api/projects/drift/schema/products.photo')).status, 200);
+    const col = await pb.collections.getOne('drift__products');
+    // PocketBase won't change a type in place either: the field is replaced by a new one of the same name.
+    await pb.collections.update(col.id, { fields: col.fields.filter((f) => f.name !== 'title') });
+    await pb.collections.update(col.id, { fields: [...(await pb.collections.getOne(col.id)).fields, { name: 'title', type: 'number' }] });
+    const dry = await restore(id, { dry_run: true });
+    assert.deepEqual([dry.data.skipped_fields, dry.data.refused_fields], [['products.photo'], ['products.title was text, is number now']]);
+    const refused = await restore(id);
+    assert.equal(refused.status, 409);
+    assert.equal(await count('drift__products'), 0);
+    const now = await pb.collections.getOne(col.id);
+    await pb.collections.update(col.id, { fields: now.fields.filter((f) => f.name !== 'title') });
+    await pb.collections.update(col.id, { fields: [...(await pb.collections.getOne(col.id)).fields, { name: 'title', type: 'text' }] });
+    const ok = await restore(id);
+    assert.equal(ok.status, 200, JSON.stringify(ok.data));
+    assert.deepEqual(ok.data.skipped_fields, ['products.photo']);
+    assert.equal(await count('drift__products'), 2);
+  });
+  test('restored accounts get new random passwords that work (PocketBase never hands out password hashes)', async () => {
+    await newApp('accounts');
+    const id = await clear('accounts', { collections: ['customers'] });
+    const r = await cubby(['data', 'restore', id]);
+    assert.equal(r.code, 0, r.stderr);
+    const m = /\n {2}customers {2}ann@shop\.test {2}(\S+)\n/.exec(r.stdout);
+    assert.ok(m, r.stdout);
+    const login = await app(srv, 'accounts')('POST', '/pb/api/collections/accounts__customers/auth-with-password', {
+      headers: { 'content-type': 'application/json' }, body: { identity: 'ann@shop.test', password: m[1] },
+    });
+    assert.equal(login.status, 200, login.text);
+    const old = await app(srv, 'accounts')('POST', '/pb/api/collections/accounts__customers/auth-with-password', {
+      headers: { 'content-type': 'application/json' }, body: { identity: 'ann@shop.test', password: 'ann-pass-1234' },
+    });
+    assert.equal(old.status, 400, 'the old password is gone');
+  });
+  test('--overwrite needs --yes, replaces records and saves what it replaced', async () => {
+    await newApp('over');
+    const id = await clear('over', { collections: ['products'] });
+    await pb.collection('over__products').create({ id: 'prodhat00000002', title: 'Hat v2' });
+    assert.equal((await cubby(['data', 'restore', id, '--overwrite'])).code, 1);
+    const r = await cubby(['data', 'restore', id, '--overwrite', '--yes', '--json']);
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal((await pb.collection('over__products').getOne('prodhat00000002')).title, 'Hat');
+    assert.ok(r.json.backup.id);
+    const snaps = (await owner('GET', '/api/snapshots?app=over')).data;
+    assert.deepEqual(snaps.map((x) => x.mode), ['overwrite', 'empty']);
+  });
+  test('only the owner (or an admin) can restore or list an app\'s snapshots', async () => {
+    await newApp('mine');
+    const id = await clear('mine', { collections: ['orders'] });
+    assert.equal((await restore(id, {}, stranger)).status, 404);
+    assert.equal((await stranger('GET', '/api/snapshots?app=mine')).status, 404);
+    assert.deepEqual((await stranger('GET', '/api/snapshots')).data, []);
+    assert.equal((await restore('20260101T000000-000000')).status, 404);
+    assert.equal((await restore('not-a-snapshot')).status, 400);
+    assert.equal((await restore(id, {}, adminCall)).status, 200);
   });
 });
 

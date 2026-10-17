@@ -100,6 +100,15 @@ All notable changes to Cubby are documented here. The format follows
   `--dry-run` (and any clear without `--yes`) reports "matches N of M", 5 sample rows and cascades, deleting
   nothing. More than 10,000 matches are refused without `--all-matching`. Filters run as superuser, so they pass
   the proxy's `checkForeignRefs` (plus a check on back-relations) and only ever target the app's own collection.
+- Undo a clear: `cubby data snapshots [app]` lists snapshots (who, why, what, counts, expiry) and
+  `cubby data restore <id> [--overwrite --yes] [--dry-run]` brings one back. Restores are additive: records keep
+  their ids and existing ids are skipped, so restoring twice is harmless; `--overwrite` replaces them after
+  snapshotting the versions it replaces. Dropped collections are recreated from the snapshot's schema, fields
+  removed since are skipped, and fields whose type changed refuse the restore; `--dry-run` reports all of it.
+  Checked against the bundled PocketBase (0.40): a superuser can't read password hashes, and writing one back
+  just sets it as a new password, so restored accounts get new random passwords, which the restore lists. Files
+  come back under new names and `created`/`updated` are new. API: `GET /api/snapshots[?app=]`,
+  `POST /api/snapshots/<id>/restore`.
 - A command palette in the dashboard: ⌘K (Ctrl+K), or Search in the sidebar, jumps to a page or one of your apps
   and copies the setup prompt or a common command (`cubby deploy`, `cubby login`), switches theme or logs out.
   Fuzzy search, fully keyboard-driven.
