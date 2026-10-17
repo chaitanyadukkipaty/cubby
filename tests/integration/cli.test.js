@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, ROOT, SIGNUP_CODE, ADMIN } from '../helpers/server.js';
-import { api, signup, adminToken } from '../helpers/integration.js';
+import { api, signup, adminToken, deployTo } from '../helpers/integration.js';
 
 // The real entry point: the launcher (same version as the server here, so it runs the bundled CLI in-process).
 const CLI = join(ROOT, 'cli/src/launcher.js');
@@ -431,10 +431,52 @@ describe('admin commands', () => {
     const bg = ok(await asAdmin(['admin', 'backups', 'create', '--no-wait', '--json'])).json;
     assert.equal(bg.status, 'started');
     assert.equal(bg.date, today);
-    for (const bad of [['admin'], ['admin', 'backups', 'frob'], ['admin', 'backups', 'delete', '--yes']]) {
+    for (const bad of [['admin'], ['admin', 'backups', 'frob'], ['admin', 'backups', 'delete', '--yes'], ['admin', 'backups', 'keep'], ['admin', 'deploys'], ['admin', 'deploys', 'x', 'frob']]) {
       const r = await asAdmin(bad);
       assert.equal(r.code, 1, bad.join(' '));
       assert.match(r.stderr, /Usage: cubby admin/);
     }
+  });
+  test('an admin sets backup retention, confirming with --yes when backups would go', async () => {
+    const asAdmin = async (args) => cubby([...args, '--server', srv.url], { env: { CUBBY_TOKEN: await adminToken(srv.url, ADMIN) } });
+    for (let i = 0; i < 100 && ok(await asAdmin(['admin', 'backups', '--json'])).json.running; i++) await new Promise((res) => setTimeout(res, 100));
+    const more = ok(await asAdmin(['admin', 'backups', 'keep', '14', '--json'])).json;
+    assert.equal(more.keep, 14);
+    assert.deepEqual(more.estimate.delete, []);
+    assert.match(ok(await asAdmin(['admin', 'backups', 'keep', '10'])).stdout, /Keeping the newest 10 backups/);
+    assert.equal(ok(await asAdmin(['admin', 'backups', '--json'])).json.keep, 10);
+    // Today's backup (from the --no-wait run above) plus an old one: keeping 1 means the old one goes next night.
+    writeFileSync(join(srv.dataDir, 'backups', 'sites-2000-01-01.tar.gz'), 'old');
+    const lower = await asAdmin(['admin', 'backups', 'keep', '1']);
+    assert.equal(lower.code, 1);
+    assert.match(lower.stderr, /deletes 1 backup \(2000-01-01\)[\s\S]*Re-run with --yes/);
+    assert.equal(ok(await asAdmin(['admin', 'backups', '--json'])).json.keep, 10, 'unchanged without --yes');
+    const yes = ok(await asAdmin(['admin', 'backups', 'keep', '1', '--yes']));
+    assert.match(yes.stdout, /Keeping the newest 1 backup\b.*next nightly backup deletes 1 \(2000-01-01\), freeing 3 B/);
+    const bad = await asAdmin(['admin', 'backups', 'keep', '0']);
+    assert.equal(bad.code, 1);
+    assert.match(bad.stderr, /between 1 and 90/);
+  });
+  test('an admin lists and deletes older deploys of any app, never the current one', async () => {
+    const asAdmin = async (args) => cubby([...args, '--server', srv.url], { env: { CUBBY_TOKEN: await adminToken(srv.url, ADMIN) } });
+    const owner = api(srv.url, token);
+    await owner('POST', '/api/projects', { body: { slug: 'old-deploys' } });
+    for (const v of ['v1', 'v2', 'v3']) await deployTo(owner, 'old-deploys', { 'index.html': v }, `?message=${v}`);
+    const list = ok(await asAdmin(['admin', 'deploys', 'old-deploys', '--json'])).json;
+    assert.deepEqual(list.map((d) => d.message), ['v3', 'v2', 'v1']);
+    assert.match(ok(await asAdmin(['admin', 'deploys', 'old-deploys'])).stdout, /^\* \w+ .* v3$/m);
+
+    const noYes = await asAdmin(['admin', 'deploys', 'old-deploys', 'prune', '--keep', '1']);
+    assert.equal(noYes.code, 1);
+    assert.match(noYes.stderr, /Re-run with --yes/);
+    const pruned = ok(await asAdmin(['admin', 'deploys', 'old-deploys', 'prune', '--keep', '1', '--yes']));
+    assert.match(pruned.stdout, /Deleted 1 older deploy of old-deploys/);
+    const current = await asAdmin(['admin', 'deploys', 'old-deploys', 'delete', list[0].id, '--yes', '--json']);
+    assert.equal(current.code, 1);
+    assert.match(current.json.error, /current deploy/);
+    const one = ok(await asAdmin(['admin', 'deploys', 'old-deploys', 'delete', list[1].id, '--yes', '--json'])).json;
+    assert.deepEqual(one.deleted, [list[1].id]);
+    assert.deepEqual(one.deploys.map((d) => d.message), ['v3']);
+    assert.equal((await asAdmin(['admin', 'deploys', 'old-deploys', 'delete', list[1].id])).code, 1, 'needs --yes');
   });
 });

@@ -1,16 +1,20 @@
 // Nightly backups: a PocketBase backup (all app data) plus a tarball of deployed sites (with their jobs) and the
 // key that decrypts app secrets, which must be restored together with the data.
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as tar from 'tar';
 import { admin } from './pb.js';
 import { config } from './config.js';
 import { HttpError } from './http.js';
+import { backupKeep } from './logic.js';
+import { getSettings } from './settings.js';
+import { deleteBackup, listBackups, planRetention } from './storage.js';
 
 const backupDir = join(config.dataDir, 'backups');
 
-export async function runBackup() {
+// Keeps the newest `keep` backups (the Admin setting), deleting older ones as whole pairs by date.
+export async function runBackup({ keep } = {}) {
   const stamp = new Date().toISOString().slice(0, 10);
   const name = `cubby-${stamp}.zip`;
   // One backup per day: a manual backup later the same day replaces it.
@@ -22,10 +26,9 @@ export async function runBackup() {
   const dirs = ['sites', 'secrets'].filter((d) => existsSync(join(config.dataDir, d)));
   await tar.c({ gzip: true, cwd: config.dataDir, file: join(backupDir, `sites-${stamp}.tar.gz`) }, dirs).catch(() => {});
 
-  const pbBackups = (await admin.backups.getFullList()).filter((b) => b.key.startsWith('cubby-')).sort((a, b) => b.key.localeCompare(a.key));
-  for (const b of pbBackups.slice(config.backups.keep)) await admin.backups.delete(b.key);
-  const siteBackups = (await readdir(backupDir)).filter((f) => f.startsWith('sites-')).sort().reverse();
-  for (const f of siteBackups.slice(config.backups.keep)) await rm(join(backupDir, f), { force: true });
+  const list = await listBackups(admin, config.dataDir);
+  const plan = planRetention(list, keep ?? backupKeep(await getSettings()));
+  for (const date of plan.delete) await deleteBackup(admin, config.dataDir, list.find((b) => b.date === date));
   console.log(`backup ${stamp} done`);
 }
 

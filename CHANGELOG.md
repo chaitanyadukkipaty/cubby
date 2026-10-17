@@ -25,6 +25,14 @@ All notable changes to Cubby are documented here. The format follows
   files of the pair, warns when it was the newest, and refuses the only backup without `--leave-none`. Restore stays
   `sudo cubby-server restore <date>`. Non-admins get a clear error. API: `GET /api/admin/storage`,
   `GET|POST /api/admin/backups`, `DELETE /api/admin/backups/<date>[?leave_none=1]`.
+- How many nightly backups to keep is now a server setting (1 to 90), seeded from `BACKUP_KEEP` on first boot only;
+  existing servers keep using `BACKUP_KEEP` (7 if unset) until it's changed. `cubby admin backups keep <n>` sets it
+  and says what the next nightly prune deletes and frees (or roughly how much more disk it takes); lowering it needs
+  `--yes`. API: `backup_keep` in `PATCH /api/admin/settings`; `GET /api/admin/backups[?keep=N]` returns an `estimate`.
+- Admins can delete older deploys of any app, never the one it serves: `cubby admin deploys <app>` lists them,
+  `prune [--keep <n>] --yes` deletes them oldest first (sparing the newest n), `delete <id> --yes` deletes one. Their
+  jobs folders go too and they leave the app's rollback list. API: `GET /api/admin/apps/<app>/deploys`,
+  `POST /api/admin/apps/<app>/deploys/prune`, `DELETE /api/admin/apps/<app>/deploys/<id>`.
 
 ### Changed
 
@@ -32,6 +40,8 @@ All notable changes to Cubby are documented here. The format follows
 
 ### Fixed
 
+- Backup retention deleted database zips and sites tarballs separately, so a day missing one file could leave half
+  pairs behind. It now deletes whole pairs by date.
 - A backup on a server with no deploys and no secrets yet failed (`no paths specified to add to archive`); it now
   writes an empty sites tarball so every backup is a whole pair.
 

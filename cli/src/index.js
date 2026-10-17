@@ -11,7 +11,7 @@ import {
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
   jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
-  formatStorage, formatBackups, formatBytes,
+  formatStorage, formatBackups, formatBytes, formatRetention,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -28,6 +28,7 @@ const { values: flags, positionals } = parseArgs({
     'no-install': { type: 'boolean' }, 'no-build': { type: 'boolean' }, unlisted: { type: 'boolean' }, listed: { type: 'boolean' },
     yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
     run: { type: 'string' }, limit: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
+    keep: { type: 'string' },
   },
 });
 
@@ -404,8 +405,8 @@ const commands = {
   },
 
   // Server administration: needs an admin account on the target server.
-  async admin(sub, action, arg) {
-    const call = (method, path) => api(method, path).catch(async (err) => {
+  async admin(sub, action, arg, arg2) {
+    const call = (method, path, opts) => api(method, path, opts).catch(async (err) => {
       if (err.status === 403) throw new CliError(`\`cubby admin\` needs an admin account. You're logged in to ${await where()} as a regular user.`);
       throw err;
     });
@@ -436,11 +437,36 @@ const commands = {
       if (r.warning && !flags.json) console.error(`warning: ${r.warning}`);
       return out(`Deleted the backup from ${arg} (${r.files.join(', ')})`, r);
     }
+    if (sub === 'backups' && action === 'keep' && arg) {
+      // Lowering it deletes backups at the next nightly run, so that needs --yes (raising it never does).
+      const preview = (await call('GET', `/api/admin/backups?keep=${encodeURIComponent(arg)}`)).estimate;
+      const n = preview.delete.length;
+      if (n && !flags.yes) throw new CliError(`Keeping ${preview.keep} deletes ${n} backup${n === 1 ? '' : 's'} (${preview.delete.join(', ')}) at the next nightly backup, freeing ${formatBytes(preview.frees_bytes)}. Re-run with --yes.`);
+      await call('PATCH', '/api/admin/settings', { body: { backup_keep: preview.keep } });
+      const r = await call('GET', '/api/admin/backups');
+      return out(`Keeping the newest ${r.keep} backup${r.keep === 1 ? '' : 's'}: ${formatRetention(r.estimate)}.`, { keep: r.keep, estimate: r.estimate });
+    }
+    if (sub === 'deploys' && action) {
+      const base = `/api/admin/apps/${encodeURIComponent(action)}/deploys`;
+      if (!arg || arg === 'list') {
+        const list = await call('GET', base);
+        return out(formatDeploys(list), list);
+      }
+      if (arg === 'prune' || (arg === 'delete' && arg2)) {
+        const what = arg === 'prune' ? `every older deploy of ${action}${flags.keep ? ` but the newest ${flags.keep}` : ''}` : `deploy ${arg2} of ${action}`;
+        if (!flags.yes) throw new CliError(`This permanently deletes ${what} (it can't be rolled back to). The current deploy is never deleted. Re-run with --yes.`);
+        const r = arg === 'prune'
+          ? await call('POST', `${base}/prune`, { body: { keep: flags.keep === undefined ? 0 : Number(flags.keep) } })
+          : await call('DELETE', `${base}/${encodeURIComponent(arg2)}`);
+        const n = r.deleted.length;
+        return out(`Deleted ${n} older deploy${n === 1 ? '' : 's'} of ${action}, freeing ${formatBytes(r.freed_bytes)}. ${r.deploys.length} left for rollback (current included).`, r);
+      }
+    }
     throw new CliError(ADMIN_USAGE);
   },
 };
 
-const ADMIN_USAGE = 'Usage: cubby admin storage | backups [create [--no-wait] | delete <YYYY-MM-DD> --yes [--leave-none]]';
+const ADMIN_USAGE = 'Usage: cubby admin storage | backups [create [--no-wait] | delete <YYYY-MM-DD> --yes [--leave-none] | keep <n> [--yes]] | deploys <app> [prune [--keep <n>] --yes | delete <deploy-id> --yes]';
 
 const [cmd, ...rest] = positionals;
 if (!cmd || flags.help || !commands[cmd]) {

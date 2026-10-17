@@ -150,6 +150,8 @@ async function ensurePlatformCollections() {
       // Same for the jobs kill switch. A job_timeout_s of 0 (rows from before jobs) means the default.
       { name: 'jobs_off', type: 'bool' },
       { name: 'job_timeout_s', type: 'number', onlyInt: true },
+      // Nightly backups kept, seeded from BACKUP_KEEP on first boot. 0 (rows from before it) means BACKUP_KEEP.
+      { name: 'backup_keep', type: 'number', onlyInt: true },
       ...autodates,
     ],
   });

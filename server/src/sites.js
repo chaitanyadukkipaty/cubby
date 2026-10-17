@@ -56,17 +56,36 @@ export async function createDeploy(project, tarball, message = '', client = '') 
   // Job code moves out of the site before the deploy goes live, so it's never served.
   if (jobs) await rename(join(sitesDir(project.slug), record.id, JOBS_DIR), jobsDir(project.slug, record.id));
   await admin.collection('cubby_projects').update(project.id, { current_deploy: record.id, last_deployed: record.created });
-  await pruneDeploys(project);
+  // Keeps keepDeploys in all: the new (current) deploy plus the newest others, for rollback.
+  await deleteDeploys(project, oldDeploys(await listDeploys(project), { keep: config.keepDeploys - 1 }));
   return { id: record.id, files, bytes, message, client, created: record.created, jobs: (jobs ?? []).map((j) => j.name) };
 }
 
-async function pruneDeploys(project) {
-  const deploys = await listDeploys(project);
-  for (const d of deploys.slice(config.keepDeploys)) {
-    await admin.collection('cubby_deploys').delete(d.id);
-    await rm(join(sitesDir(project.slug), d.id), { recursive: true, force: true });
-    await rm(jobsDir(project.slug, d.id), { recursive: true, force: true });
+// Which of `deploys` (newest first, from listDeploys) to delete, oldest first: one by `id`, or all but the
+// newest `keep`. Never the current deploy: the app would go down (roll back first to delete it).
+export function oldDeploys(deploys, { keep = 0, id } = {}) {
+  if (id !== undefined) {
+    const d = deploys.find((x) => x.id === id);
+    if (!d) throw new HttpError(404, `Deploy ${id} not found`);
+    if (d.current) throw new HttpError(409, `${id} is the current deploy: the app serves it. Roll back to another deploy first.`);
+    return [d];
   }
+  const n = Number(keep);
+  if (!Number.isInteger(n) || n < 0) throw new HttpError(400, 'keep must be a whole number of older deploys to keep (0 or more)');
+  return deploys.filter((d) => !d.current).slice(n).reverse();
+}
+
+// Deletes deploys (records, site folders and their jobs folders), so they're gone from the rollback list too.
+// Returns the bytes freed on disk.
+export async function deleteDeploys(project, deploys) {
+  let freed = 0;
+  for (const d of deploys) {
+    const dirs = [join(sitesDir(project.slug), d.id), jobsDir(project.slug, d.id)];
+    for (const dir of dirs) freed += await dirSize(dir);
+    await admin.collection('cubby_deploys').delete(d.id);
+    for (const dir of dirs) await rm(dir, { recursive: true, force: true });
+  }
+  return freed;
 }
 
 export async function listDeploys(project) {

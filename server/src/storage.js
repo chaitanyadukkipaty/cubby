@@ -93,6 +93,21 @@ export async function listBackups(pb, dataDir) {
   return pairBackups(await pb.backups.getFullList(), siteFiles);
 }
 
+// What keeping the newest `keep` backups means for `backups` (newest first): the dates whose pairs go (both files
+// together, so no half pair is left behind) and the bytes that frees, or, keeping more than exist, roughly how much
+// more disk the extra nightly backups will take (the average backup so far, times how many more there will be).
+export function planRetention(backups, keep) {
+  const gone = backups.slice(keep);
+  const average = backups.length ? backups.reduce((sum, b) => sum + b.total_bytes, 0) / backups.length : 0;
+  return {
+    keep,
+    backups: backups.length,
+    delete: gone.map((b) => b.date),
+    frees_bytes: gone.reduce((sum, b) => sum + b.total_bytes, 0),
+    adds_bytes: Math.round(average * Math.max(0, keep - backups.length)),
+  };
+}
+
 // Deletes both files of a backup (whichever exist). Returns the names removed.
 export async function deleteBackup(pb, dataDir, backup) {
   const files = [];

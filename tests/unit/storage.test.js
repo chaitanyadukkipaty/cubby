@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { pairBackups, checkBackupDelete, createTtlCache, scanStorage } from '../../server/src/storage.js';
+import { pairBackups, checkBackupDelete, createTtlCache, scanStorage, planRetention } from '../../server/src/storage.js';
 
 describe('scanStorage', () => {
   // Writes { 'relative/path': byteCount } under a fresh dir.
@@ -127,5 +127,20 @@ describe('pairBackups', () => {
       { date: '2026-10-03', db_bytes: 300, sites_bytes: null, total_bytes: 300, complete: false },
       { date: '2026-10-01', db_bytes: null, sites_bytes: 10, total_bytes: 10, complete: false },
     ]);
+  });
+});
+
+describe('planRetention', () => {
+  const pair = (date, db, sites) => ({ date, db_bytes: db, sites_bytes: sites, total_bytes: (db ?? 0) + (sites ?? 0), complete: db !== null && sites !== null });
+  // Newest first, as listBackups returns them. The 10-02 database zip is missing.
+  const list = [pair('2026-10-04', 400, 40), pair('2026-10-03', 300, 30), pair('2026-10-02', null, 20), pair('2026-10-01', 100, 10)];
+  test('deletes whole pairs by date beyond the newest N, and says how much that frees', () => {
+    assert.deepEqual(planRetention(list, 2), { keep: 2, backups: 4, delete: ['2026-10-02', '2026-10-01'], frees_bytes: 130, adds_bytes: 0 });
+    assert.deepEqual(planRetention(list, 4).delete, []);
+  });
+  test('keeping more than exist frees nothing and estimates the growth from the average backup', () => {
+    // Average backup: (440 + 330 + 20 + 110) / 4 = 225; two more of them.
+    assert.deepEqual(planRetention(list, 6), { keep: 6, backups: 4, delete: [], frees_bytes: 0, adds_bytes: 450 });
+    assert.deepEqual(planRetention([], 7), { keep: 7, backups: 0, delete: [], frees_bytes: 0, adds_bytes: 0 });
   });
 });

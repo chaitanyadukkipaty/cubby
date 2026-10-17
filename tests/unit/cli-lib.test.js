@@ -305,4 +305,11 @@ describe('admin output', () => {
     assert.match(lib.formatBackups({ keep: 7, running: null, last: null, backups: [] }), /^No backups yet/);
     assert.doesNotMatch(lib.formatBackups({ keep: 7, running: null, last: { ok: true, error: null }, backups: [] }), /failed|running/);
   });
+  test('formatRetention says what a keep count deletes and frees, or roughly how much more it takes', () => {
+    assert.equal(lib.formatRetention({ keep: 1, backups: 3, delete: ['2026-10-02', '2026-10-01'], frees_bytes: 2048, adds_bytes: 0 }),
+      'the next nightly backup deletes 2 (2026-10-02, 2026-10-01), freeing 2.0 KB');
+    assert.equal(lib.formatRetention({ keep: 9, backups: 3, delete: [], frees_bytes: 0, adds_bytes: 6144 }),
+      'nothing is deleted; 6 more nightly backups take about 6.0 KB');
+    assert.equal(lib.formatRetention({ keep: 3, backups: 3, delete: [], frees_bytes: 0, adds_bytes: 0 }), 'nothing is deleted');
+  });
 });

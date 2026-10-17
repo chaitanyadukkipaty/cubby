@@ -32,6 +32,7 @@ export const config = {
     maxAppsPerUser: Number(env('MAX_APPS_PER_USER', 10)),
     maxDeployMb: Number(env('MAX_DEPLOY_MB', 50)),
   },
+  // keep: seeds the backup_keep setting on first boot, and stands in for it on rows from before it existed.
   backups: { keep: Number(env('BACKUP_KEEP', 7)), hour: Number(env('BACKUP_HOUR', 3)) },
   keepDeploys: 10,
   pb: {
