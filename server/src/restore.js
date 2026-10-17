@@ -21,11 +21,8 @@ const READ_ONLY = new Set(['id', 'collectionId', 'collectionName', 'expand', 'cr
 
 // The records of `name` in a snapshot, BATCH lines at a time (a big file never sits in memory whole).
 async function* batches(dir, name) {
-  const file = join(dir, 'records', `${name}.jsonl`);
-  if (!existsSync(file)) return;
   let batch = [];
-  for await (const line of createInterface({ input: createReadStream(file), crlfDelay: Infinity })) {
-    if (!line.trim()) continue;
+  for await (const line of createInterface({ input: createReadStream(join(dir, 'records', `${name}.jsonl`)), crlfDelay: Infinity })) {
     batch.push(JSON.parse(line));
     if (batch.length === BATCH) { yield batch; batch = []; }
   }
@@ -37,7 +34,7 @@ function relationOrder(names, defs) {
   const left = [...names];
   const out = [];
   while (left.length) {
-    const ready = left.find((n) => (defs.get(n)?.fields ?? []).every((f) => f.type !== 'relation' || f.collection === n || !left.includes(f.collection)));
+    const ready = left.find((n) => defs.get(n).fields.every((f) => f.type !== 'relation' || f.collection === n || !left.includes(f.collection)));
     const next = ready ?? left[0];
     out.push(next);
     left.splice(left.indexOf(next), 1);
@@ -97,7 +94,7 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
     existing.set(name, ids);
     counts.set(name, n);
   }
-  const auth = order.filter((n) => (saved.get(n) ?? live.get(n)).type === 'auth');
+  const auth = order.filter((n) => saved.get(n).type === 'auth');
   const result = {
     snapshot: meta.id, overwrite, recreated: recreate, skipped_fields: skipped, refused_fields: refused, files: meta.files,
     collections: order.map((name) => ({ name, records: counts.get(name), existing: existing.get(name).size, restored: 0, replaced: 0, failed: 0 })),
@@ -141,17 +138,19 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
   }
   const cols = new Map((await projectCollections(slug, pb.collections)).map((c) => [c.name.slice(prefix.length), c]));
 
-  // Creates (or with overwrite updates) one record; a record pointing at one not restored yet is retried later.
-  const retry = [];
-  async function write(name, rec, isRetry) {
+  // Creates (or with overwrite updates) one record. One pointing at a record not restored yet goes to `defer` (when
+  // given) to be tried again later. `noRelations` leaves its relations out (set afterwards by linkLater).
+  const linkLater = [];
+  async function write(name, rec, defer, noRelations = false) {
     const col = cols.get(name);
     const fields = col.fields.filter((f) => !f.system || ['email', 'emailVisibility', 'verified'].includes(f.name))
-      .filter((f) => !['autodate', 'password'].includes(f.type) && f.name !== 'tokenKey' && f.name in rec && !READ_ONLY.has(f.name));
+      .filter((f) => !['autodate', 'password'].includes(f.type) && f.name !== 'tokenKey' && f.name in rec && !READ_ONLY.has(f.name))
+      .filter((f) => !noRelations || f.type !== 'relation');
     const data = {};
     for (const f of fields) {
       if (f.type !== 'file') { data[f.name] = rec[f.name]; continue; }
       const files = [];
-      for (const fname of [].concat(rec[f.name] ?? []).filter(Boolean)) {
+      for (const fname of [].concat(rec[f.name]).filter(Boolean)) {
         const path = join(dir, 'files', name, rec.id, fname);
         if (existsSync(path)) files.push(new File([await readFile(path)], fname.replace(/_[a-z0-9]{10}(\.[^.]*)?$/, '$1')));
       }
@@ -168,20 +167,39 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
         if (password) result.accounts.push({ collection: name, id: rec.id, email: rec.email, password });
         row(name).restored++;
       }
+      if (noRelations) linkLater.push([name, rec]);
     } catch (err) {
       const errors = err.response?.data ?? {};
-      if (!isRetry && Object.values(errors).some((e) => e?.code === 'validation_missing_rel_records')) return retry.push([name, rec]);
+      if (defer && Object.values(errors).some((e) => e?.code === 'validation_missing_rel_records')) return defer.push([name, rec]);
       row(name).failed++;
       if (result.failures.length < FAILURES_SHOWN) result.failures.push({ collection: name, id: rec.id, error: Object.keys(errors).length ? JSON.stringify(errors) : err.message });
     }
   }
+  let pending = [];
   for (const name of order) {
     for await (const batch of batches(dir, name)) {
-      for (const rec of batch) if (!existing.get(name).has(rec.id) || overwrite) await write(name, rec, false);
+      for (const rec of batch) if (!existing.get(name).has(rec.id) || overwrite) await write(name, rec, pending);
     }
   }
-  // Records pointing at ones that came back after them (self-relations, cycles): once more, now that all are in.
-  for (const [name, rec] of retry) await write(name, rec, true);
+  // Records pointing at ones that came back after them (self-relations): again while that gets any further. What's
+  // left points in a cycle: those records are created without their relations, which are set once all exist.
+  while (pending.length) {
+    const again = [];
+    for (const [name, rec] of pending) await write(name, rec, again);
+    if (again.length === pending.length) {
+      for (const [name, rec] of again) await write(name, rec, null, true);
+      break;
+    }
+    pending = again;
+  }
+  for (const [name, rec] of linkLater) {
+    const col = cols.get(name);
+    const links = Object.fromEntries(col.fields.filter((f) => f.type === 'relation' && f.name in rec).map((f) => [f.name, rec[f.name]]));
+    await pb.collection(col.name).update(rec.id, links).catch((err) => {
+      row(name).failed++;
+      if (result.failures.length < FAILURES_SHOWN) result.failures.push({ collection: name, id: rec.id, error: `restored without its links: ${err.message}` });
+    });
+  }
   if (recreated.length) await collectionIndex(slug, { refresh: true }, pb.collections);
   return result;
 }

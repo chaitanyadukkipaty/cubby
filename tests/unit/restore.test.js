@@ -111,6 +111,49 @@ describe('relations', () => {
   });
 });
 
+describe('more shapes of data', () => {
+  test('collections pointing at each other (a cycle) and many records come back whole', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'teams', fields: [{ name: 'captain', type: 'relation', collection: 'players' }] },
+      { name: 'players', fields: [{ name: 'team', type: 'relation', collection: 'teams' }, { name: 'n', type: 'number' }] },
+    ] }, pb.collections);
+    await pb.collection('shop__teams').create({ id: 't1' });
+    for (let i = 0; i < 150; i++) await pb.collection('shop__players').create({ id: `pl${String(i).padStart(3, '0')}`, team: 't1', n: i });
+    await pb.collection('shop__teams').update('t1', { captain: 'pl007' });
+    const { snapshot } = await clear({ collections: ['teams', 'players'] });
+    const r = await restore(snapshot.id);
+    assert.deepEqual(r.collections.map((c) => [c.name, c.restored, c.failed]).sort(), [['players', 150, 0], ['teams', 1, 0]]);
+    assert.equal(pb.records('shop__teams')[0].captain, 'pl007');
+  });
+  test('links of a cycle that can\'t be set afterwards are reported; the records stay restored', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'eggs', fields: [{ name: 'hen', type: 'relation', collection: 'hens' }] },
+      { name: 'hens', fields: [{ name: 'egg', type: 'relation', collection: 'eggs' }] },
+    ] }, pb.collections);
+    await pb.collection('shop__eggs').create({ id: 'e1' });
+    await pb.collection('shop__hens').create({ id: 'h1', egg: 'e1' });
+    await pb.collection('shop__eggs').update('e1', { hen: 'h1' });
+    const { snapshot } = await clear({ collections: ['eggs', 'hens'] });
+    pb.collection = ((real) => (name) => ({ ...real(name), update: async () => { throw new Error('locked'); } }))(pb.collection.bind(pb));
+    const r = await restore(snapshot.id);
+    assert.deepEqual(r.failures.map((f) => f.error), ['restored without its links: locked', 'restored without its links: locked']);
+    assert.equal(pb.records('shop__eggs').length + pb.records('shop__hens').length, 2);
+  });
+  test('a field holding several files gets all of them back', async () => {
+    await applySchema('shop', { collections: [{ name: 'albums', fields: [{ name: 'pics', type: 'file', maxSelect: 5 }] }] }, pb.collections);
+    await pb.collection('shop__albums').create({ id: 'a1', pics: [file('one.png', 3), file('two.png', 4)] });
+    const { snapshot } = await clear({ collections: ['albums'] });
+    await restore(snapshot.id);
+    assert.equal(pb.records('shop__albums')[0].pics.length, 2);
+  });
+  test('an error without details from PocketBase is reported by its message', async () => {
+    const { snapshot } = await clear({ collections: ['orders'] });
+    pb.collection = ((real) => (name) => ({ ...real(name), create: async () => { throw new Error('socket hang up'); } }))(pb.collection.bind(pb));
+    const r = await restore(snapshot.id);
+    assert.deepEqual(r.failures, [{ collection: 'orders', id: 'o1', error: 'socket hang up' }]);
+  });
+});
+
 describe('accounts', () => {
   test('restored accounts get new random passwords, listed so they can be handed out', async () => {
     const { snapshot } = await clear({ collections: ['customers'] });

@@ -27,13 +27,18 @@ describe('snapshot ids', () => {
 
 describe('listing and finding', () => {
   test('lists complete snapshots of the given apps, newest first; a folder without meta.json is still being written', async () => {
-    await make('shop', '20261015T090000-aaaaaa');
-    await make('shop', '20261017T090000-bbbbbb');
-    await make('blog', '20261016T090000-cccccc');
+    await make('shop', '20261015T090000-aaaaaa', { created: '2026-10-15T09:00:00.000Z' });
+    await make('shop', '20261017T090000-bbbbbb', { created: '2026-10-17T09:00:00.000Z' });
+    await make('blog', '20261016T090000-cccccc', { created: '2026-10-16T09:00:00.000Z' });
     await startSnapshot(dataDir, 'shop', '20261017T100000-dddddd'); // unfinished
     assert.deepEqual((await listSnapshots(dataDir, ['shop', 'blog'])).map((s) => s.id), ['20261017T090000-bbbbbb', '20261016T090000-cccccc', '20261015T090000-aaaaaa']);
     assert.deepEqual((await listSnapshots(dataDir, ['blog'])).map((s) => s.id), ['20261016T090000-cccccc']);
     assert.deepEqual(await listSnapshots(dataDir, ['nothing-here']), []);
+  });
+  test('snapshots made in the same second list by their creation time, not their random suffix', async () => {
+    await make('shop', '20261017T101500-ffffff', { created: '2026-10-17T10:15:00.100Z' });
+    await make('shop', '20261017T101500-000000', { created: '2026-10-17T10:15:00.900Z' });
+    assert.deepEqual((await listSnapshots(dataDir, ['shop'])).map((s) => s.id), ['20261017T101500-000000', '20261017T101500-ffffff']);
   });
   test('finds a snapshot by id in any app; unknown ids are 404, malformed ones 400', async () => {
     await make('blog', '20261016T090000-cccccc');

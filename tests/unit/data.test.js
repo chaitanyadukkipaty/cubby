@@ -218,6 +218,11 @@ describe('deleting by filter or ids', () => {
   test('a filter PocketBase can\'t read is a 400 with its message', async () => {
     await assert.rejects(clearData('shop', { collection: 'products', filter: 'title = ' }, deps()), (e) => e.status === 400 && /PocketBase rejected the filter/.test(e.message));
   });
+  test('PocketBase being down while matching is passed on as it is', async () => {
+    const real = pb.collection.bind(pb);
+    pb.collection = (name) => ({ ...real(name), getList: async () => { throw Object.assign(new Error('down'), { status: 0 }); } });
+    await assert.rejects(clearData('shop', { collection: 'products', filter: 'title = "x"' }, deps()), /down/);
+  });
   test('one collection, with a filter or ids (not both), never with collections', async () => {
     for (const body of [
       { collection: 'products' }, { collection: 'products', filter: 'a = 1', ids: ['p1'] }, { collections: ['products'], filter: 'a = 1' },

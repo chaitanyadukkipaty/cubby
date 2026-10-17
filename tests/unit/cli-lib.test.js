@@ -265,6 +265,17 @@ describe('jobs and env helpers', () => {
     assert.match(lib.formatClear('shop', r), /^Wiped the database of shop: dropped a \(1 record\), b \(2 records\)\.\n/);
     assert.match(lib.formatClearPreview('shop', { ...r, dry_run: true, matches: 3, total: 3, samples: [] }), /^Dry run: wiping the database \(a, b\) deletes 3 records\./);
   });
+  test('formatClear and its preview for a plain drop and for ids; snapshots and restores in their other shapes', () => {
+    const snapshot = { id: 's', expires: '2026-10-24T00:00:00.000Z' };
+    assert.match(lib.formatClear('shop', { mode: 'drop', collections: [{ name: 'a', records: 1 }], cascade: [], warnings: [], snapshot }), /^Dropped a \(1 record\) in shop\./);
+    assert.match(lib.formatClearPreview('shop', { mode: 'drop', matches: 1, total: 1, collections: [{ name: 'a', records: 1 }], samples: [], cascade: [], warnings: [] }), /^Dry run: dropping a deletes 1 record\./);
+    assert.match(lib.formatClearPreview('shop', { mode: 'ids', matches: 1, total: 4, collections: [{ name: 'a', records: 1 }], samples: [], cascade: [], warnings: [] }), /^Dry run: 1 of 4 records in a match\. Nothing/);
+    assert.match(lib.formatSnapshots([{ id: 's', app: 'a', created: 'C', expires: '2026-10-24', by: null, by_admin: false, reason: '', mode: 'ids', collections: [{ name: 'x' }], records: 1, files: true }]), /by \?  until 2026-10-24/);
+    const base = { snapshot: 's', recreated: [], skipped_fields: [], refused_fields: [], accounts: [], failures: [], warnings: [] };
+    assert.equal(lib.formatRestore({ ...base, dry_run: true, overwrite: true, collections: [{ name: 'p', records: 2, existing: 1 }, { name: 'q', records: 1, existing: 0 }], recreated: ['q'] }),
+      'Dry run of snapshot s (nothing changed):\n  p: 2 records, 1 already there (replaced)\n  q: 1 record\nWould recreate: q');
+    assert.equal(lib.formatRestore({ ...base, overwrite: true, collections: [{ name: 'p', records: 2, existing: 1, restored: 1, replaced: 1, failed: 0 }] }), 'Restored snapshot s:\n  p: 1 restored, 1 replaced');
+  });
   test('formatClearPreview: matches N of M, samples, cascades and warnings, deleting nothing', () => {
     const text = lib.formatClearPreview('shop', {
       dry_run: true, mode: 'filter', filter: 'closed = true', matches: 9, total: 10, collections: [{ name: 'polls', records: 9 }],

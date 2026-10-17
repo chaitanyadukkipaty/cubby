@@ -59,7 +59,8 @@ export async function listSnapshots(dataDir, slugs) {
       if (meta) metas.push(meta);
     }
   }
-  return metas.sort((a, b) => b.id.localeCompare(a.id));
+  // By creation time (ms; two snapshots in the same second have ids that don't sort by time), then id.
+  return metas.sort((a, b) => b.created.localeCompare(a.created) || b.id.localeCompare(a.id));
 }
 
 // { meta, dir } of snapshot `id`, whichever app it belongs to.

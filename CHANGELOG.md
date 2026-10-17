@@ -105,6 +105,7 @@ All notable changes to Cubby are documented here. The format follows
   their ids and existing ids are skipped, so restoring twice is harmless; `--overwrite` replaces them after
   snapshotting the versions it replaces. Dropped collections are recreated from the snapshot's schema, fields
   removed since are skipped, and fields whose type changed refuse the restore; `--dry-run` reports all of it.
+  Links between restored records come back too, even when collections point at each other.
   Checked against the bundled PocketBase (0.40): a superuser can't read password hashes, and writing one back
   just sets it as a new password, so restored accounts get new random passwords, which the restore lists. Files
   come back under new names and `created`/`updated` are new. API: `GET /api/snapshots[?app=]`,
