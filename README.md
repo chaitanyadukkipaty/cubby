@@ -359,15 +359,23 @@ cubby data clear friend-polls --collections polls,votes --yes
 - **Empty** (the default) deletes every record and keeps the collection, its fields and rules. **`--drop`** removes the
   collection too (like `cubby schema drop`, and the next `cubby deploy` pushes `schema.json` again). A collection
   that others point at can only be dropped together with them.
-- **Nothing goes without a snapshot.** First Cubby writes everything it's about to delete to
-  `DATA_DIR/snapshots/<app>/<id>/`: the collections' schema, their records (one JSON line each), records of other
-  collections that point at them (deleted by cascade or unlinked, reported as such), and uploaded files if they total
-  100 MB or less (above that, it warns that files can't come back). Snapshots are plain files, kept 7 days, pruned by
-  the nightly maintenance, deleted with the app, and shown in `cubby admin storage`.
+- **Nothing goes without a snapshot.** First Cubby works out everything PocketBase will delete along with it: records
+  that point at a deleted one by a cascading relation, however many hops away (replies of replies in a thread too),
+  and records that stay but lose a link. Then it writes it all to `DATA_DIR/snapshots/<app>/<id>/`: the collections'
+  schema, the deleted records (one JSON line each), the unlinked ones as they were, and uploaded files of everything
+  deleted, cascades included, if they total 100 MB or less (above that, it warns that files can't come back).
+  Snapshots are plain files, kept 7 days, pruned by the nightly maintenance, deleted with the app, and shown in
+  `cubby admin storage`.
+- **Refused rather than half done.** A record pointing at one you clear by a *required* relation that doesn't cascade
+  makes PocketBase refuse the delete. The preview names it ("orders.product must point at a products record and
+  doesn't cascade: 1 record (…) would point at nothing"), and the clear is refused with a 409 before anything is
+  snapshotted or deleted: delete or relink those records first, or clear their collection too. Clears, restores and
+  schema changes of one app run one at a time.
 - **Or just some records.** `--collection polls --filter 'closed = true'` (a PocketBase filter) or `--ids a,b`
-  deletes only those, and only they (and their files) go in the snapshot. `--dry-run` shows "matches N of M", five
-  of the records and what would go by cascade, and deletes nothing; any clear without `--yes` shows the same
-  preview. More than 10,000 matches need `--all-matching`. Filters run as the server, so they get the proxy's
+  deletes only those, and only they (and their files) go in the snapshot, with what cascades from them. `--dry-run`
+  shows "matches N of M", five of the records, what would go by cascade or lose a link and anything blocking it, and
+  deletes nothing; any clear without `--yes` shows the same preview. Emptying collections that have no records, or a
+  filter that matches nothing, changes nothing and keeps no snapshot. More than 10,000 matches need `--all-matching`. Filters run as the server, so they get the proxy's
   check: a filter naming another app's collection, a platform collection, or a back-relation from one is refused.
 - **Accounts only when you name them.** An app's users collection is never cleared unless it's listed, and then the
   result warns that restored accounts get new passwords: PocketBase never hands out password hashes, even to the
@@ -378,8 +386,8 @@ cubby data clear friend-polls --collections polls,votes --yes
 files, all ticked except the app's user accounts (ticking those shows the new-passwords warning). Choose **Empty**,
 **Drop**, or **Delete records of one collection** by a filter: type one, click an example, or pick a "created before"
 date. Nothing can be deleted until you click **Preview**, which shows "matches N of M", up to five of the records
-(tick some to delete only those), what goes by cascade, and asks for an extra tick above 10,000 records. Change the
-form and the preview goes stale. Then type the app's name to unlock the button; the result names the snapshot.
+(tick some to delete only those), what goes by cascade, what blocks the clear (the button stays locked), and asks for
+an extra tick above 10,000 records. Change the form and the preview goes stale. Then type the app's name to unlock the button; the result names the snapshot.
 
 <p align="center"><img src="docs/assets/dashboard-app-data.png?v=0997ebdc" width="760" alt="Friend Polls' Data tab: collections with record counts and file sizes (users unticked), Empty, Drop or delete by filter, a preview that says Empties comments, polls and votes: 4,231 records with five sample records, the app name typed to confirm, and two snapshots with Restore and Purge"></p>
 
@@ -399,8 +407,12 @@ cubby data restore 20261017T101500-a1b2c3
 - Records come back **with their original ids**, so links between them (and from other collections) still work.
   Ids that exist again are skipped, so restoring twice is harmless. `--overwrite --yes` replaces them instead,
   after saving the versions it replaces in a new snapshot.
-- A **dropped** collection is recreated from the snapshot's schema, rules included. Fields removed since are skipped;
-  a field whose type changed refuses the restore until it's dropped or renamed. `--dry-run` reports all of it.
+- **Links come back too.** Records that stayed but lost a link (a note whose author was deleted, a bundle that lost
+  one of its posts) get the removed ids back, in place, once those records exist again. Nothing else on them
+  changes: ids added since stay, and a single relation set to something else since is left alone.
+- A **dropped** collection is recreated from the snapshot's schema, rules included, whatever it points at; a wipe
+  brings back every collection, also those that had no records. Fields removed since are skipped; a field whose type
+  changed refuses the restore until it's dropped or renamed. `--dry-run` runs the same checks and reports all of it.
 - On the **Data** tab, **Restore** on a snapshot runs the dry run first and shows what comes back, what exists
   again (skipped, or replaced with **Overwrite**) and any schema drift; a field whose type changed blocks it. Restored
   accounts' new passwords are shown once.

@@ -41,7 +41,8 @@ export function clearRequest({ scope, names = [], drop = false, collection, filt
 
 /**
  * What a dry run (POST …/data/clear with dry_run) found, in words: the headline ("Matches 12 of 40 records in tasks."),
- * the cascade lines, the warnings and samples, whether `nothing` matches and whether it's `big` (over 10,000).
+ * the cascade lines, what `blocked` it (required relations left empty: the server refuses those), the warnings and
+ * samples, whether `nothing` matches and whether it's `big` (over 10,000).
  */
 export function previewModel(r) {
   const names = r.collections.map((c) => c.name);
@@ -56,7 +57,7 @@ export function previewModel(r) {
   const cascade = (r.cascade ?? []).filter((c) => c.records > 0).map((c) => (c.deletes
     ? `${plural(c.records, 'record')} of ${c.collection} go${c.records === 1 ? 'es' : ''} too: their ${c.field} relation deletes on cascade.`
     : `${plural(c.records, 'record')} of ${c.collection} lose${c.records === 1 ? 's its' : ' their'} ${c.field} reference.`));
-  return { headline, cascade, warnings: r.warnings ?? [], samples: r.samples ?? [], nothing: r.matches === 0, big: r.matches > MAX_MATCHES };
+  return { headline, cascade, blocked: r.blocked ?? [], warnings: r.warnings ?? [], samples: r.samples ?? [], nothing: r.matches === 0, big: r.matches > MAX_MATCHES };
 }
 
 /** The match count in the server's refusal of a filter or ids over 10,000 matches (409), or null for another error. */
@@ -75,6 +76,7 @@ export const requestKey = ({ reason, ...body }) => JSON.stringify(body);
 export function clearGate({ preview, previewedKey, key, typed = '', slug, needsReason = false, reason = '', bigConfirmed = false }) {
   const no = (why) => ({ ok: false, why });
   if (!preview || previewedKey !== key) return no("Preview first: the delete button unlocks once you've seen what goes.");
+  if (preview.blocked?.length) return no('PocketBase would refuse this: see what blocks it above.');
   if (preview.nothing) return no('Nothing matches, so there is nothing to delete.');
   if (preview.big && !bigConfirmed) return no('Over 10,000 records: tick the box to confirm.');
   if (needsReason && !reason.trim()) return no('Give a reason: the owner sees it.');
@@ -107,15 +109,23 @@ export function restoreModel(r) {
   return { headline, drift, blocked, warnings: r.warnings ?? [] };
 }
 
+/** "3 records · 2.0 KB files" for a snapshot in the list; says so when its uploads weren't kept (over the cap). */
+export function snapshotCounts({ records, files, files_bytes: bytes }) {
+  const what = !bytes ? '' : files ? ` · ${fmtBytes(bytes)} files` : ` · files not kept (${fmtBytes(bytes)}, over the cap)`;
+  return `${plural(records, 'record')}${what}`;
+}
+
 /** "Restored 38 records from s1 (2 already there)." from a restore's result. */
-export function restoreResultText({ snapshot, collections, accounts = [] }) {
+export function restoreResultText({ snapshot, collections, links = [], accounts = [] }) {
   const replaced = sum(collections, 'replaced');
+  const relinked = sum(links, 'relinked');
   const there = sum(collections, 'existing') - replaced;
   const failed = sum(collections, 'failed');
   const notes = [
     ...(replaced ? [`${fmtCount(replaced)} replaced`] : []),
     ...(there > 0 ? [`${fmtCount(there)} already there`] : []),
     ...(failed ? [`${fmtCount(failed)} failed`] : []),
+    ...(relinked ? [`${plural(relinked, 'record')} relinked`] : []),
     ...(accounts.length ? [accounts.length === 1 ? '1 account with a new password' : `${fmtCount(accounts.length)} accounts with new passwords`] : []),
   ];
   return `Restored ${plural(sum(collections, 'restored'), 'record')} from ${snapshot}${notes.length ? ` (${notes.join(', ')})` : ''}.`;

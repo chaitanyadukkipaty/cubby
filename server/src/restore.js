@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { prefixFor } from './config.js';
 import { HttpError } from './http.js';
-import { applySchema, collectionIndex, projectCollections, readSchema } from './schema.js';
+import { applySchema, collectionIndex, projectCollections, readSchema, validate } from './schema.js';
 import { byIds, chunks, storageDir } from './data.js';
 import { startSnapshot, newSnapshotId, expiresAt } from './snapshots.js';
 
@@ -19,10 +19,13 @@ const FAILURES_SHOWN = 50;
 // Record keys PocketBase sets itself.
 const READ_ONLY = new Set(['id', 'collectionId', 'collectionName', 'expand', 'created', 'updated']);
 
-// The records of `name` in a snapshot, BATCH lines at a time (a big file never sits in memory whole).
-async function* batches(dir, name) {
+// The records of `name` in a snapshot's `part` (records/ or links/), BATCH lines at a time (a big file never sits in
+// memory whole). None when there's no file.
+async function* batches(dir, name, part = 'records') {
+  const path = join(dir, part, `${name}.jsonl`);
+  if (!existsSync(path)) return;
   let batch = [];
-  for await (const line of createInterface({ input: createReadStream(join(dir, 'records', `${name}.jsonl`)), crlfDelay: Infinity })) {
+  for await (const line of createInterface({ input: createReadStream(path), crlfDelay: Infinity })) {
     batch.push(JSON.parse(line));
     if (batch.length === BATCH) { yield batch; batch = []; }
   }
@@ -43,6 +46,8 @@ function relationOrder(names, defs) {
 }
 
 const newPassword = () => randomBytes(12).toString('base64url');
+const idList = (v) => [].concat(v).filter(Boolean);
+const jsonlNames = async (dir) => (await readdir(dir).catch(() => [])).filter((f) => f.endsWith('.jsonl')).map((f) => f.slice(0, -'.jsonl'.length));
 
 // `snap` is { meta, dir } (findSnapshot). Returns what was (or, with dry_run, would be) restored, per collection,
 // with the schema drift found: fields removed since (skipped) and fields whose type changed (refused: nothing is
@@ -52,7 +57,9 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
   const slug = project.slug;
   const prefix = prefixFor(slug);
   const saved = new Map(JSON.parse(await readFile(join(dir, 'schema.json'), 'utf8')).collections.map((c) => [c.name, c]));
-  const names = (await readdir(join(dir, 'records'))).filter((f) => f.endsWith('.jsonl')).map((f) => f.slice(0, -'.jsonl'.length));
+  // What comes back: collections with records, and every collection a drop (or wipe) took, records or not.
+  const names = [...new Set([...(meta.mode === 'drop' ? [...saved.keys()] : []), ...await jsonlNames(join(dir, 'records'))])];
+  const linkNames = await jsonlNames(join(dir, 'links'));
   const live = new Map((await readSchema(slug, pb.collections)).collections.map((c) => [c.name, c]));
   const order = relationOrder(names, saved);
 
@@ -78,15 +85,31 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
     });
     return def;
   });
+  // applySchema checks that every relation points at a collection it's given: the recreated ones plus, as they are,
+  // the live ones they point at, and the ones those point at, and so on. The dry run checks the same.
+  const pointedAt = new Set();
+  const visit = (def) => {
+    for (const f of def.fields.filter((x) => x.type === 'relation' && live.has(x.collection) && !pointedAt.has(x.collection))) {
+      pointedAt.add(f.collection);
+      visit(live.get(f.collection));
+    }
+  };
+  recreated.forEach(visit);
+  const toApply = recreated.length ? { collections: [...recreated, ...[...pointedAt].map((n) => live.get(n))] } : null;
+  if (toApply) validate(toApply);
 
   // Which snapshotted ids exist in the app again.
   const existing = new Map();
   const counts = new Map();
+  const inSnapshot = new Map(); // name -> ids of the records the clear deleted
   for (const name of order) {
     const ids = new Set();
+    const all = new Set();
+    inSnapshot.set(name, all);
     let n = 0;
     for await (const batch of batches(dir, name)) {
       n += batch.length;
+      for (const r of batch) all.add(r.id);
       if (!live.has(name)) continue;
       const { items } = await pb.collection(prefix + name).getList(1, batch.length, { filter: byIds(pb, batch.map((r) => r.id)), fields: 'id', skipTotal: true });
       for (const r of items) ids.add(r.id);
@@ -98,12 +121,18 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
   const result = {
     snapshot: meta.id, overwrite, recreated: recreate, skipped_fields: skipped, refused_fields: refused, files: meta.files,
     collections: order.map((name) => ({ name, records: counts.get(name), existing: existing.get(name).size, restored: 0, replaced: 0, failed: 0 })),
+    links: [],
     accounts: [], failures: [], warnings: [
       ...(meta.files ? [] : ['This snapshot has no uploaded files (they were over the size cap): records come back without them.']),
       ...auth.map((n) => `${n} holds user accounts: restored accounts get new random passwords (listed in "accounts"), since PocketBase never hands out password hashes.`),
     ],
   };
   const row = (name) => result.collections.find((c) => c.name === name);
+  for (const name of linkNames) {
+    let n = 0;
+    for await (const batch of batches(dir, name, 'links')) n += batch.length;
+    result.links.push({ name, records: n, relinked: 0 });
+  }
   if (dry_run) return { dry_run: true, ...result };
   if (refused.length) {
     throw new HttpError(409, `Can't restore ${meta.id}: fields changed type since the snapshot`, [...refused, 'Drop those fields (`cubby schema drop <collection>.<field>`) or rename them, then restore again.']);
@@ -131,11 +160,7 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
     result.backup = { id: backup.id, expires: expiresAt(t) };
   }
 
-  if (recreated.length) {
-    // applySchema needs every collection a recreated one points at; those already there are passed as they are.
-    const pointedAt = [...new Set(recreated.flatMap((c) => c.fields.filter((f) => f.type === 'relation').map((f) => f.collection)))].filter((n) => live.has(n));
-    await applySchema(slug, { collections: [...recreated, ...pointedAt.map((n) => live.get(n))] }, pb.collections);
-  }
+  if (toApply) await applySchema(slug, toApply, pb.collections);
   const cols = new Map((await projectCollections(slug, pb.collections)).map((c) => [c.name.slice(prefix.length), c]));
 
   // Creates (or with overwrite updates) one record. One pointing at a record not restored yet goes to `defer` (when
@@ -166,6 +191,7 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
         await pb.collection(col.name).create({ id: rec.id, ...data, ...(password && { password, passwordConfirm: password }) });
         if (password) result.accounts.push({ collection: name, id: rec.id, email: rec.email, password });
         row(name).restored++;
+        existing.get(name).add(rec.id);
       }
       if (noRelations) linkLater.push([name, rec]);
     } catch (err) {
@@ -200,6 +226,44 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
       if (result.failures.length < FAILURES_SHOWN) result.failures.push({ collection: name, id: rec.id, error: `restored without its links: ${err.message}` });
     });
   }
+  await relink();
   if (recreated.length) await collectionIndex(slug, { refresh: true }, pb.collections);
   return result;
+
+  // Records that stayed but lost links to deleted records (unlinked by PocketBase) get those links back, now that the
+  // records exist again: the removed ids go back in place in a relation holding several, a single relation is set
+  // only while it's empty. Nothing else of them changes, and links to records that aren't back are left out.
+  async function relink() {
+    const nameById = new Map([...cols.values()].map((c) => [c.id, c.name.slice(prefix.length)]));
+    const back = (name, id) => Boolean(inSnapshot.get(name)?.has(id) && existing.get(name).has(id));
+    for (const entry of result.links) {
+      const col = cols.get(entry.name);
+      if (!col) continue;
+      const rels = col.fields.filter((f) => f.type === 'relation');
+      for await (const batch of batches(dir, entry.name, 'links')) {
+        const { items } = await pb.collection(col.name).getList(1, batch.length, { filter: byIds(pb, batch.map((r) => r.id)), skipTotal: true });
+        const now = new Map(items.map((r) => [r.id, r]));
+        for (const rec of batch) {
+          const cur = now.get(rec.id);
+          if (!cur) continue;
+          const patch = {};
+          for (const f of rels.filter((x) => x.name in rec)) {
+            const was = idList(rec[f.name]);
+            const has = idList(cur[f.name]);
+            const add = was.filter((id) => !has.includes(id) && back(nameById.get(f.collectionId), id));
+            if (!add.length) continue;
+            if ((f.maxSelect ?? 1) > 1) patch[f.name] = [...was.filter((id) => has.includes(id) || add.includes(id)), ...has.filter((id) => !was.includes(id))];
+            else if (!has.length) patch[f.name] = add[0];
+          }
+          if (!Object.keys(patch).length) continue;
+          try {
+            await pb.collection(col.name).update(rec.id, patch);
+            entry.relinked++;
+          } catch (err) {
+            if (result.failures.length < FAILURES_SHOWN) result.failures.push({ collection: entry.name, id: rec.id, error: `links not put back: ${err.message}` });
+          }
+        }
+      }
+    }
+  }
 }

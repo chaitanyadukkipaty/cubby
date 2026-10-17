@@ -181,23 +181,26 @@ export const adminClearFlag = (user, result, reason, now = new Date()) => ({
 });
 
 // "Restored 43 records from snapshot … (2 already there, 3 accounts with new passwords)" from a restore's result.
-export function restoreSummary({ snapshot, collections, accounts }) {
+export function restoreSummary({ snapshot, collections, links = [], accounts }) {
   const sum = (f) => collections.reduce((n, c) => n + c[f], 0);
   const n = sum('restored');
+  const relinked = links.reduce((total, l) => total + l.relinked, 0);
   const notes = [
     ...(sum('replaced') ? [`${sum('replaced')} replaced`] : []),
     ...(sum('existing') - sum('replaced') > 0 ? [`${sum('existing') - sum('replaced')} already there`] : []),
     ...(sum('failed') ? [`${sum('failed')} failed`] : []),
+    ...(relinked ? [`${relinked} record${relinked === 1 ? '' : 's'} relinked`] : []),
     ...(accounts.length ? [`${accounts.length} accounts with new passwords`] : []),
   ];
   return `Restored ${n} record${n === 1 ? '' : 's'} from snapshot ${snapshot}${notes.length ? ` (${notes.join(', ')})` : ''}`;
 }
 
-// A snapshot as `cubby data snapshots` lists it. `records` counts what cascaded with it too.
+// A snapshot as `cubby data snapshots` lists it. `records` counts what was deleted, cascades included, each record
+// once (not the records that only lost a link).
 export const snapshotView = (m) => ({
   id: m.id, app: m.app, created: m.created, expires: m.expires, by: m.by?.email ?? null, by_admin: Boolean(m.by?.admin),
   reason: m.reason || '', mode: m.mode, collections: m.collections.map((c) => ({ name: c.name, records: c.records })),
-  records: [...m.collections, ...(m.cascade ?? [])].reduce((n, c) => n + c.records, 0), files: m.files, files_bytes: m.files_bytes,
+  records: m.collections.reduce((n, c) => n + c.records, 0) + (m.cascade_deleted ?? 0), files: m.files, files_bytes: m.files_bytes,
 });
 
 // 'Made "x" unlisted, renamed it to "X"' — what an owner's PATCH changed.

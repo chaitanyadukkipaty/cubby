@@ -91,6 +91,10 @@ describe('activity summaries', () => {
       'Restored 43 records from snapshot 20261017T101500-a1b2c3 (2 already there, 1 failed, 3 accounts with new passwords)');
     assert.equal(logic.restoreSummary({ snapshot: 's', overwrite: true, collections: [{ name: 'polls', restored: 1, replaced: 2, existing: 2, failed: 0 }], accounts: [] }),
       'Restored 1 record from snapshot s (2 replaced)');
+    assert.equal(logic.restoreSummary({ snapshot: 's', collections: [], links: [{ name: 'notes', records: 3, relinked: 2 }], accounts: [] }),
+      'Restored 0 records from snapshot s (2 records relinked)');
+    assert.equal(logic.restoreSummary({ snapshot: 's', collections: [], links: [{ name: 'notes', records: 1, relinked: 1 }], accounts: [] }),
+      'Restored 0 records from snapshot s (1 record relinked)');
   });
   test('a restore with nothing to note is one plain line; a bare snapshot lists without who or why', () => {
     assert.equal(logic.restoreSummary({ snapshot: 's', collections: [{ restored: 1, replaced: 0, existing: 0, failed: 0 }], accounts: [] }), 'Restored 1 record from snapshot s');
@@ -98,11 +102,11 @@ describe('activity summaries', () => {
     assert.deepEqual([v.by, v.by_admin, v.reason, v.records], [null, false, '', 2]);
   });
   test('a snapshot as listed: who, why, what, counts, until when', () => {
-    const meta = { id: 's1', app: 'shop', created: 'C', expires: 'E', by: { id: 'u1', email: 'a@x.dev', admin: true }, reason: 'spam', mode: 'empty', collections: [{ name: 'polls', type: 'base', records: 3, files_bytes: 9 }], cascade: [{ collection: 'votes', records: 2 }], files: true, files_bytes: 9, warnings: [] };
+    const meta = { id: 's1', app: 'shop', created: 'C', expires: 'E', by: { id: 'u1', email: 'a@x.dev', admin: true }, reason: 'spam', mode: 'empty', collections: [{ name: 'polls', type: 'base', records: 3, files_bytes: 9 }], cascade: [{ collection: 'votes', field: 'poll', records: 2, deletes: true }, { collection: 'votes', field: 'also', records: 2, deletes: false }], cascade_deleted: 2, files: true, files_bytes: 9, warnings: [] };
     assert.deepEqual(logic.snapshotView(meta), {
       id: 's1', app: 'shop', created: 'C', expires: 'E', by: 'a@x.dev', by_admin: true, reason: 'spam', mode: 'empty',
       collections: [{ name: 'polls', records: 3 }], records: 5, files: true, files_bytes: 9,
-    });
+    }, 'what was deleted, each record once: not what only lost a link');
   });
   test('app updates say what changed', () => {
     assert.equal(logic.patchSummary('todo', { unlisted: true }), 'Updated "todo": made it unlisted');

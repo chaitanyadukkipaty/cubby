@@ -133,4 +133,60 @@ describe('PocketBase proxy', () => {
       ctrl.abort();
     }
   });
+  test('realtime: topics naming another app\'s collection are refused and deliver nothing', async () => {
+    // "other" gets a collection any signed-in user may read: PocketBase would accept a shop user for it.
+    const members = { name: 'members', fields: [{ name: 'msg', type: 'text' }], listRule: '@request.auth.id != ""', viewRule: '@request.auth.id != ""', createRule: '@request.auth.id != ""' };
+    assert.equal((await bob('PUT', '/api/projects/other/schema', { body: { collections: [members] } })).status, 200);
+    const oAuth = { authorization: otherUser.token, ...json };
+    const seed = await other('POST', '/pb/api/collections/other__members/records', { headers: oAuth, body: { msg: 'seed' } });
+    assert.equal(seed.status, 200);
+    const membersId = seed.data.collectionId;
+    const mine = await shop('POST', '/pb/api/collections/shop__items/records', { headers: { authorization: shopUser.token, ...json }, body: { title: 'seed', owner: shopUser.record.id } });
+    const itemsId = mine.data.collectionId;
+
+    const base = `${srv.url}/pb`;
+    const h = { 'x-cubby-project': 'shop' };
+    const ctrl = new AbortController();
+    const sse = await fetch(`${base}/api/realtime`, { headers: h, signal: ctrl.signal });
+    const reader = sse.body.getReader();
+    const dec = new TextDecoder();
+    let seen = '';
+    const next = async (pred) => {
+      for (;;) {
+        const hit = seen.split('\n\n').find(pred);
+        if (hit) return hit;
+        const { value, done } = await reader.read();
+        if (done) throw new Error('stream ended');
+        seen += dec.decode(value);
+      }
+    };
+    const within = (p, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`no ${what} within 5s`)), 5000))]);
+    try {
+      const clientId = JSON.parse((await next((e) => e.includes('PB_CONNECT'))).match(/data:(.*)/)[1]).clientId;
+      const post = (body, type = 'application/json') => fetch(`${base}/api/realtime`, { method: 'POST', headers: { ...h, 'content-type': type, authorization: shopUser.token }, body });
+      const sub = (subscriptions) => post(JSON.stringify({ clientId, subscriptions }));
+      assert.equal((await sub(['other__members/*'])).status, 403, 'by name');
+      assert.equal((await sub([`${membersId}/*`])).status, 403, 'by id');
+      assert.equal((await sub(['other__members'])).status, 403, 'legacy form without a record part');
+      assert.equal((await sub(['shop__items/*', 'other__members/*'])).status, 403, 'one foreign topic refuses all');
+      assert.equal((await sub(['users/*'])).status, 403, 'platform collection');
+      const refused = await sub(['cubby_projects/*']);
+      assert.equal(refused.status, 403);
+      assert.match((await refused.json()).message, /this project's collections/);
+      assert.equal((await post(`{"x":"&clientId=${clientId}&subscriptions=other__members/*&"}`, 'application/x-www-form-urlencoded')).status, 400, 'JSON that is also a form body');
+      assert.equal((await post(`clientId=${clientId}&subscriptions=other__members/*`, 'application/x-www-form-urlencoded')).status, 400, 'form body');
+      assert.equal((await post(JSON.stringify({ clientId, subscriptions: [], Subscriptions: ['other__members/*'] }))).status, 204, 'case-variant keys are dropped');
+      assert.equal((await post('{')).status, 400);
+      assert.equal((await post(JSON.stringify({ clientId, subscriptions: ['x'.repeat(300 * 1024)] }))).status, 413);
+
+      assert.equal((await other('POST', '/pb/api/collections/other__members/records', { headers: oAuth, body: { msg: 'SECRET' } })).status, 200);
+      assert.equal((await sub(['shop__items/*', `${itemsId}/*`])).status, 204, 'own collection by name and by id');
+      await shop('POST', '/pb/api/collections/shop__items/records', { headers: { authorization: shopUser.token, ...json }, body: { title: 'live2', owner: shopUser.record.id } });
+      await within(next((e) => e.includes('"title":"live2"')), 'own realtime event');
+      await new Promise((r) => setTimeout(r, 300));
+      assert.doesNotMatch(seen, /other__members|SECRET/);
+    } finally {
+      ctrl.abort();
+    }
+  });
 });

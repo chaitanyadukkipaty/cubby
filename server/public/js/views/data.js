@@ -5,7 +5,7 @@
 // for unlocking the destructive button live in js/data-view.js (pure, unit-tested).
 import { h, ago, fmtBytes, fmtCount } from '../helpers.js';
 import { adminClearNotice, clearGate, clearRequest, clearResultText, createdBefore, defaultSelection, previewModel, recordSummary, requestKey, restoreModel,
-  restoreResultText, tooManyMatches } from '../data-view.js';
+  restoreResultText, snapshotCounts, tooManyMatches } from '../data-view.js';
 import { purgeRule } from '../admin-view.js';
 import { appPath } from '../routes.js';
 import { state, api } from '../session.js';
@@ -151,6 +151,7 @@ function clearForm(cols, { slug, needsReason, done }) {
       h('p', {}, h('b', {}, p.headline)),
       p.cascade.length ? h('ul', { class: 'small plain' }, p.cascade.map((c) => h('li', {}, c))) : null,
       ...p.warnings.map((w) => h('p', { class: 'warn small' }, w)),
+      ...p.blocked.map((b) => h('p', { class: 'error small' }, `Blocked: ${b}`)),
       p.big ? h('label', { class: 'check small' }, h('input', { type: 'checkbox', checked: s.bigConfirmed, onchange: (e) => { s.bigConfirmed = e.target.checked; update(); } }), `Yes, all ${fmtCount(result.matches)} records`) : null,
       p.samples.length ? h('div', { class: 'table-wrap' }, h('table', { 'aria-label': 'Sample records' },
         h('caption', { class: 'muted small cap' }, `${p.samples.length === result.matches ? 'Every record' : `${p.samples.length} of them`}${tickable ? ' (tick some to delete only those)' : ''}`),
@@ -223,7 +224,7 @@ function snapshotsTable(snaps, { done }) {
         const rule = purgeRule(snap, state.me);
         return h('tr', { 'aria-label': snap.id },
           h('td', {}, h('span', { class: 'mono small' }, snap.id), h('div', { class: 'muted tiny' }, ago(snap.created))),
-          h('td', { class: 'small' }, `${snap.mode} ${snap.collections.map((c) => c.name).join(', ')}`, h('div', { class: 'muted tiny' }, `${fmtCount(snap.records)} records${snap.files_bytes ? ` · ${fmtBytes(snap.files_bytes)} files` : ''}`)),
+          h('td', { class: 'small' }, `${snap.mode} ${snap.collections.map((c) => c.name).join(', ')}`, h('div', { class: 'muted tiny' }, snapshotCounts(snap))),
           h('td', { class: 'small hide-sm' }, snap.by ?? '–', snap.by_admin ? h('span', { class: 'badge', style: 'margin-left:6px' }, 'admin') : null, snap.reason ? h('div', { class: 'muted tiny' }, snap.reason) : null),
           h('td', { class: 'muted small hide-sm nowrap' }, snap.expires.slice(0, 10)),
           h('td', { class: 'actions' }, h('div', { class: 'row nowrap' },

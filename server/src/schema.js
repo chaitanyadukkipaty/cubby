@@ -15,7 +15,7 @@ const AUTH_SYSTEM_FIELDS = new Set(['id', 'password', 'tokenKey', 'email', 'emai
 // shared superuser client) so the logic can be unit-tested against an in-memory fake.
 const pbCollections = () => admin.collections;
 
-// Per-project cache of collection ids, used by the PocketBase proxy.
+// Per-project cache of collection ids and names, used by the PocketBase proxy.
 const cache = new Map();
 export const resetCollectionCache = () => cache.clear();
 
@@ -32,6 +32,7 @@ export async function collectionIndex(slug, { refresh = false } = {}, api = pbCo
   const entry = {
     at: Date.now(),
     ids: new Set(cols.map((c) => c.id)),
+    names: new Set(cols.map((c) => c.name)),
     authIds: new Set(cols.filter((c) => c.type === 'auth').map((c) => c.id)),
   };
   cache.set(slug, entry);
