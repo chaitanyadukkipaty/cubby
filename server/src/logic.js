@@ -53,7 +53,8 @@ export const deployClient = (header) => String(header ?? '').slice(0, 60);
 // --- Agents: one API key per approved `cubby login` ---
 // What a CLI says about itself when it starts a device login. Older CLIs send nothing, so every part is optional.
 const hintText = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
-export const agentHint = (body) => ({ tool: hintText(body?.tool, 40), machine: hintText(body?.machine, 60) });
+// 40 + " · " + 57 = 100, the key label's limit.
+export const agentHint = (body) => ({ tool: hintText(body?.tool, 40), machine: hintText(body?.machine, 57) });
 
 // "Claude Code · chaitanya-mbp"; "Agent · 2026-10-17" when the CLI sent no hint.
 export function agentName({ tool, machine } = {}, now = Date.now()) {

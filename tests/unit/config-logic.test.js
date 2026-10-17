@@ -186,7 +186,7 @@ describe('logic patches', () => {
     assert.deepEqual(logic.agentHint(undefined), { tool: '', machine: '' });
     assert.deepEqual(logic.agentHint({ tool: 42, machine: ['x'] }), { tool: '', machine: '' });
     assert.equal(logic.agentHint({ tool: 't'.repeat(100), machine: 'm'.repeat(100) }).tool.length, 40);
-    assert.equal(logic.agentHint({ machine: 'm'.repeat(100) }).machine.length, 60);
+    assert.equal(logic.agentHint({ machine: 'm'.repeat(100) }).machine.length, 57);
   });
   test('agentName names an agent from its hint, with a dated fallback for CLIs that sent none', () => {
     const now = Date.UTC(2026, 9, 17, 12);
@@ -196,6 +196,10 @@ describe('logic patches', () => {
     assert.equal(logic.agentName({}, now), 'Agent · 2026-10-17');
     assert.equal(logic.agentName(undefined, now), 'Agent · 2026-10-17');
     assert.match(logic.agentName(), /^Agent · \d{4}-\d{2}-\d{2}$/);
+    // The key's label field holds at most 100 characters; the longest hints must still fit.
+    const longest = logic.agentHint({ tool: 't'.repeat(99), machine: 'm'.repeat(99) });
+    assert.ok(logic.agentName(longest, now).length <= 100);
+    assert.ok(logic.agentName({ machine: longest.machine }, now).length <= 100);
   });
   test('agentView shows agents by name, pre-agent keys as "Manual token", flags the current one and never the key', () => {
     const agent = { id: 'a1', kind: 'agent', label: 'Codex · box', tool: 'Codex', machine: 'box', key: 'hk_secret', created: 'c1' };
