@@ -509,6 +509,24 @@ describe('whatever a clear deletes, a restore brings back (real PocketBase casca
     assert.deepEqual((await owner('GET', '/api/projects/rewipe/schema')).data, schemaBefore);
     assert.deepEqual(await dump('rewipe'), before);
   });
+  test('snapshots count each deleted record once; emptying collections with no records is a no-op', async () => {
+    await make('tally', [
+      { name: 'products', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'orders', fields: [{ name: 'p', type: 'relation', collection: 'products', cascadeDelete: true }, { name: 'p2', type: 'relation', collection: 'products' }] },
+      { name: 'nothing', fields: [{ name: 'n', type: 'text' }] },
+    ]);
+    for (let i = 1; i <= 3; i++) {
+      await C('tally', 'products').create({ id: `prod0000000000${i}`, n: 'x' });
+      await C('tally', 'orders').create({ id: `ordr0000000000${i}`, p: `prod0000000000${i}`, p2: `prod0000000000${i}` });
+    }
+    await clearAndRestore('tally', { collections: ['products'] });
+    const [snap] = (await owner('GET', '/api/snapshots?app=tally')).data;
+    assert.equal(snap.records, 6);
+    const none = await owner('POST', '/api/projects/tally/data/clear', { body: { collections: ['nothing'] } });
+    assert.deepEqual([none.status, none.data.snapshot, none.data.matches], [200, null, 0]);
+    assert.equal((await owner('GET', '/api/snapshots?app=tally')).data.length, 1);
+    assert.equal((await owner('GET', '/api/activity?app=tally')).data.filter((a) => a.action === 'data.clear').length, 1);
+  });
   test('a link the clear removed from a record that stays comes back; edits made since stay', async () => {
     await make('relink', [
       { name: 'people', fields: [{ name: 'n', type: 'text' }] },

@@ -109,6 +109,12 @@ export function restoreModel(r) {
   return { headline, drift, blocked, warnings: r.warnings ?? [] };
 }
 
+/** "3 records · 2.0 KB files" for a snapshot in the list; says so when its uploads weren't kept (over the cap). */
+export function snapshotCounts({ records, files, files_bytes: bytes }) {
+  const what = !bytes ? '' : files ? ` · ${fmtBytes(bytes)} files` : ` · files not kept (${fmtBytes(bytes)}, over the cap)`;
+  return `${plural(records, 'record')}${what}`;
+}
+
 /** "Restored 38 records from s1 (2 already there)." from a restore's result. */
 export function restoreResultText({ snapshot, collections, links = [], accounts = [] }) {
   const replaced = sum(collections, 'replaced');

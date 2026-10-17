@@ -100,11 +100,11 @@ describe('activity summaries', () => {
     assert.deepEqual([v.by, v.by_admin, v.reason, v.records], [null, false, '', 2]);
   });
   test('a snapshot as listed: who, why, what, counts, until when', () => {
-    const meta = { id: 's1', app: 'shop', created: 'C', expires: 'E', by: { id: 'u1', email: 'a@x.dev', admin: true }, reason: 'spam', mode: 'empty', collections: [{ name: 'polls', type: 'base', records: 3, files_bytes: 9 }], cascade: [{ collection: 'votes', records: 2 }], files: true, files_bytes: 9, warnings: [] };
+    const meta = { id: 's1', app: 'shop', created: 'C', expires: 'E', by: { id: 'u1', email: 'a@x.dev', admin: true }, reason: 'spam', mode: 'empty', collections: [{ name: 'polls', type: 'base', records: 3, files_bytes: 9 }], cascade: [{ collection: 'votes', field: 'poll', records: 2, deletes: true }, { collection: 'votes', field: 'also', records: 2, deletes: false }], cascade_deleted: 2, files: true, files_bytes: 9, warnings: [] };
     assert.deepEqual(logic.snapshotView(meta), {
       id: 's1', app: 'shop', created: 'C', expires: 'E', by: 'a@x.dev', by_admin: true, reason: 'spam', mode: 'empty',
       collections: [{ name: 'polls', records: 3 }], records: 5, files: true, files_bytes: 9,
-    });
+    }, 'what was deleted, each record once: not what only lost a link');
   });
   test('app updates say what changed', () => {
     assert.equal(logic.patchSummary('todo', { unlisted: true }), 'Updated "todo": made it unlisted');

@@ -259,6 +259,7 @@ describe('jobs and env helpers', () => {
     assert.match(lib.formatClear('shop', { ...base, mode: 'filter', filter: 'closed = true' }), /^Deleted 3 records from polls in shop \(matching closed = true\)\.\n/);
     assert.match(lib.formatClear('shop', { ...base, mode: 'ids', missing: ['zz'] }), /^Deleted 3 records from polls in shop\. Not found: zz\n/);
     assert.equal(lib.formatClear('shop', { ...base, mode: 'filter', filter: 'x = 1', collections: [{ name: 'polls', records: 0 }], snapshot: null }), 'Nothing in polls matches: nothing was deleted.');
+    assert.equal(lib.formatClear('shop', { ...base, mode: 'empty', collections: [{ name: 'a', records: 0 }, { name: 'b', records: 0 }], snapshot: null }), 'a, b had no records: nothing was deleted.');
   });
   test('formatClear: a wipe says the whole database went, and so does its preview', () => {
     const r = { mode: 'drop', wipe: true, collections: [{ name: 'a', records: 1 }, { name: 'b', records: 2 }], cascade: [], warnings: [], snapshot: { id: 's', expires: '2026-10-24T00:00:00.000Z' } };

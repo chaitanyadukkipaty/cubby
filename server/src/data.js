@@ -176,6 +176,9 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
   const result = {
     mode: req.mode, ...(req.wipe && { wipe: true }), collections: summary, matches, total: total ?? matches, ...(missing && { missing }),
     ...(req.mode === 'filter' && { filter: req.filter }), cascade, blocked, warnings, files: withFiles, files_bytes: filesBytes,
+    // Records deleted by cascade, and records that stay but lose links: each counted once.
+    cascade_deleted: [...plan.deleted.values()].reduce((n, ids) => n + ids.length, 0),
+    unlinked: [...plan.unlinked.values()].reduce((n, ids) => n + ids.length, 0),
   };
   // Each matched collection's records, a page at a time.
   const eachMatch = async (c, fn) => {
@@ -191,7 +194,8 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     }
     return { dry_run: true, ...result, samples };
   }
-  if (matched && !matched.length) return { ...result, snapshot: null };
+  // Nothing to delete (a filter or ids matching nothing, collections with no records): nothing changes, no snapshot.
+  if (req.mode !== 'drop' && !matches) return { ...result, snapshot: null };
   // PocketBase would refuse (part of) the delete: refuse it now, before anything is snapshotted or deleted.
   if (blocked.length) throw new HttpError(409, `Can't clear: ${blocked.length === 1 ? 'a required relation' : 'required relations'} would point at nothing`, blocked);
 

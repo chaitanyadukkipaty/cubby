@@ -170,6 +170,14 @@ describe('restoreModel()', () => {
   });
 });
 
+describe('snapshotCounts()', () => {
+  test('records, and the uploads only when the snapshot kept them', () => {
+    assert.equal(v.snapshotCounts({ records: 3, files: true, files_bytes: 2048 }), '3 records · 2 KB files');
+    assert.equal(v.snapshotCounts({ records: 1, files: true, files_bytes: 0 }), '1 record');
+    assert.equal(v.snapshotCounts({ records: 3, files: false, files_bytes: 200 * 1024 * 1024 }), '3 records · files not kept (200.0 MB, over the cap)');
+  });
+});
+
 describe('restoreResultText()', () => {
   test('what came back, what was there already, replaced or failed, and accounts with new passwords', () => {
     const r = { snapshot: 's1', collections: [{ name: 'tasks', records: 40, existing: 2, restored: 38, replaced: 0, failed: 0 }], accounts: [] };

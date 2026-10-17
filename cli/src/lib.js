@@ -373,7 +373,7 @@ const cascadeLine = (c, would = false) => (c.deletes
 // `cubby data clear`: what went, what went with it, and the snapshot to undo it.
 export function formatClear(app, r) {
   const [first] = r.collections;
-  if (!r.snapshot) return `Nothing in ${first.name} matches: nothing was deleted.`;
+  if (!r.snapshot) return r.mode === 'empty' ? `${r.collections.map((c) => c.name).join(', ')} had no records: nothing was deleted.` : `Nothing in ${first.name} matches: nothing was deleted.`;
   const head = r.mode === 'filter' || r.mode === 'ids'
     ? `Deleted ${plural(first.records, 'record')} from ${first.name} in ${app}${r.mode === 'filter' ? ` (matching ${r.filter})` : ''}.${r.missing?.length ? ` Not found: ${r.missing.join(', ')}` : ''}`
     : r.wipe ? `Wiped the database of ${app}: dropped ${r.collections.map((c) => `${c.name} (${plural(c.records, 'record')})`).join(', ')}.`

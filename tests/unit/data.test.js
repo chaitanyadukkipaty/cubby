@@ -79,6 +79,22 @@ describe('emptying collections', () => {
     assert.deepEqual(lines(join(dir, 'records', 'orders.jsonl')).map((x) => x.id), ['o1']);
     assert.deepEqual(JSON.parse(readFileSync(join(dir, 'meta.json'), 'utf8')).cascade, r.cascade);
   });
+  test('emptying collections that have no records changes nothing and leaves no snapshot, like a filter matching nothing', async () => {
+    await pb.collections.truncate('shop__orders');
+    const r = await clearData('shop', { collections: ['orders'] }, deps());
+    assert.deepEqual([r.matches, r.snapshot], [0, null]);
+    assert.ok(!existsSync(join(dataDir, 'snapshots')));
+  });
+  test('the result counts the records that go by cascade once each, whatever the relations', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'products', fields: [{ name: 'title', type: 'text' }, { name: 'photo', type: 'file', maxSelect: 1 }] },
+      { name: 'orders', fields: [{ name: 'product', type: 'relation', collection: 'products', cascadeDelete: true }, { name: 'qty', type: 'number' }, { name: 'also', type: 'relation', collection: 'products' }] },
+    ] }, pb.collections);
+    await pb.collection('shop__orders').update('o1', { also: 'p1' });
+    await pb.collection('shop__orders').create({ id: 'o2', product: 'p2', also: 'p1' });
+    const r = await clearData('shop', { collections: ['products'] }, deps());
+    assert.deepEqual([r.matches, r.cascade_deleted, r.unlinked], [2, 2, 0]);
+  });
   test('a collection cleared together with the ones pointing at it is no cascade', async () => {
     const r = await clearData('shop', { collections: ['products', 'orders'] }, deps());
     assert.deepEqual(r.cascade, []);
