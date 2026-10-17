@@ -172,6 +172,10 @@ All notable changes to Cubby are documented here. The format follows
 - The dashboard is now an HTML shell, a stylesheet and ES modules served with hashed URLs (still no build step and
   no dependencies), instead of one HTML file.
 
+### Security
+
+- Realtime subscriptions through an app's `/pb` are now limited to that app's own collections.
+
 ## [0.1.4] - 2026-10-17
 
 ### Added

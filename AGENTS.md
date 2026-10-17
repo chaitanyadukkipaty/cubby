@@ -12,6 +12,9 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   (`checkForeignRefs`). Check refs on *decoded* text: realtime topics are JSON-escaped (`\u0040`) and URL-encoded.
 - `/api/files/<id>/…` arrives with a collection **id**, not a name (the SDK uses `record.collectionId`). Prefix checks
   alone reject legit file URLs; resolve ids through the collection index.
+- Realtime topics must name this app's collections too: `checkRealtimeSubscribe` checks every topic by exact name or
+  id (default deny for any other shape) and forwards a re-serialized JSON body, because PocketBase also binds form
+  bodies and matches JSON keys case-insensitively. `/api/realtime` itself is only an allowlisted path.
 - Platform collections (`users`, `cubby_*`) keep every API rule `null`. The `/pb` proxy is the only thing between them
   and the internet if a rule is ever opened.
 - Rules written by agents use unprefixed `@collection.x`; the server rewrites them. Don't make clients prefix them:
