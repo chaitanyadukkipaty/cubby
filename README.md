@@ -281,9 +281,9 @@ flowchart LR
 - **Metrics** are counted as the server hands out an app's pages: each HTML page load by a browser is a view
   (assets, `/pb` calls and obvious bots don't count). A visitor is a hash of the IP address and browser with a salt
   that only lives in memory and changes every day (UTC), so the same person counts once a day and can't be followed
-  across days; the IP itself is never stored. Counts are kept in memory and written to the database every minute in
-  hourly and daily buckets: a crash loses at most that minute, and a restart may count some of that day's
-  visitors twice. Only the app's owner (and admins) can see them.
+  across days; the IP itself is never stored. Counts are kept in memory and written to the database every minute
+  (views per hour; views and unique visitors per day). A crash loses at most that minute, and a restart may count
+  some of that day's visitors twice. Only the app's owner (and admins) can see them.
 - One Docker container runs Caddy, the Cubby server (Node.js) and PocketBase, with a single data volume.
 - Each server serves its own CLI (`/cli.tgz`), agent docs (`/docs.md`) and skill installer (`/skill.sh`), so agents
   always follow the rules of the server they're deploying to.

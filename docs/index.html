@@ -391,8 +391,8 @@ export default async ({ pb, env, log, fetch }) =&gt; {
       <ul>
         <li><b>Nothing to add to the app.</b> The server counts as it hands out the app's pages: every page a browser loads is a view. Scripts, images, database calls and obvious bots and link previews don't count.</li>
         <li><b>Visitors, not people's IPs.</b> A visitor is a hash of the IP address and browser, mixed with a secret that only lives in memory and changes every day (UTC). The same person counts once a day and can't be followed from one day to the next. IP addresses are never stored.</li>
-        <li><b>By the hour and by the day.</b> Counts are written to the database every minute, so a crash loses at most a minute, and a restart may count some of that day's visitors twice. Visitors are unique per day; over several days, the total adds up each day's visitors.</li>
-        <li><b>Yours to see.</b> Only the app's owner (and the server's admins) can see an app's numbers. <code>cubby metrics</code> without an app lists all of yours; <code>--range</code> takes hours or days up to <code>90d</code>, and <code>--json</code> gives the hourly and daily numbers.</li>
+        <li><b>Views by the hour, visitors by the day.</b> Counts are written to the database every minute, so a crash loses at most a minute, and a restart may count some of that day's visitors twice. Visitors are unique per day; over several days, the total adds up each day's visitors.</li>
+        <li><b>Yours to see.</b> Only the app's owner (and the server's admins) can see an app's numbers. <code>cubby metrics</code> without an app lists all of yours; <code>--range</code> takes hours or days up to <code>90d</code>, and <code>--json</code> adds views per hour and views and visitors per day.</li>
       </ul>
     </section>
 
