@@ -423,6 +423,18 @@ describe('whatever a clear deletes, a restore brings back (real PocketBase casca
     assert.deepEqual((await clearAndRestore('chain', { collection: 'a', ids: ['aaaaaaaaaaaaaa1'] })).cleared.cascade, both);
     assert.deepEqual((await clearAndRestore('chain', { collections: ['a'] })).cleared.cascade, both);
   });
+  test('uploads of records deleted by cascade are snapshotted and come back', async () => {
+    await make('attach', [
+      { name: 'posts', fields: [{ name: 't', type: 'text' }] },
+      { name: 'attachments', fields: [{ name: 'post', type: 'relation', collection: 'posts', cascadeDelete: true }, { name: 'file', type: 'file', maxSelect: 1, maxSize: 10_000_000 }] },
+    ]);
+    await C('attach', 'posts').create({ id: 'post00000000001', t: 'p' });
+    await C('attach', 'attachments').create({ id: 'att000000000001', post: 'post00000000001', file: new File([new Uint8Array(5000).fill(7)], 'doc.bin') });
+    const dry = await owner('POST', '/api/projects/attach/data/clear', { body: { collection: 'posts', ids: ['post00000000001'], dry_run: true } });
+    assert.ok(dry.data.files_bytes >= 5000, `the cascaded upload counts toward the cap: ${dry.data.files_bytes}`);
+    const { cleared } = await clearAndRestore('attach', { collection: 'posts', ids: ['post00000000001'] });
+    assert.ok(existsSync(join(srv.dataDir, 'snapshots', 'attach', cleared.snapshot.id, 'files', 'attachments', 'att000000000001')));
+  });
   test('relations holding several ids: matched by `field.id ?=`, so counts and snapshots see them', async () => {
     await make('multi', [
       { name: 'tags', fields: [{ name: 'n', type: 'text' }] },

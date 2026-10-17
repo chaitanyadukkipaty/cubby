@@ -163,6 +163,20 @@ describe('everything a clear deletes comes back', () => {
     assert.deepEqual(dry.cascade, [{ collection: 'b', field: 'a', records: 1, deletes: true }, { collection: 'c', field: 'b', records: 2, deletes: true }]);
     await clearAndRestore({ collection: 'a', ids: ['a1'] });
   });
+  test('uploads of records deleted by cascade are snapshotted, and count toward the files cap', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'posts', fields: [{ name: 't', type: 'text' }] },
+      { name: 'attachments', fields: [{ name: 'post', type: 'relation', collection: 'posts', cascadeDelete: true }, { name: 'file', type: 'file', maxSelect: 1 }] },
+    ] }, pb.collections);
+    await pb.collection('shop__posts').create({ id: 'post1', t: 'p' });
+    await pb.collection('shop__attachments').create({ id: 'att1', post: 'post1', file: file('doc.bin', 5000) });
+    const dry = await clear({ collection: 'posts', ids: ['post1'], dry_run: true });
+    assert.equal(dry.files_bytes, 5000);
+    const capped = await clearData('shop', { collection: 'posts', ids: ['post1'], dry_run: true }, deps({ filesCap: 4000 }));
+    assert.match(capped.warnings.join('\n'), /uploaded files \(4\.9 KB\) are over the 3\.9 KB snapshot cap/);
+    const { cleared } = await clearAndRestore({ collection: 'posts', ids: ['post1'] });
+    assert.deepEqual([cleared.snapshot.files, cleared.snapshot.files_bytes], [true, 5000]);
+  });
   test('the same chain when a is emptied whole', async () => {
     await chain();
     const { cleared } = await clearAndRestore({ collections: ['a'] });

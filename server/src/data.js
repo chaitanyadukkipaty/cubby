@@ -141,16 +141,20 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     for (const filter of filters) await eachPage(pb, c.name, filter, (items) => { matched.push(...items.map((r) => r.id)); });
     if (req.mode === 'ids') missing = req.ids.filter((id) => !matched.includes(id));
   }
+  // Uploaded bytes of records `ids` of collection id `col`.
+  const sizeOf = async (col, ids) => (await Promise.all(ids.map((id) => dirSize(join(storageDir(dataDir, col), id))))).reduce((a, b) => a + b, 0);
   const summary = await Promise.all(targets.map(async (c) => {
-    const storage = storageDir(dataDir, c.id);
-    const files = matched ? (await Promise.all(matched.map((id) => dirSize(join(storage, id))))).reduce((a, b) => a + b, 0) : await dirSize(storage);
+    const files = matched ? await sizeOf(c.id, matched) : await dirSize(storageDir(dataDir, c.id));
     return { name: short(c), type: c.type, records: matched ? matched.length : await count(c.name, ''), files_bytes: files };
   }));
   const matches = summary.reduce((n, c) => n + c.records, 0);
   // Everything else PocketBase deletes or unlinks along with them, however many hops away.
   const plan = await planCascade(pb, cols, targets, matched);
   const cascade = plan.entries.map((e) => ({ collection: short(e.col), field: e.field, records: e.records, deletes: e.deletes }));
-  const filesBytes = summary.reduce((n, c) => n + c.files_bytes, 0);
+  // Uploads of the records that go by cascade count toward the cap too, and go in the snapshot with them.
+  let cascadeBytes = 0;
+  for (const [col, ids] of plan.deleted) cascadeBytes += await sizeOf(col, ids);
+  const filesBytes = summary.reduce((n, c) => n + c.files_bytes, 0) + cascadeBytes;
   const withFiles = filesBytes <= filesCap;
   const warnings = [
     ...(withFiles ? [] : [`The uploaded files (${formatBytes(filesBytes)}) are over the ${formatBytes(filesCap)} snapshot cap: they are deleted and can't be restored.`]),
@@ -197,6 +201,7 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     for (const col of others) {
       const ids = [...(plan.deleted.get(col.id) ?? []), ...(plan.unlinked.get(col.id) ?? [])];
       for (const part of chunks(ids)) await eachPage(pb, col.name, byIds(pb, part), (items) => snap.records(short(col), items));
+      if (withFiles && plan.deleted.has(col.id)) await snap.files(short(col), storageDir(dataDir, col.id), plan.deleted.get(col.id));
     }
     await snap.finish(meta);
   } catch (err) {
