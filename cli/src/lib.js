@@ -366,15 +366,39 @@ export function formatData(app, list) {
   ].join('\n');
 }
 
+const cascadeLine = (c, would = false) => (c.deletes
+  ? `  ${c.collection}: ${plural(c.records, 'record')} pointing at them ${would ? 'would be' : 'were'} deleted too (cascade on ${c.collection}.${c.field})`
+  : `  ${c.collection}: ${plural(c.records, 'record')} ${would ? 'would lose' : 'lost'} their link (${c.collection}.${c.field})`);
+
 // `cubby data clear`: what went, what went with it, and the snapshot to undo it.
 export function formatClear(app, r) {
-  const verb = { empty: 'Emptied', drop: 'Dropped' }[r.mode] ?? 'Deleted';
+  const [first] = r.collections;
+  if (!r.snapshot) return `Nothing in ${first.name} matches: nothing was deleted.`;
+  const head = r.mode === 'filter' || r.mode === 'ids'
+    ? `Deleted ${plural(first.records, 'record')} from ${first.name} in ${app}${r.mode === 'filter' ? ` (matching ${r.filter})` : ''}.${r.missing?.length ? ` Not found: ${r.missing.join(', ')}` : ''}`
+    : `${r.mode === 'drop' ? 'Dropped' : 'Emptied'} ${r.collections.map((c) => `${c.name} (${plural(c.records, 'record')})`).join(', ')} in ${app}.`;
   return [
-    `${verb} ${r.collections.map((c) => `${c.name} (${plural(c.records, 'record')})`).join(', ')} in ${app}.`,
-    ...r.cascade.map((c) => (c.deletes
-      ? `  ${c.collection}: ${plural(c.records, 'record')} pointing at them were deleted too (cascade on ${c.collection}.${c.field})`
-      : `  ${c.collection}: ${plural(c.records, 'record')} lost their link (${c.collection}.${c.field})`)),
+    head,
+    ...r.cascade.map((c) => cascadeLine(c)),
     `Snapshot ${r.snapshot.id} keeps them until ${r.snapshot.expires.slice(0, 10)}. Undo with: cubby data restore ${r.snapshot.id}`,
+    ...r.warnings.map((w) => `warning: ${w}`),
+  ].join('\n');
+}
+
+// `cubby data clear --dry-run`: what a clear would delete (and up to 5 of the records), deleting nothing.
+export function formatClearPreview(app, r) {
+  const names = r.collections.map((c) => c.name).join(', ');
+  const head = r.mode === 'filter' || r.mode === 'ids'
+    ? `Dry run: ${r.matches} of ${plural(r.total, 'record')} in ${names} match${r.mode === 'filter' ? ` (${r.filter})` : ''}.`
+    : `Dry run: ${r.mode === 'drop' ? 'dropping' : 'emptying'} ${names} deletes ${plural(r.matches, 'record')}.`;
+  const sample = ({ collectionId, collectionName, ...rec }) => {
+    const text = JSON.stringify(rec);
+    return `  ${text.length > 120 ? `${text.slice(0, 119)}…` : text}`;
+  };
+  return [
+    `${head} Nothing was deleted.`,
+    ...r.samples.map(sample),
+    ...r.cascade.map((c) => cascadeLine(c, true)),
     ...r.warnings.map((w) => `warning: ${w}`),
   ].join('\n');
 }

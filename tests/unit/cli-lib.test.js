@@ -253,6 +253,28 @@ describe('jobs and env helpers', () => {
       'warning: careful',
     ].join('\n'));
   });
+  test('formatClear: records deleted by filter or ids, and nothing matched', () => {
+    const snapshot = { id: '20261017T101500-a1b2c3', expires: '2026-10-24T10:15:00.000Z' };
+    const base = { collections: [{ name: 'polls', records: 3 }], cascade: [], warnings: [], snapshot };
+    assert.match(lib.formatClear('shop', { ...base, mode: 'filter', filter: 'closed = true' }), /^Deleted 3 records from polls in shop \(matching closed = true\)\.\n/);
+    assert.match(lib.formatClear('shop', { ...base, mode: 'ids', missing: ['zz'] }), /^Deleted 3 records from polls in shop\. Not found: zz\n/);
+    assert.equal(lib.formatClear('shop', { ...base, mode: 'filter', filter: 'x = 1', collections: [{ name: 'polls', records: 0 }], snapshot: null }), 'Nothing in polls matches: nothing was deleted.');
+  });
+  test('formatClearPreview: matches N of M, samples, cascades and warnings, deleting nothing', () => {
+    const text = lib.formatClearPreview('shop', {
+      dry_run: true, mode: 'filter', filter: 'closed = true', matches: 9, total: 10, collections: [{ name: 'polls', records: 9 }],
+      samples: [{ id: 'p1', title: 'Lunch?', closed: true, collectionId: 'x', collectionName: 'shop__polls' }, { id: 'p2', note: 'y'.repeat(200) }],
+      cascade: [{ collection: 'votes', field: 'poll', records: 31, deletes: true }], warnings: ['careful'], files: true, files_bytes: 0,
+    });
+    const lines = text.split('\n');
+    assert.equal(lines[0], 'Dry run: 9 of 10 records in polls match (closed = true). Nothing was deleted.');
+    assert.equal(lines[1], '  {"id":"p1","title":"Lunch?","closed":true}');
+    assert.ok(lines[2].length <= 122 && lines[2].endsWith('…'));
+    assert.equal(lines[3], '  votes: 31 records pointing at them would be deleted too (cascade on votes.poll)');
+    assert.equal(lines[4], 'warning: careful');
+    const whole = lib.formatClearPreview('shop', { dry_run: true, mode: 'empty', matches: 5, total: 5, collections: [{ name: 'a', records: 2 }, { name: 'b', records: 3 }], samples: [], cascade: [{ collection: 'c', field: 'a', records: 1, deletes: false }], warnings: [] });
+    assert.match(whole, /^Dry run: emptying a, b deletes 5 records\. Nothing was deleted\.\n {2}c: 1 record would lose their link \(c\.a\)$/);
+  });
   test('formatMetricsList: one line per app', () => {
     const text = lib.formatMetricsList([
       { app: 'polls', range: '7d', views: 12, visitors: 5, active_now: 1, api_errors: 2 },

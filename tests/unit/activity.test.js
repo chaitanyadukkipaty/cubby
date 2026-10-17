@@ -75,6 +75,10 @@ describe('activity summaries', () => {
       'Emptied polls, votes — 1,205 records · snapshot 20261017T101500-a1b2c3 until 2026-10-24');
     assert.equal(logic.clearSummary({ mode: 'drop', collections: [{ name: 'polls', records: 1 }], snapshot }),
       'Dropped polls — 1 record · snapshot 20261017T101500-a1b2c3 until 2026-10-24');
+    assert.equal(logic.clearSummary({ mode: 'filter', filter: 'closed = true', collections: [{ name: 'polls', records: 3 }], snapshot }),
+      'Deleted 3 records from polls matching closed = true · snapshot 20261017T101500-a1b2c3 until 2026-10-24');
+    assert.equal(logic.clearSummary({ mode: 'ids', collections: [{ name: 'polls', records: 2 }], snapshot }),
+      'Deleted 2 records from polls by id · snapshot 20261017T101500-a1b2c3 until 2026-10-24');
   });
   test('app updates say what changed', () => {
     assert.equal(logic.patchSummary('todo', { unlisted: true }), 'Updated "todo": made it unlisted');

@@ -141,10 +141,14 @@ export function schemaSummary({ created = [], updated = [], kept = [] }) {
 }
 
 // "Emptied polls — 1,204 records · snapshot … until 2026-10-24" from a data clear's result.
-export function clearSummary({ mode, collections, snapshot }) {
+export function clearSummary({ mode, collections, filter, snapshot }) {
   const n = collections.reduce((sum, c) => sum + c.records, 0);
-  const verb = { empty: 'Emptied', drop: 'Dropped' }[mode];
-  return `${verb} ${collections.map((c) => c.name).join(', ')} — ${n.toLocaleString('en-US')} record${n === 1 ? '' : 's'} · snapshot ${snapshot.id} until ${snapshot.expires.slice(0, 10)}`;
+  const records = `${n.toLocaleString('en-US')} record${n === 1 ? '' : 's'}`;
+  const names = collections.map((c) => c.name).join(', ');
+  const what = mode === 'filter' ? `Deleted ${records} from ${names} matching ${filter}`
+    : mode === 'ids' ? `Deleted ${records} from ${names} by id`
+    : `${mode === 'drop' ? 'Dropped' : 'Emptied'} ${names} — ${records}`;
+  return `${what} · snapshot ${snapshot.id} until ${snapshot.expires.slice(0, 10)}`;
 }
 
 // 'Made "x" unlisted, renamed it to "X"' — what an owner's PATCH changed.

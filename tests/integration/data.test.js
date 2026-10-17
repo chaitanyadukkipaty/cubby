@@ -132,6 +132,46 @@ describe('dropping collections', () => {
   });
 });
 
+describe('deleting by filter or ids', () => {
+  before(() => newApp('picky'));
+  test('a dry run reports matches N of M, samples and cascades, and deletes nothing', async () => {
+    const r = await cubby(['data', 'clear', 'picky', '--collection', 'products', '--filter', 'title = "Mug"', '--dry-run', '--json']);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual([r.json.dry_run, r.json.matches, r.json.total, r.json.samples.map((x) => x.id)], [true, 1, 2, ['prodmug00000001']]);
+    assert.deepEqual(r.json.cascade, [{ collection: 'orders', field: 'product', records: 1, deletes: true }]);
+    const text = await cubby(['data', 'clear', 'picky', '--collection', 'products', '--filter', 'title = "Mug"']);
+    assert.equal(text.code, 1, 'without --yes it only previews');
+    assert.match(text.stderr, /deletes 1 records from products in picky[\s\S]*Re-run with --yes[\s\S]*prodmug00000001[\s\S]*cascade on orders\.product/);
+    assert.equal((await pb.collection('picky__products').getList(1, 1)).totalItems, 2);
+  });
+  test('filters naming another app\'s or a platform collection are refused', async () => {
+    for (const filter of ['@collection.shop__products.title != ""', '@collection.users.email != ""', 'cubby_projects_via_owner.slug != ""']) {
+      const r = await owner('POST', '/api/projects/picky/data/clear', { body: { collection: 'products', filter } });
+      assert.equal(r.status, 403, filter);
+    }
+    assert.equal((await owner('POST', '/api/projects/picky/data/clear', { body: { collection: 'products', filter: 'nope ===' } })).status, 400);
+    assert.equal((await pb.collection('picky__products').getList(1, 1)).totalItems, 2);
+  });
+  test('a filter deletes only the matching records, snapshotting just those and their files', async () => {
+    const r = await cubby(['data', 'clear', 'picky', '--collection', 'products', '--filter', 'title = "Mug"', '--yes', '--json']);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual([r.json.mode, r.json.matches], ['filter', 1]);
+    assert.deepEqual((await pb.collection('picky__products').getFullList()).map((x) => x.id), ['prodhat00000002']);
+    assert.equal((await pb.collection('picky__orders').getList(1, 1)).totalItems, 0, 'its order went by cascade');
+    const dir = join(srv.dataDir, 'snapshots', 'picky', r.json.snapshot.id);
+    assert.equal(readFileSync(join(dir, 'records', 'products.jsonl'), 'utf8').trim().split('\n').length, 1);
+    assert.deepEqual(readdirSync(join(dir, 'files', 'products')), ['prodmug00000001']);
+    const activity = (await owner('GET', '/api/activity?app=picky')).data;
+    assert.match(activity[0].summary, /^Deleted 1 record from products matching title = "Mug"/);
+  });
+  test('ids delete exactly those records', async () => {
+    const r = await owner('POST', '/api/projects/picky/data/clear', { body: { collection: 'products', ids: ['prodhat00000002', 'missing0000000x'] } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.deepEqual([r.data.matches, r.data.missing], [1, ['missing0000000x']]);
+    assert.equal((await pb.collection('picky__products').getList(1, 1)).totalItems, 0);
+  });
+});
+
 describe('snapshot lifetime', () => {
   const task = (args) => new Promise((resolve) => {
     const child = spawn(process.execPath, [join(ROOT, 'server/src/admin-tasks.js'), ...args], { env: srv.env });

@@ -280,6 +280,7 @@ account" error.
 | `cubby schema push \| pull \| drop` | Manage the data model (push never deletes) |
 | `cubby data list [<app>]` | Collections with their record counts and uploaded file sizes |
 | `cubby data clear [<app>] --collections a,b [--drop] --yes` | Empty collections (keeping fields and rules) or drop them, after a 7-day snapshot |
+| `cubby data clear [<app>] --collection c --filter "…" \| --ids a,b [--dry-run] --yes` | Delete matching records only; `--dry-run` shows matches N of M, samples and cascades |
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
 | `cubby admin storage` | Admins: disk use by category (database, uploads, current/older deploys, backups) and per app |
@@ -354,6 +355,11 @@ cubby data clear friend-polls --collections polls,votes --yes
   collections that point at them (deleted by cascade or unlinked, reported as such), and uploaded files if they total
   100 MB or less (above that, it warns that files can't come back). Snapshots are plain files, kept 7 days, pruned by
   the nightly maintenance, deleted with the app, and shown in `cubby admin storage`.
+- **Or just some records.** `--collection polls --filter 'closed = true'` (a PocketBase filter) or `--ids a,b`
+  deletes only those, and only they (and their files) go in the snapshot. `--dry-run` shows "matches N of M", five
+  of the records and what would go by cascade, and deletes nothing; any clear without `--yes` shows the same
+  preview. More than 10,000 matches need `--all-matching`. Filters run as the server, so they get the proxy's
+  check: a filter naming another app's collection, a platform collection, or a back-relation from one is refused.
 - **Accounts only when you name them.** An app's users collection is never cleared unless it's listed, and then the
   result warns that restored accounts get new passwords: PocketBase never hands out password hashes, even to the
   server.

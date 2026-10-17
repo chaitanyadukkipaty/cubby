@@ -223,6 +223,7 @@ const routes = [
     const actor = { id: user.id, email: user.email, admin: project.owner !== user.id };
     const result = await clearData(project.slug, body, { pb: admin, dataDir: config.dataDir, project, actor, reason: String(body.reason ?? '').slice(0, 300) });
     // Like `cubby schema drop`: the next deploy pushes schema.json again.
+    if (!result.snapshot) return result; // a dry run, or nothing matched: nothing changed
     if (result.mode === 'drop') await admin.collection('cubby_projects').update(project.id, { schema_hash: '' });
     storageCache.clear();
     await recordActivity(user, { action: 'data.clear', app: slug, summary: logic.clearSummary(result) });

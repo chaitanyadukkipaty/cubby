@@ -95,6 +95,11 @@ All notable changes to Cubby are documented here. The format follows
   deleted with the app, and listed as their own category in `cubby admin storage`. The app's users collection is only
   cleared when named, with a warning about passwords. Owners or admins only; each clear is in the activity log. API:
   `GET /api/projects/<app>/data`, `POST /api/projects/<app>/data/clear`.
+- Delete only some records: `cubby data clear [app] --collection c --filter "<PocketBase filter>"` or `--ids a,b`.
+  Only the matched records (with their files, within the cap) and what cascades from them are snapshotted.
+  `--dry-run` (and any clear without `--yes`) reports "matches N of M", 5 sample rows and cascades, deleting
+  nothing. More than 10,000 matches are refused without `--all-matching`. Filters run as superuser, so they pass
+  the proxy's `checkForeignRefs` (plus a check on back-relations) and only ever target the app's own collection.
 - A command palette in the dashboard: ⌘K (Ctrl+K), or Search in the sidebar, jumps to a page or one of your apps
   and copies the setup prompt or a common command (`cubby deploy`, `cubby login`), switches theme or logs out.
   Fuzzy search, fully keyboard-driven.
