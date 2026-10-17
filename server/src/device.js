@@ -27,10 +27,12 @@ export function startDevice(publicUrl, now = Date.now(), hint = {}) {
 
 const findByCode = (code, now) => [...pending.values()].find((d) => d.userCode === String(code).trim().toUpperCase() && d.expires > now);
 
-// Which agent is asking, for the approval page. Null for CLIs from before agents, which send no hint.
-export function deviceInfo(code, now = Date.now()) {
+// Whether a code is live and, for a signed-in `user` (the approval page), which agent is asking: null for CLIs
+// from before agents, which send no hint. Anonymous callers never see the agent, since it names a machine.
+export function deviceInfo(code, now = Date.now(), user = null) {
   const d = findByCode(code, now);
   if (!d) throw new HttpError(404, 'This login link has expired or was already used. Ask your agent to run `cubby login` again.');
+  if (!user) return { ok: true };
   const { tool, machine } = d.hint;
   return { ok: true, agent: tool || machine ? { name: agentName(d.hint), tool: tool || null, machine: machine || null } : null };
 }

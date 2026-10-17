@@ -273,6 +273,8 @@ function renderAuth() {
         connectCode
           ? h('h1', {}, 'Connect your agent', h('br'), h('span', {}, `to ${displayName(info.name)}.`))
           : h('h1', {}, 'Agents build it.', h('br'), h('span', {}, `${displayName(info.name)} hosts it.`)),
+        // Signed out, the page doesn't learn which agent or machine is asking (the server only tells signed-in users).
+        connectCode ? h('p', { style: 'font-size:18px;margin-bottom:4px' }, h('b', { 'aria-label': 'Requesting agent' }, connectAsker(null))) : '',
         h('p', { class: 'muted', style: 'font-size:18px' }, connectCode
           ? 'Sign up or log in, then approve the connection. Your agent is waiting and will carry on by itself.'
           : 'Describe an app to your AI agent and it gets built and hosted here — React on the front, a real database behind.'),
@@ -378,7 +380,8 @@ const connectCode = parseConnectCode(location.pathname, location.search);
 
 async function renderConnect() {
   const status = h('p', { class: 'error', role: 'alert' });
-  // Which agent is asking. An expired code still renders, and Approve then says it expired.
+  // Which agent is asking (sent with our token; anonymous callers aren't told). An expired code still renders,
+  // and Approve then says it expired.
   const agent = await api('GET', `/api/device/${encodeURIComponent(connectCode)}`).then((r) => r.agent, () => null);
   const asker = h('b', { 'aria-label': 'Requesting agent' }, connectAsker(agent));
   const done = () => {

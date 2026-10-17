@@ -86,7 +86,7 @@ describe('device login', () => {
     const issued = [];
     const issueToken = async (uid) => (issued.push(uid), `hk_${uid}`);
     assert.deepEqual(await pollDevice(d.device_id, { now: T0 + 1, issueToken }), { status: 'pending' });
-    assert.deepEqual(deviceInfo(d.user_code, T0 + 1), { ok: true, agent: null }, 'an old CLI sent no hint');
+    assert.deepEqual(deviceInfo(d.user_code, T0 + 1, { id: 'u' }), { ok: true, agent: null }, 'an old CLI sent no hint');
     approveDevice({ id: 'user1' }, ` ${d.user_code.toLowerCase()} `, T0 + 2); // tolerant of case/space
     assert.deepEqual(await pollDevice(d.device_id, { now: T0 + 3, issueToken }), { status: 'approved', token: 'hk_user1' });
     assert.deepEqual(issued, ['user1']);
@@ -95,7 +95,8 @@ describe('device login', () => {
   });
   test('the hint a CLI sends names the agent on /connect and goes to the key it gets', async () => {
     const d = startDevice('x', T0, { tool: 'Claude Code', machine: 'chaitanya-mbp' });
-    assert.deepEqual(deviceInfo(d.user_code, T0 + 1), { ok: true, agent: { name: 'Claude Code · chaitanya-mbp', tool: 'Claude Code', machine: 'chaitanya-mbp' } });
+    assert.deepEqual(deviceInfo(d.user_code, T0 + 1, { id: 'u1' }), { ok: true, agent: { name: 'Claude Code · chaitanya-mbp', tool: 'Claude Code', machine: 'chaitanya-mbp' } });
+    assert.deepEqual(deviceInfo(d.user_code, T0 + 1), { ok: true }, 'only signed-in people see which agent and machine are asking');
     approveDevice({ id: 'u1' }, d.user_code, T0 + 2);
     const calls = [];
     const issueToken = async (uid, hint) => (calls.push([uid, hint]), 'hk_new');
