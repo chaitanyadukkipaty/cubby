@@ -296,6 +296,21 @@ describe('required relations that don\'t cascade', () => {
     const r = await clearData('shop', { collection: 'items', filter: 'price > 0', dry_run: true }, deps());
     assert.deepEqual(r.blocked, ['lines.item must point at an items record and doesn\'t cascade: 1 record (l1) would point at nothing. Delete or relink it first, or clear lines too.']);
   });
+  test('every blocking relation is named, with the first few records', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'items', fields: [{ name: 'price', type: 'number' }] },
+      { name: 'lines', fields: [{ name: 'item', type: 'relation', collection: 'items', required: true }] },
+      { name: 'refs', fields: [{ name: 'to', type: 'relation', collection: 'items', required: true }] },
+    ] }, pb.collections);
+    for (let i = 2; i <= 7; i++) await pb.collection('shop__lines').create({ id: `l${i}`, item: 'i2' });
+    await pb.collection('shop__refs').create({ id: 'r1', to: 'i2' });
+    const err = await clearData('shop', { collection: 'items', ids: ['i2'] }, deps()).catch((e) => e);
+    assert.match(err.message, /required relations would point at nothing/);
+    assert.deepEqual(err.details, [
+      'lines.item must point at an items record and doesn\'t cascade: 7 records (l1, l2, l3, l4, l5, … 2 more) would point at nothing. Delete or relink them first, or clear lines too.',
+      'refs.to must point at an items record and doesn\'t cascade: 1 record (r1) would point at nothing. Delete or relink it first, or clear refs too.',
+    ]);
+  });
   test('the clear is refused (409) before anything is snapshotted or deleted, in every mode', async () => {
     for (const body of [{ collection: 'items', filter: 'price > 0' }, { collection: 'items', ids: ['i1', 'i2'] }, { collections: ['items'] }]) {
       await assert.rejects(clearData('shop', body, deps()), (e) => e.status === 409 && /lines\.item must point at an items record/.test(e.details.join('\n')), JSON.stringify(body));
@@ -328,6 +343,38 @@ describe('required relations that don\'t cascade', () => {
     assert.deepEqual(pb.records('shop__items').map((x) => x.id), ['i2']);
     assert.deepEqual([err.cleared.mode, err.cleared.collections[0].records], ['ids', 2]);
     assert.ok(existsSync(join(dataDir, 'snapshots', 'shop', err.cleared.snapshot.id, 'meta.json')), 'the snapshot holds what went');
+  });
+  test('PocketBase going down midway is passed on as it is: with what went when something did, else no snapshot', async () => {
+    await pb.collection('shop__lines').delete('l1');
+    const real = pb.collection.bind(pb);
+    const downOn = (n) => {
+      let deletes = 0;
+      pb.collection = (name) => ({ ...real(name), delete: async (id) => { if (++deletes === n) throw Object.assign(new Error('socket hang up'), { status: 0 }); return real(name).delete(id); } });
+    };
+    downOn(1);
+    const first = await clearData('shop', { collection: 'items', ids: ['i1', 'i2'] }, deps()).catch((e) => e);
+    assert.deepEqual([first.message, first.cleared], ['socket hang up', undefined]);
+    assert.deepEqual(readdirSync(join(dataDir, 'snapshots', 'shop')), []);
+    downOn(2);
+    const second = await clearData('shop', { collection: 'items', ids: ['i1', 'i2'] }, deps()).catch((e) => e);
+    pb.collection = real;
+    assert.deepEqual([second.message, second.cleared.matches], ['socket hang up', 2]);
+    assert.deepEqual(pb.records('shop__items').map((x) => x.id), ['i2']);
+  });
+  test('a drop that fails midway keeps the snapshot and reports what went', async () => {
+    await applySchema('shop', { collections: [{ name: 'x1', fields: [{ name: 'n', type: 'text' }] }, { name: 'x2', fields: [{ name: 'n', type: 'text' }] }] }, pb.collections);
+    await pb.collection('shop__x1').create({ id: 'r1' });
+    const realDelete = pb.collections.delete;
+    pb.collections.delete = async (id) => { if (id === pb.collections.byName('shop__x2').id) throw new Error('locked'); return realDelete(id); };
+    const err = await clearData('shop', { collections: ['x1', 'x2'], drop: true }, deps()).catch((e) => e);
+    pb.collections.delete = realDelete;
+    assert.equal(err.status, 409);
+    assert.equal(pb.collections.byName('shop__x1'), undefined);
+    assert.ok(existsSync(join(dataDir, 'snapshots', 'shop', err.cleared.snapshot.id, 'meta.json')));
+    pb.collections.delete = async () => { throw new Error('locked'); };
+    const none = await clearData('shop', { collections: ['x2'], drop: true }, deps()).catch((e) => e);
+    pb.collections.delete = realDelete;
+    assert.deepEqual([none.status, none.cleared], [409, undefined]);
   });
   test('when nothing was deleted before PocketBase refused, no snapshot is left', async () => {
     pb.collection = ((real) => (name) => ({ ...real(name), delete: async () => { throw Object.assign(new Error('Failed to delete record.'), { status: 400, response: { message: 'Failed to delete record.' } }); } }))(pb.collection.bind(pb));

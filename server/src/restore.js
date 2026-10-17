@@ -46,7 +46,7 @@ function relationOrder(names, defs) {
 }
 
 const newPassword = () => randomBytes(12).toString('base64url');
-const idList = (v) => [].concat(v ?? []).filter(Boolean);
+const idList = (v) => [].concat(v).filter(Boolean);
 const jsonlNames = async (dir) => (await readdir(dir).catch(() => [])).filter((f) => f.endsWith('.jsonl')).map((f) => f.slice(0, -'.jsonl'.length));
 
 // `snap` is { meta, dir } (findSnapshot). Returns what was (or, with dry_run, would be) restored, per collection,

@@ -93,6 +93,8 @@ describe('activity summaries', () => {
       'Restored 1 record from snapshot s (2 replaced)');
     assert.equal(logic.restoreSummary({ snapshot: 's', collections: [], links: [{ name: 'notes', records: 3, relinked: 2 }], accounts: [] }),
       'Restored 0 records from snapshot s (2 records relinked)');
+    assert.equal(logic.restoreSummary({ snapshot: 's', collections: [], links: [{ name: 'notes', records: 1, relinked: 1 }], accounts: [] }),
+      'Restored 0 records from snapshot s (1 record relinked)');
   });
   test('a restore with nothing to note is one plain line; a bare snapshot lists without who or why', () => {
     assert.equal(logic.restoreSummary({ snapshot: 's', collections: [{ restored: 1, replaced: 0, existing: 0, failed: 0 }], accounts: [] }), 'Restored 1 record from snapshot s');

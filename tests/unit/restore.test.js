@@ -220,6 +220,35 @@ describe('everything a clear deletes comes back', () => {
     assert.deepEqual(pb.records('shop__notes').map((x) => [x.t, x.author]), [['edited', 'ann']]);
     assert.deepEqual(r.links, [{ name: 'notes', records: 1, relinked: 1 }]);
   });
+  test('a link PocketBase won\'t put back is reported; a record deleted since is skipped', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'people', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'notes', fields: [{ name: 'author', type: 'relation', collection: 'people' }] },
+    ] }, pb.collections);
+    await pb.collection('shop__people').create({ id: 'ann' });
+    await pb.collection('shop__notes').create({ id: 'n1', author: 'ann' });
+    await pb.collection('shop__notes').create({ id: 'n2', author: 'ann' });
+    const { snapshot } = await clear({ collection: 'people', ids: ['ann'] });
+    await pb.collection('shop__notes').delete('n2');
+    pb.collection = ((real) => (name) => ({ ...real(name), update: async () => { throw new Error('locked'); } }))(pb.collection.bind(pb));
+    const r = await restore(snapshot.id);
+    assert.deepEqual(r.failures, [{ collection: 'notes', id: 'n1', error: 'links not put back: locked' }]);
+    assert.deepEqual(r.links, [{ name: 'notes', records: 2, relinked: 0 }]);
+  });
+  test('only the relations that lost links change; a collection dropped since is skipped', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'people', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'notes', fields: [{ name: 'author', type: 'relation', collection: 'people' }, { name: 'editor', type: 'relation', collection: 'people' }] },
+    ] }, pb.collections);
+    await pb.collection('shop__people').create({ id: 'ann' });
+    await pb.collection('shop__people').create({ id: 'bob' });
+    await pb.collection('shop__notes').create({ id: 'n1', author: 'ann', editor: 'bob' });
+    await clearAndRestore({ collection: 'people', ids: ['ann'] });
+    const { snapshot } = await clear({ collection: 'people', ids: ['ann'] });
+    await clear({ collections: ['notes'], drop: true });
+    const r = await restore(snapshot.id);
+    assert.deepEqual([r.failures, r.links], [[], [{ name: 'notes', records: 1, relinked: 0 }]]);
+  });
   test('a single relation set to something else since is left alone', async () => {
     await applySchema('shop', { collections: [
       { name: 'people', fields: [{ name: 'n', type: 'text' }] },

@@ -5,7 +5,7 @@
 // relation that doesn't cascade makes the whole delete fail.
 import { chunks, eachPage, idsIn } from './data.js';
 
-const idList = (v) => [].concat(v ?? []).filter(Boolean);
+const idList = (v) => [].concat(v).filter(Boolean);
 const relations = (col) => col.fields.filter((f) => f.type === 'relation');
 
 // `cols`: the app's collections (PocketBase's form). `targets`: the collections records are deleted from; `matched`:
@@ -63,7 +63,7 @@ export async function planCascade(pb, cols, targets, matched) {
   const blocked = [];
   const affected = (colId) => whole.has(colId) || del.has(colId);
   for (const { col, f } of rels.filter((r) => affected(r.f.collectionId))) {
-    const hit = [...(found.get(col.id)?.values() ?? [])].filter((r) => idList(r[f.name]).some((id) => gone(f.collectionId, id)));
+    const hit = [...found.get(col.id).values()].filter((r) => idList(r[f.name]).some((id) => gone(f.collectionId, id)));
     const goes = hit.filter((r) => gone(col.id, r.id));
     const stays = hit.filter((r) => !gone(col.id, r.id));
     for (const r of stays) setIn(unlinked, col.id).add(r.id);
