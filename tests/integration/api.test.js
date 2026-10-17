@@ -234,10 +234,12 @@ describe('browser-approval login', () => {
   });
   test('/connect learns which agent is asking from the hint the CLI sent', async () => {
     const d = (await anon('POST', '/api/device/start', { body: { tool: 'Claude Code', machine: 'chaitanya-mbp' } })).data;
-    const info = await anon('GET', `/api/device/${d.user_code}`);
+    const info = await alice('GET', `/api/device/${d.user_code}`);
     assert.deepEqual(info.data, { ok: true, agent: { name: 'Claude Code · chaitanya-mbp', tool: 'Claude Code', machine: 'chaitanya-mbp' } });
+    assert.deepEqual((await anon('GET', `/api/device/${d.user_code}`)).data, { ok: true }, 'no hostname for anyone without an account');
+    assert.deepEqual((await api(srv.url, 'hk_not_a_real_token')('GET', `/api/device/${d.user_code}`)).data, { ok: true }, 'an invalid token is just anonymous');
     const old = (await anon('POST', '/api/device/start')).data;
-    assert.equal((await anon('GET', `/api/device/${old.user_code}`)).data.agent, null, 'older CLIs send no hint');
+    assert.equal((await alice('GET', `/api/device/${old.user_code}`)).data.agent, null, 'older CLIs send no hint');
   });
   test('two logins from two machines are two agents with distinct, working keys; the manual token stays put', async () => {
     const asErin = api(srv.url, erin);

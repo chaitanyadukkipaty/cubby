@@ -66,7 +66,7 @@ const routes = [
   ['POST', '/api/login', 'public', async (req) => (authLimit(req), login(await readJson(req)))],
   ['POST', '/api/device/start', 'public', async (req) => (deviceLimit(req), startDevice(config.publicUrl, Date.now(), logic.agentHint(await readJson(req, 4096))))],
   ['POST', '/api/device/poll', 'public', async (req) => pollDevice((await readJson(req)).device_id)],
-  ['GET', '/api/device/:code', 'public', async (req, user, { code }) => deviceInfo(code)],
+  ['GET', '/api/device/:code', 'optional', async (req, user, { code }) => deviceInfo(code, Date.now(), user)],
   ['POST', '/api/device/approve', 'user', async (req, user) => approveDevice(user, (await readJson(req)).code)],
   ['GET', '/api/me', 'user', async (req, user) => ({ ...user, key: undefined, keyId: undefined, token: user.key })],
   ['GET', '/api/agents', 'user', async (req, user) => listAgents(user)],
@@ -293,7 +293,10 @@ async function handleApi(req, res, url) {
   const match = logic.matchRoute(compiledRoutes, req.method, url.pathname);
   if (!match) throw new HttpError(404, 'Not found');
   const { route, params } = match;
-  const user = route.access === 'public' ? null : await authenticate(req);
+  // 'optional' routes answer everyone but tell a signed-in user more; a bad token there is just anonymous.
+  const user = route.access === 'public' ? null
+    : route.access === 'optional' ? await authenticate(req).catch(() => null)
+    : await authenticate(req);
   if (route.access === 'admin') requireAdmin(user);
   return sendJson(res, 200, await route.handler(req, user, params, url));
 }

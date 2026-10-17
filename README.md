@@ -88,7 +88,7 @@ else's platform and you can't bring your own agent.
 <table>
 <tr>
 <td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=e4b08ff1" alt="Dashboard with the Copy prompt for agent button and an app's scheduled jobs"><p align="center"><sub>Your dashboard on Priya's Cubby: connect your agent, see your apps and their jobs</sub></p></td>
-<td width="50%"><img src="docs/assets/connect-approve.png?v=fd35d280" alt="Approval page for connecting an AI agent"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
+<td width="50%"><img src="docs/assets/connect-approve.png?v=f807a051" alt="Approval page naming the agent that wants access"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/assets/dashboard-gallery.png?v=9cdf21ee" alt="Gallery of everyone's apps"><p align="center"><sub>Everyone's apps</sub></p></td>

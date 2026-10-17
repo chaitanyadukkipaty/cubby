@@ -111,7 +111,7 @@ describe('login', () => {
       assert.match(start.verify_url, /\/connect\?code=/);
       assert.ok(existsSync(join(h2, '.cubby/pending-login.json')));
       const machine = hostname().replace(/\.local$/i, '');
-      assert.deepEqual((await api(srv.url)('GET', `/api/device/${start.user_code}`)).data.agent,
+      assert.deepEqual((await api(srv.url, token)('GET', `/api/device/${start.user_code}`)).data.agent,
         { name: `Claude Code · ${machine}`, tool: 'Claude Code', machine }, 'the approval page can say who is asking');
       const waiting = cubby(['login', '--wait', '--json', '--no-skill'], { home: h2 });
       await new Promise((r) => setTimeout(r, 500));

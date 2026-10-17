@@ -9,6 +9,9 @@ test('a person approves an agent login from its link, and the agent receives a w
   await connectPage.goto(device.verify_url);
   await expect(connectPage.signInHeading).toBeVisible();
   await expect(connectPage.credit).toBeVisible();
+  // Before sign-in the page can't know (and mustn't reveal) which machine is asking.
+  await expect(connectPage.asker).toHaveText('An AI agent on your computer wants access');
+  expect((await api.as()('GET', `/api/device/${device.user_code}`)).data).toEqual({ ok: true });
   const email = `${uid('agentowner')}@e2e.dev`;
   const { signup_code: code } = await api.settings();
   await authPage.signUp({ email, password: 'password1234', code });

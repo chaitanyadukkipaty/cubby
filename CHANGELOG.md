@@ -36,7 +36,7 @@ All notable changes to Cubby are documented here. The format follows
 - Every approved `cubby login` becomes its own named agent with its own key, instead of handing out your one token.
   The CLI tells the server which agent tool it runs under (Claude Code, Codex, Cursor, otherwise "Terminal";
   `--client` overrides it) and the machine's name, so agents are named like "Claude Code · chaitanya-mbp". Logins
-  from older CLIs still work and get a dated name ("Agent · 2026-10-17"). The approval page says which agent is
+  from older CLIs still work and get a dated name ("Agent · 2026-10-17"). Once you sign in, the approval page says which agent is
   asking. `cubby agents` (and `GET /api/agents`) lists your agents and marks the current one; the dashboard's token,
   and tokens from before this release, show up as "Manual token" and keep working. API keys gain an empty `scopes`
   field, reserved for limiting keys later.
