@@ -12,6 +12,7 @@ import { getSettings } from './settings.js';
 import { deleteBackup, listBackups, planRetention } from './storage.js';
 import { pruneActivity } from './activity.js';
 import { pocketbaseStore, rollupMetrics } from './metrics.js';
+import { pruneSnapshots } from './snapshots.js';
 
 const backupDir = join(config.dataDir, 'backups');
 
@@ -63,6 +64,7 @@ export const MAINTENANCE = [
     const { rolled, deleted } = await rollupMetrics({ store: pocketbaseStore(admin) });
     return rolled || deleted ? `metrics: rolled ${rolled} hourly rows into days, deleted ${deleted} daily rows older than a year` : null;
   }],
+  ['snapshot prune', async () => { const n = await pruneSnapshots(config.dataDir); return n ? `pruned ${n} data snapshots` : null; }],
 ];
 
 // The nightly maintenance: the cleanups, then a backup. A failed cleanup never stops the others or the backup.

@@ -86,6 +86,15 @@ All notable changes to Cubby are documented here. The format follows
   goes up to `1y` (by hour up to 30 days, by day beyond) and takes `1h`. `cubby metrics --all` and
   `GET /api/admin/metrics` sum every app with the 10 busiest, for admins (others get a clear error). The app guide
   (`AGENTS.md`) tells agents to check `cubby metrics <app> --range 1h` for errors after deploying.
+- Clear an app's data without deleting the app. `cubby data list [app]` shows its collections with record counts
+  and uploaded file sizes; `cubby data clear [app] --collections a,b [--drop] --yes` empties them (keeping fields and
+  rules) or drops them (which clears the schema hash, so the next deploy pushes `schema.json`). Before anything is
+  deleted, a snapshot is written to `DATA_DIR/snapshots/<app>/<id>/`: schema, records as JSON lines, records of other
+  collections that point at them (cascades are reported), and uploaded files when they total 100 MB or less
+  (otherwise a warning says they can't be restored). Snapshots are kept 7 days (pruned by the nightly maintenance),
+  deleted with the app, and listed as their own category in `cubby admin storage`. The app's users collection is only
+  cleared when named, with a warning about passwords. Owners or admins only; each clear is in the activity log. API:
+  `GET /api/projects/<app>/data`, `POST /api/projects/<app>/data/clear`.
 - A command palette in the dashboard: ⌘K (Ctrl+K), or Search in the sidebar, jumps to a page or one of your apps
   and copies the setup prompt or a common command (`cubby deploy`, `cubby login`), switches theme or logs out.
   Fuzzy search, fully keyboard-driven.

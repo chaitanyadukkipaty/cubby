@@ -224,6 +224,34 @@ describe('jobs and env helpers', () => {
       '  polls     15 views     4 visitors     1 API errors  a@x.dev',
       '  notes      5 views     2 visitors     0 API errors',
     ].join('\n'));
+    assert.doesNotMatch(lib.formatAdminMetrics({ range: '24h', apps: 0, views: 0, visitors: 0, active_now: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_apps: [] }), /Busiest/);
+  });
+  test('formatData: one line per collection with its type, records and uploads', () => {
+    const text = lib.formatData('shop', [
+      { name: 'customers', type: 'auth', records: 3, files_bytes: 0 },
+      { name: 'products', type: 'base', records: 1204, files_bytes: 2048 },
+    ]);
+    assert.equal(text, [
+      'shop: 2 collections',
+      '  customers  auth      3 records  files 0 B',
+      '  products   base   1204 records  files 2.0 KB',
+    ].join('\n'));
+    assert.match(lib.formatData('shop', []), /no collections yet/);
+  });
+  test('formatClear: what went, cascades, and how to undo it', () => {
+    const text = lib.formatClear('shop', {
+      mode: 'empty', collections: [{ name: 'products', records: 2, files_bytes: 100 }],
+      cascade: [{ collection: 'orders', field: 'product', records: 1, deletes: true }, { collection: 'notes', field: 'product', records: 4, deletes: false }],
+      warnings: ['careful'],
+      snapshot: { id: '20261017T101500-a1b2c3', expires: '2026-10-24T10:15:00.000Z', files: true },
+    });
+    assert.equal(text, [
+      'Emptied products (2 records) in shop.',
+      '  orders: 1 record pointing at them were deleted too (cascade on orders.product)',
+      '  notes: 4 records lost their link (notes.product)',
+      'Snapshot 20261017T101500-a1b2c3 keeps them until 2026-10-24. Undo with: cubby data restore 20261017T101500-a1b2c3',
+      'warning: careful',
+    ].join('\n'));
   });
   test('formatMetricsList: one line per app', () => {
     const text = lib.formatMetricsList([
@@ -381,8 +409,8 @@ describe('admin output', () => {
       computed_at: '2026-10-17T09:00:00.000Z',
       disk: { total_bytes: 10 * 1024 ** 3, free_bytes: 4 * 1024 ** 3 },
       data_bytes: 3 * 1024 ** 2,
-      breakdown: { database_bytes: 1024 ** 2, uploads_bytes: 0, sites_current_bytes: 512 * 1024, sites_older_bytes: 512 * 1024, backups_bytes: 1024 ** 2, other_bytes: 0 },
-      apps: [{ slug: 'blog', owner: 'a@x.dev', total_bytes: 2048, current_deploy_bytes: 1024, older_deploys_bytes: 1024, uploads_bytes: 0 }],
+      breakdown: { database_bytes: 1024 ** 2, uploads_bytes: 0, sites_current_bytes: 512 * 1024, sites_older_bytes: 512 * 1024, backups_bytes: 1024 ** 2, snapshots_bytes: 2048, other_bytes: 0 },
+      apps: [{ slug: 'blog', owner: 'a@x.dev', total_bytes: 4096, current_deploy_bytes: 1024, older_deploys_bytes: 1024, uploads_bytes: 0, snapshots_bytes: 2048 }],
     });
     assert.match(text, /Database\s+1\.0 MB/);
     assert.match(text, /Current deploys\s+512\.0 KB/);
@@ -390,7 +418,8 @@ describe('admin output', () => {
     assert.match(text, /Backups\s+1\.0 MB/);
     assert.match(text, /Total\s+3\.0 MB/);
     assert.match(text, /Disk: 4\.0 GB free of 10\.0 GB/);
-    assert.match(text, /blog\s+2\.0 KB\s+current 1\.0 KB · older 1\.0 KB · uploads 0 B\s+a@x\.dev/);
+    assert.match(text, /Snapshots \(data clears\)\s+2\.0 KB/);
+    assert.match(text, /blog\s+4\.0 KB\s+current 1\.0 KB · older 1\.0 KB · uploads 0 B · snapshots 2\.0 KB\s+a@x\.dev/);
     assert.match(text, /as of 2026-10-17T09:00:00\.000Z/);
   });
   test('formatStorage says when there are no apps, and leaves out a missing owner', () => {

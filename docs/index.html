@@ -199,6 +199,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
       <li><a href="#invite">Invite people</a></li>
       <li><a href="#agents">Connect your agent</a></li>
       <li><a href="#build">Build an app</a></li>
+      <li><a href="#clear-data">Clear test data</a></li>
       <li><a href="#cli">CLI reference</a></li>
       <li><a href="#schema">Data and security rules</a></li>
       <li><a href="#admin">Running the server</a></li>
@@ -435,6 +436,28 @@ export default async ({ pb, env, log, fetch }) =&gt; {
       <p>Its other tabs: <b>Activity</b> (that app's timeline), <b>Deploys</b> (every kept deploy with <b>Roll back to this</b>), <b>Jobs</b>, <b>Env</b> and <b>Settings</b> (show in the gallery, and delete after typing the app's name). The tab is part of the link, like <code>/apps/friend-polls/deploys</code>, so a reload keeps it, and on a phone the tabs scroll sideways. A tab with nothing in it yet suggests what to ask your agent, with a copy button.</p>
     </section>
 
+    <section id="clear-data">
+      <p class="kicker">Data</p>
+      <h2>Clear test data</h2>
+      <p>Before you share an app, you'll want the test records gone without deleting the app or its accounts. Ask:</p>
+      <p class="prompt">Clear out the test polls and votes in friend-polls, but keep the users.</p>
+      <p>The agent looks first, then empties just those collections:</p>
+      <div class="code"><pre>cubby data list friend-polls
+<span class="c">friend-polls: 3 collections
+  polls  base     42 records  files 1.2 MB
+  users  auth      5 records  files 0 B
+  votes  base    310 records  files 0 B</span>
+cubby data clear friend-polls --collections polls,votes --yes
+<span class="c">Emptied polls (42 records), votes (310 records) in friend-polls.
+Snapshot 20261017T101500-a1b2c3 keeps them until 2026-10-24.</span></pre></div>
+      <ul>
+        <li><b>Empty or drop.</b> Emptying (the default) deletes every record and keeps the collection with its fields and rules. <code>--drop</code> removes the collection too, and the next <code>cubby deploy</code> pushes <code>schema.json</code> again.</li>
+        <li><b>Always a snapshot first.</b> Everything about to be deleted is written to <code>DATA_DIR/snapshots/&lt;app&gt;/</code> first: the collections' schema, their records, the records of other collections that point at them (deleted by cascade or unlinked), and uploaded files up to 100 MB in all (above that, you're warned they can't come back). Snapshots are plain files kept for 7 days, removed by the nightly maintenance and with the app, and counted in the admin storage breakdown.</li>
+        <li><b>Accounts only when named.</b> The app's users collection is only cleared when you list it, and the result warns that restored accounts get new passwords: PocketBase never hands out password hashes, even to the server.</li>
+        <li><b>Owners only.</b> Only the app's owner (and admins) can clear its data, the CLI needs <code>--yes</code>, and every clear is in <code>cubby activity</code>.</li>
+      </ul>
+    </section>
+
     <section id="cli">
       <p class="kicker">Reference</p>
       <h2>CLI reference</h2>
@@ -466,6 +489,8 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           <tr><td><code>cubby metrics [&lt;app&gt;] [--range 7d] [--all]</code></td><td>Views, visitors, active now and peak, API requests and errors, top paths, deploys, accounts and signups of one app, or a summary of all your apps. The last 24 hours by default, at most a year. <code>--all</code>: every app on the server, for admins.</td></tr>
           <tr><td><code>cubby schema push | pull</code></td><td>Apply or download the data model. Push never deletes anything.</td></tr>
           <tr><td><code>cubby schema drop &lt;c&gt;[.&lt;f&gt;] --yes</code></td><td>Delete a collection or field and its data.</td></tr>
+          <tr><td><code>cubby data list [&lt;app&gt;]</code></td><td>The app's collections with their record counts and uploaded file sizes.</td></tr>
+          <tr><td><code>cubby data clear [&lt;app&gt;] --collections a,b [--drop] --yes</code></td><td>Empty collections (fields and rules stay) or drop them, after a snapshot kept for 7 days.</td></tr>
           <tr><td><code>cubby projects</code> · <code>info</code> · <code>link &lt;app&gt;</code></td><td>List your apps, show the current one, or attach this folder to an existing app.</td></tr>
           <tr><td><code>cubby delete &lt;app&gt; --yes</code></td><td>Delete an app, its data and deploys.</td></tr>
           <tr><td><code>cubby admin storage</code></td><td>Admins only: disk use by category (database, uploads, current and older deploys, backups) and per app, with free disk.</td></tr>

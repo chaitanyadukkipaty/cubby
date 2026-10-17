@@ -69,6 +69,13 @@ describe('activity summaries', () => {
       'Pushed schema: created notes; updated tags; kept notes.body, old');
     assert.equal(logic.schemaSummary({ created: [], updated: [], kept: [] }), 'Pushed schema: no changes');
   });
+  test('data clears say what went, how many records, and until when the snapshot keeps them', () => {
+    const snapshot = { id: '20261017T101500-a1b2c3', expires: '2026-10-24T10:15:00.000Z' };
+    assert.equal(logic.clearSummary({ mode: 'empty', collections: [{ name: 'polls', records: 1204 }, { name: 'votes', records: 1 }], snapshot }),
+      'Emptied polls, votes — 1,205 records · snapshot 20261017T101500-a1b2c3 until 2026-10-24');
+    assert.equal(logic.clearSummary({ mode: 'drop', collections: [{ name: 'polls', records: 1 }], snapshot }),
+      'Dropped polls — 1 record · snapshot 20261017T101500-a1b2c3 until 2026-10-24');
+  });
   test('app updates say what changed', () => {
     assert.equal(logic.patchSummary('todo', { unlisted: true }), 'Updated "todo": made it unlisted');
     assert.equal(logic.patchSummary('todo', { unlisted: false, name: 'Todo', description: 'x' }),

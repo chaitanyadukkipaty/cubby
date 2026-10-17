@@ -43,7 +43,7 @@ describe('admin storage and backups', () => {
     assert.ok(s.disk.total_bytes > 0 && s.disk.free_bytes > 0);
     assert.ok(s.data_bytes >= s.breakdown.database_bytes + 3300);
     assert.deepEqual(s.apps.find((a) => a.slug === 'sized-app'), {
-      slug: 'sized-app', owner: 'storage-user@test.dev', total_bytes: 3300, current_deploy_bytes: 3000, older_deploys_bytes: 300, uploads_bytes: 0,
+      slug: 'sized-app', owner: 'storage-user@test.dev', total_bytes: 3300, current_deploy_bytes: 3000, older_deploys_bytes: 300, uploads_bytes: 0, snapshots_bytes: 0,
     });
     assert.match(s.computed_at, /^\d{4}-\d{2}-\d{2}T/);
   });

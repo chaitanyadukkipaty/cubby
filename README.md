@@ -103,6 +103,7 @@ else's platform and you can't bring your own agent.
 - **Know who did what.** Every change (deploys, rollbacks, schema, secrets, jobs, logins, admin actions on users, apps and backups) is logged
   for 30 days with the agent that made it, or "dashboard". `cubby activity` shows yours; admins can see everyone's.
 - **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), the top pages, API requests and errors next to each deploy, and accounts and signups per app, for up to a year, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them; each app's page in the dashboard charts them on one time axis with a line for every deploy; admins see every app with `--all`.
+- **Clear test data, safely.** Empty or drop collections without deleting the app (`cubby data clear`), always after a snapshot kept for 7 days.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps on Explore, and manage users, limits and disk from the Admin page.
 - **A dashboard that follows your agents.** Home is a timeline of what your agents did, one line each, grouped by day: a deploy you don't like is one **Roll back** away, and a failed job comes with a fix-it prompt to paste into your agent. Next to it: who's on your apps right now, views over the last 7 days, your agents, and ready-made prompts for what to ask next. **Agents** lists every agent you connected, with the apps it touched; rename or revoke one there, or open it to see everything it did. Each app has its own page with tabs (Overview charts, Activity, Deploys with rollback, Jobs, Env and Settings), and every tab has its own link.
@@ -277,6 +278,8 @@ account" error.
 | `cubby env list \| set NAME=value \| unset NAME --yes` | Secrets for jobs (`--from-stdin` keeps a value out of shell history) |
 | `cubby metrics [<app>] [--range 1h\|24h\|7d\|30d\|1y]` | Views, visitors, active now and peak, top paths, API requests and errors, deploys in the range, accounts and signups of one app, or a summary of all yours (last 24h by default); `--all` for admins sums every app |
 | `cubby schema push \| pull \| drop` | Manage the data model (push never deletes) |
+| `cubby data list [<app>]` | Collections with their record counts and uploaded file sizes |
+| `cubby data clear [<app>] --collections a,b [--drop] --yes` | Empty collections (keeping fields and rules) or drop them, after a 7-day snapshot |
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
 | `cubby admin storage` | Admins: disk use by category (database, uploads, current/older deploys, backups) and per app |
@@ -323,6 +326,38 @@ flowchart LR
     A --> P[Priya's Cubby]
     B --> Q[Acme Cubby]
 ```
+
+## Clear test data
+
+Before you share an app, you'll want the test polls gone, without deleting the app or its accounts. Ask:
+
+> Clear out the test polls and votes in friend-polls, but keep the users.
+
+The agent checks what's there, then empties just those collections:
+
+```sh
+cubby data list friend-polls
+# friend-polls: 3 collections
+#   polls  base     42 records  files 1.2 MB
+#   users  auth      5 records  files 0 B
+#   votes  base    310 records  files 0 B
+cubby data clear friend-polls --collections polls,votes --yes
+# Emptied polls (42 records), votes (310 records) in friend-polls.
+# Snapshot 20261017T101500-a1b2c3 keeps them until 2026-10-24. Undo with: cubby data restore 20261017T101500-a1b2c3
+```
+
+- **Empty** (the default) deletes every record and keeps the collection, its fields and rules. **`--drop`** removes the
+  collection too (like `cubby schema drop`, and the next `cubby deploy` pushes `schema.json` again). A collection
+  that others point at can only be dropped together with them.
+- **Nothing goes without a snapshot.** First Cubby writes everything it's about to delete to
+  `DATA_DIR/snapshots/<app>/<id>/`: the collections' schema, their records (one JSON line each), records of other
+  collections that point at them (deleted by cascade or unlinked, reported as such), and uploaded files if they total
+  100 MB or less (above that, it warns that files can't come back). Snapshots are plain files, kept 7 days, pruned by
+  the nightly maintenance, deleted with the app, and shown in `cubby admin storage`.
+- **Accounts only when you name them.** An app's users collection is never cleared unless it's listed, and then the
+  result warns that restored accounts get new passwords: PocketBase never hands out password hashes, even to the
+  server.
+- Only the app's owner (and admins) can clear it, `--yes` is required, and each clear is in `cubby activity`.
 
 ## How it works
 

@@ -18,6 +18,8 @@ import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
 import { recordActivity, listActivity } from './activity.js';
+import { listData, clearData } from './data.js';
+import { removeAppSnapshots } from './snapshots.js';
 import { loadDashboard } from './dashboard.js';
 import { matchRoute } from '../public/js/routes.js';
 import { commandsMarkdown } from '../../cli/src/commands.js';
@@ -50,6 +52,7 @@ async function ownedProject(user, slug) {
 async function removeProject(project) {
   await deleteCollections(await projectCollections(project.slug));
   await removeSite(project.slug);
+  await removeAppSnapshots(config.dataDir, project.slug);
   await admin.collection('cubby_projects').delete(project.id);
 }
 
@@ -61,7 +64,7 @@ function requireAdmin(user) {
 const metrics = createMetrics({ store: pocketbaseStore(admin), now: metricsClock(process.env.CUBBY_TEST_CLOCK_FILE) });
 
 // Owners see their apps' metrics; admins see any app's.
-async function metricsProject(user, slug) {
+async function appForOwnerOrAdmin(user, slug) {
   if (!user.is_admin) return ownedProject(user, slug);
   const project = await findProject(slug);
   if (!project) throw new HttpError(404, `App "${slug}" not found`);
@@ -190,7 +193,7 @@ const routes = [
   ['GET', '/api/projects/:slug/metrics', 'user', async (req, user, { slug }, url) => {
     const range = url.searchParams.get('range') || '24h';
     const hours = parseRange(range);
-    const project = await metricsProject(user, slug);
+    const project = await appForOwnerOrAdmin(user, slug);
     const report = (await metrics.report([project.id], hours))[project.id];
     const accounts = await appAccounts(admin, prefixFor(project.slug), Date.parse(report.from), Date.parse(report.to));
     // Deploy markers: the deploys still kept (the last 10) that went out in the range.
@@ -208,6 +211,22 @@ const routes = [
       const { from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate } = report[p.id];
       return { app: p.slug, name: p.name, range, from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate };
     });
+  }],
+
+  // Data: what's in an app's collections, and clearing it (after a snapshot). Owners for their apps; admins any app.
+  ['GET', '/api/projects/:slug/data', 'user', async (req, user, { slug }) => (
+    listData((await appForOwnerOrAdmin(user, slug)).slug, { pb: admin, dataDir: config.dataDir })
+  )],
+  ['POST', '/api/projects/:slug/data/clear', 'user', async (req, user, { slug }) => {
+    const project = await appForOwnerOrAdmin(user, slug);
+    const body = await readJson(req);
+    const actor = { id: user.id, email: user.email, admin: project.owner !== user.id };
+    const result = await clearData(project.slug, body, { pb: admin, dataDir: config.dataDir, project, actor, reason: String(body.reason ?? '').slice(0, 300) });
+    // Like `cubby schema drop`: the next deploy pushes schema.json again.
+    if (result.mode === 'drop') await admin.collection('cubby_projects').update(project.id, { schema_hash: '' });
+    storageCache.clear();
+    await recordActivity(user, { action: 'data.clear', app: slug, summary: logic.clearSummary(result) });
+    return result;
   }],
 
   ['GET', '/api/gallery', 'user', async () => {

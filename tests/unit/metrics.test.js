@@ -550,6 +550,9 @@ describe('top paths', () => {
     assert.deepEqual(p1.top_paths, [{ path: '/b', views: 3 }, { path: '/a', views: 1 }, { path: '/c', views: 1 }]);
     const { p9 } = await m.report(['p9'], 24);
     assert.deepEqual(p9.top_paths, []);
+    for (let i = 0; i < 11; i++) view(m, `/x${i}`);
+    const { p1: more } = await m.report(['p1'], 24);
+    assert.deepEqual(more.top_paths.at(-1), { path: 'other', views: 4 }, 'what falls out of the top 10 comes last, as other');
   });
 });
 
@@ -596,6 +599,12 @@ describe('admin totals', () => {
     assert.equal(s.top_apps.length, 10);
     assert.deepEqual(s.top_apps[0], { app: 'app-11', owner: 'o11@x.dev', views: 11, visitors: 1, api_requests: 10, api_errors: 5, active_now: 1 });
     assert.equal(s.top_apps.at(-1).app, 'app-2');
+  });
+  test('apps with the same views are listed by name; an app without an owner shows null', () => {
+    const projects = [{ id: 'b', slug: 'bee' }, { id: 'a', slug: 'ant' }];
+    const s = summarizeMetrics(projects, { a: rep(1, 1, 0, 0), b: rep(1, 1, 0, 0) });
+    assert.deepEqual(s.top_apps.map((x) => [x.app, x.owner]), [['ant', null], ['bee', null]]);
+    assert.equal(s.api_error_rate, 0);
   });
   test('no apps: zeros', () => {
     assert.deepEqual(summarizeMetrics([], {}), { from: null, to: null, apps: 0, views: 0, visitors: 0, active_now: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_apps: [] });

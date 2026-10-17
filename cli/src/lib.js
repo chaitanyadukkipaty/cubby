@@ -117,7 +117,7 @@ export function formatBytes(n) {
 
 const STORAGE_ROWS = [
   ['database_bytes', 'Database'], ['uploads_bytes', 'Uploaded files'], ['sites_current_bytes', 'Current deploys'],
-  ['sites_older_bytes', 'Older deploys (rollback)'], ['backups_bytes', 'Backups'], ['other_bytes', 'Other'],
+  ['sites_older_bytes', 'Older deploys (rollback)'], ['backups_bytes', 'Backups'], ['snapshots_bytes', 'Snapshots (data clears)'], ['other_bytes', 'Other'],
 ];
 
 export function formatStorage(s) {
@@ -130,7 +130,7 @@ export function formatStorage(s) {
     `Disk: ${formatBytes(s.disk.free_bytes)} free of ${formatBytes(s.disk.total_bytes)}`,
     '',
     s.apps.length ? 'Apps:' : 'No apps yet',
-    ...s.apps.map((a) => `  ${a.slug.padEnd(width)}${formatBytes(a.total_bytes).padStart(10)}  current ${formatBytes(a.current_deploy_bytes)} · older ${formatBytes(a.older_deploys_bytes)} · uploads ${formatBytes(a.uploads_bytes)}  ${a.owner ?? ''}`.trimEnd()),
+    ...s.apps.map((a) => `  ${a.slug.padEnd(width)}${formatBytes(a.total_bytes).padStart(10)}  current ${formatBytes(a.current_deploy_bytes)} · older ${formatBytes(a.older_deploys_bytes)} · uploads ${formatBytes(a.uploads_bytes)}${a.snapshots_bytes ? ` · snapshots ${formatBytes(a.snapshots_bytes)}` : ''}  ${a.owner ?? ''}`.trimEnd()),
   ].join('\n');
 }
 
@@ -351,6 +351,32 @@ export function formatMetricsList(list) {
   if (!list.length) return 'No apps yet. Create one with `cubby init <app>`.';
   const width = Math.max(...list.map((a) => a.app.length));
   return [`Last ${list[0].range}`, ...list.map((a) => `  ${a.app.padEnd(width)} ${counts(a)}  ${String(a.active_now).padStart(3)} active  ${String(a.api_errors).padStart(4)} API errors`)].join('\n');
+}
+
+// --- Data: clearing and restoring an app's records ---
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// `cubby data list`
+export function formatData(app, list) {
+  if (!list.length) return `${app}: no collections yet`;
+  const width = Math.max(...list.map((c) => c.name.length));
+  return [
+    `${app}: ${plural(list.length, 'collection')}`,
+    ...list.map((c) => `  ${c.name.padEnd(width)}  ${c.type.padEnd(4)} ${String(c.records).padStart(6)} records  files ${formatBytes(c.files_bytes)}`),
+  ].join('\n');
+}
+
+// `cubby data clear`: what went, what went with it, and the snapshot to undo it.
+export function formatClear(app, r) {
+  const verb = { empty: 'Emptied', drop: 'Dropped' }[r.mode] ?? 'Deleted';
+  return [
+    `${verb} ${r.collections.map((c) => `${c.name} (${plural(c.records, 'record')})`).join(', ')} in ${app}.`,
+    ...r.cascade.map((c) => (c.deletes
+      ? `  ${c.collection}: ${plural(c.records, 'record')} pointing at them were deleted too (cascade on ${c.collection}.${c.field})`
+      : `  ${c.collection}: ${plural(c.records, 'record')} lost their link (${c.collection}.${c.field})`)),
+    `Snapshot ${r.snapshot.id} keeps them until ${r.snapshot.expires.slice(0, 10)}. Undo with: cubby data restore ${r.snapshot.id}`,
+    ...r.warnings.map((w) => `warning: ${w}`),
+  ].join('\n');
 }
 
 // `cubby env set NAME=value`

@@ -11,7 +11,7 @@ import {
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
   jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
-  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents, formatActivity, formatMetrics, formatMetricsList, formatAdminMetrics,
+  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents, formatActivity, formatMetrics, formatMetricsList, formatAdminMetrics, formatData, formatClear,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -29,6 +29,7 @@ const { values: flags, positionals } = parseArgs({
     yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
     run: { type: 'string' }, limit: { type: 'string' }, agent: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
     keep: { type: 'string' }, range: { type: 'string' },
+    collections: { type: 'string' }, drop: { type: 'boolean' }, reason: { type: 'string' },
   },
 });
 
@@ -413,6 +414,24 @@ const commands = {
     out(formatMetrics(r), r);
   },
 
+  // An app's data: list collections, clear them (a snapshot is kept for 7 days). The app is the argument or cubby.json.
+  async data(sub, appArg) {
+    const app = appArg ?? requireProject();
+    const base = `/api/projects/${encodeURIComponent(app)}/data`;
+    if (!sub || sub === 'list') {
+      const list = await api('GET', base);
+      return out(formatData(app, list), list);
+    }
+    if (sub === 'clear') {
+      const collections = (flags.collections ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+      if (!collections.length) throw new CliError(DATA_USAGE);
+      if (!flags.yes) throw new CliError(`This ${flags.drop ? 'drops' : 'empties'} ${collections.join(', ')} in ${app}${flags.drop ? ' (the collections themselves go too)' : ''}. A snapshot keeps the records for 7 days (\`cubby data restore\`). Re-run with --yes.`);
+      const r = await api('POST', `${base}/clear`, { body: { collections, drop: Boolean(flags.drop), reason: flags.reason } });
+      return out(formatClear(app, r), r);
+    }
+    throw new CliError(DATA_USAGE);
+  },
+
   async jobs(sub, name) {
     const base = `/api/projects/${requireProject()}/jobs`;
     if (!sub || sub === 'list') {
@@ -522,6 +541,7 @@ const commands = {
   },
 };
 
+const DATA_USAGE = 'Usage: cubby data list [app] | clear [app] --collections a,b [--drop] --yes';
 const ADMIN_USAGE = 'Usage: cubby admin storage | backups [create [--no-wait] | delete <YYYY-MM-DD> --yes [--leave-none] | keep <n> [--yes]] | deploys <app> [prune [--keep <n>] --yes | delete <deploy-id> --yes]';
 
 const [cmd, ...rest] = positionals;
