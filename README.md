@@ -114,8 +114,8 @@ else's platform and you can't bring your own agent.
 <td width="50%"><img src="docs/assets/dashboard-apps.png?v=3e327a57" alt="The Apps page with app cards and an app's scheduled jobs"><p align="center"><sub>Apps: visibility, delete, and each app's scheduled jobs</sub></p></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-gallery.png?v=fdae93fd" alt="Explore page listing everyone's apps"><p align="center"><sub>Explore: everyone's apps</sub></p></td>
-<td width="50%"><img src="docs/assets/connect-approve.png?v=0360b2c0" alt="Approval page naming the agent that wants access"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-gallery.png?v=616041f6" alt="Explore page listing everyone's apps"><p align="center"><sub>Explore: everyone's apps</sub></p></td>
+<td width="50%"><img src="docs/assets/connect-approve.png?v=f807a051" alt="Approval page naming the agent that wants access"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
 </tr>
 <tr>
 <td colspan="2" align="center"><img src="docs/assets/dashboard-admin.png?v=93cf03fc" width="640" alt="Admin page with users, apps, limits, scheduled jobs, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, jobs, users, disk, updates</sub></p></td>
