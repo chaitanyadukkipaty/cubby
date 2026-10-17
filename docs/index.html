@@ -400,19 +400,25 @@ export default async ({ pb, env, log, fetch }) =&gt; {
       </ul>
       <figure class="shot" style="max-width:760px"><img src="assets/dashboard-my-apps.png?v=e4b08ff1" alt="My apps: the Friend Polls card with its two scheduled jobs, one that ran OK and one not run yet, each with Run now and Pause buttons" loading="lazy" width="1280" height="1341"><figcaption>An app's scheduled jobs on its owner's dashboard.</figcaption></figure>
 
-      <h3 id="metrics">Page views and visitors</h3>
+      <h3 id="metrics">Visitors, activity and API health</h3>
       <p>Once friends are using an app, you'll want to know if they actually are. Ask:</p>
       <p class="prompt">How many people used the polls app this week?</p>
       <p>The agent runs <code>cubby metrics friend-polls --range 7d</code> and answers from what the server counted:</p>
       <div class="code"><pre>friend-polls: 214 views, 23 visitors in the last 7d
-  2026-10-11     18 views     4 visitors
-  2026-10-12     41 views     9 visitors
+  Active now 2, peak 7
+  API: 1480 requests, 3 errors (0.2%)
+  Accounts: 19, 4 new
+  2026-10-11     18 views     4 visitors     1 signups
+  2026-10-12     41 views     9 visitors     2 signups
   <span class="c">…</span></pre></div>
       <ul>
         <li><b>Nothing to add to the app.</b> The server counts as it hands out the app's pages: every page a browser loads is a view. Scripts, images, database calls and obvious bots and link previews don't count.</li>
         <li><b>Visitors, not people's IPs.</b> A visitor is a hash of the IP address and browser, mixed with a secret that only lives in memory and changes every day (UTC). The same person counts once a day and can't be followed from one day to the next. IP addresses are never stored.</li>
         <li><b>Views by the hour, visitors by the day.</b> Counts are written to the database every minute, so a crash loses at most a minute, and a restart may count some of that day's visitors twice. Visitors are unique per day; over several days, the total adds up each day's visitors.</li>
-        <li><b>Yours to see.</b> Only the app's owner (and the server's admins) can see an app's numbers. <code>cubby metrics</code> without an app lists all of yours; <code>--range</code> takes hours or days up to <code>90d</code>, and <code>--json</code> adds views per hour and views and visitors per day.</li>
+        <li><b>Who's on it now.</b> Active now counts visitors who loaded a page or used the database in the last 5 minutes, without a heartbeat or anything added to the app. It lives only in memory; the highest it reached each hour is kept as that hour's peak, and the report shows the biggest peak in the range.</li>
+        <li><b>Is the backend healthy?</b> Every database call through <code>/pb</code> counts as an API request, and every 5xx answer as an error, per hour. The error rate is errors over requests.</li>
+        <li><b>Accounts.</b> The number of accounts in the app's own users collection, and how many signed up each day, read from the database when you ask.</li>
+        <li><b>Yours to see.</b> Only the app's owner (and the server's admins) can see an app's numbers. <code>cubby metrics</code> without an app lists all of yours; <code>--range</code> takes hours or days up to <code>90d</code>, and <code>--json</code> adds views, peaks, API requests and errors per hour, views and visitors per day, and signups per day.</li>
       </ul>
     </section>
 
@@ -444,7 +450,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           <tr><td><code>cubby jobs logs &lt;job&gt; [--limit n] [--run &lt;id&gt;]</code></td><td>Show past runs and their output (the last 100 per job are kept).</td></tr>
           <tr><td><code>cubby jobs pause | resume &lt;job&gt;</code></td><td>Stop or restart a job's schedule. Stays that way across deploys.</td></tr>
           <tr><td><code>cubby env list | set NAME=value | unset NAME --yes</code></td><td>Secrets for jobs. <code>set NAME --from-stdin</code> keeps the value out of shell history.</td></tr>
-          <tr><td><code>cubby metrics [&lt;app&gt;] [--range 7d]</code></td><td>Page views and unique visitors of one app, or of all your apps. The last 24 hours by default, at most 90 days.</td></tr>
+          <tr><td><code>cubby metrics [&lt;app&gt;] [--range 7d]</code></td><td>Views, visitors, active now and peak, API requests and errors, accounts and signups of one app, or a summary of all your apps. The last 24 hours by default, at most 90 days.</td></tr>
           <tr><td><code>cubby schema push | pull</code></td><td>Apply or download the data model. Push never deletes anything.</td></tr>
           <tr><td><code>cubby schema drop &lt;c&gt;[.&lt;f&gt;] --yes</code></td><td>Delete a collection or field and its data.</td></tr>
           <tr><td><code>cubby projects</code> · <code>info</code> · <code>link &lt;app&gt;</code></td><td>List your apps, show the current one, or attach this folder to an existing app.</td></tr>

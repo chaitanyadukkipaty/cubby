@@ -74,8 +74,10 @@ And when you wonder whether anyone uses it:
 
 > How many people used the polls app this week?
 
-The agent runs `cubby metrics friend-polls --range 7d` and tells you the page views and unique visitors per day.
-Cubby counts them itself as it serves the app, so there's no tracking script, cookie banner or analytics account.
+The agent runs `cubby metrics friend-polls --range 7d` and tells you the page views and unique visitors per day,
+how many people are on it right now and the busiest moment of the week, how many accounts signed up, and whether
+its database calls are failing. Cubby counts all of it itself as it serves the app, so there's no tracking script,
+cookie banner or analytics account.
 
 ## Why Cubby
 
@@ -99,7 +101,7 @@ else's platform and you can't bring your own agent.
 - **Scheduled jobs.** Apps can run code on a cron schedule (digests, reminders, cleanups, syncing from an API) with encrypted secrets. Each run is sandboxed and can only reach its own app's data and the public internet.
 - **Know who did what.** Every change (deploys, rollbacks, schema, secrets, jobs, logins, admin actions on users, apps and backups) is logged
   for 30 days with the agent that made it, or "dashboard". `cubby activity` shows yours; admins can see everyone's.
-- **Built-in metrics.** Page views and unique visitors per app, counted on the server as pages are served: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them.
+- **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), API requests and errors, and accounts and signups per app, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps in a gallery, and manage users, limits and disk from an admin tab.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
@@ -255,7 +257,7 @@ account" error.
 | `cubby deploys` / `cubby rollback <id>` | List deploys, restore one instantly (with the jobs it shipped) |
 | `cubby jobs [run \| logs \| pause \| resume <job>]` | List scheduled jobs with their next and last run; run one now and print its log |
 | `cubby env list \| set NAME=value \| unset NAME --yes` | Secrets for jobs (`--from-stdin` keeps a value out of shell history) |
-| `cubby metrics [<app>] [--range 7d]` | Page views and unique visitors of one app, or all of yours (last 24h by default) |
+| `cubby metrics [<app>] [--range 7d]` | Views, visitors, active now and peak, API requests and errors, accounts and signups of one app, or a summary of all yours (last 24h by default) |
 | `cubby schema push \| pull \| drop` | Manage the data model (push never deletes) |
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
@@ -314,7 +316,7 @@ flowchart LR
     subgraph S[Cubby server]
       D[Dashboard + API]
       H["App hosting<br/>&lt;app&gt;.your-server.com<br/>counts views"]
-      P["Database proxy<br/>&lt;app&gt;/pb/* → own data only"]
+      P["Database proxy<br/>&lt;app&gt;/pb/* → own data only<br/>counts requests, errors"]
       J["Job runner<br/>cron · sandboxed · own data only"]
     end
     P --> DB[(Shared PocketBase<br/>one prefix per app)]
@@ -336,6 +338,14 @@ flowchart LR
   across days; the IP itself is never stored. Counts are kept in memory and written to the database every minute
   (views per hour; views and unique visitors per day). A crash loses at most that minute, and a restart may count
   some of that day's visitors twice. Only the app's owner (and admins) can see them.
+  - **Active now** is the number of visitors who loaded a page or made a `/pb` call in the last 5 minutes, kept only
+    in memory (no heartbeat, nothing added to the app); the highest it reached each hour is stored as that hour's
+    **peak**. Someone reading a page for more than 5 minutes without any database call drops out, so it's a floor.
+    Memory stays small: about 70 bytes per active visitor, capped at 50,000 per app (3.5 MB).
+  - **API health**: every `/pb` response counts as a request per hour, and 5xx responses (from PocketBase or the
+    proxy) as errors. Counting never changes what the proxy allows. A realtime connection counts when it closes.
+  - **Accounts** are the records of the app's own auth collections (its `users`), counted from the database when
+    you ask, with signups per day over the range. Nothing extra is stored.
 - One Docker container runs Caddy, the Cubby server (Node.js) and PocketBase, with a single data volume.
 - Each server serves its own CLI (`/cli.tgz`), agent docs (`/docs.md`) and skill installer (`/skill.sh`), so agents
   always follow the rules of the server they're deploying to.

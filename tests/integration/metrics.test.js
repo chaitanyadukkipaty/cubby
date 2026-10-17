@@ -1,7 +1,7 @@
 // App metrics: page loads on an app host → in-memory counters → cubby_metrics → the metrics API.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -68,6 +68,8 @@ describe('cubby metrics', () => {
     const r = await cubby(['metrics', 'counted', '--json']);
     assert.equal(r.code, 0, r.stderr);
     assert.deepEqual([r.json.app, r.json.range, r.json.views, r.json.visitors], ['counted', '24h', 4, 2]);
+    // The page loads above were the only traffic: two people (bots aren't), no API calls, no auth collection.
+    assert.deepEqual([r.json.active_now, r.json.peak_active, r.json.api_requests, r.json.api_errors, r.json.accounts.total], [2, 2, 0, 0, 0]);
     const week = await cubby(['metrics', 'counted', '--range', '7d', '--json']);
     assert.equal(week.json.hours.length, 168);
   });
@@ -75,7 +77,8 @@ describe('cubby metrics', () => {
     const r = await cubby(['metrics', '--json']);
     assert.deepEqual(r.json.map((a) => [a.app, a.views, a.visitors]), [['counted', 4, 2]]);
     assert.match((await cubby(['metrics'])).stdout, /counted\s+4 views\s+2 visitors/);
-    assert.match((await cubby(['metrics', 'counted'])).stdout, /^counted: 4 views, 2 visitors in the last 24h/);
+    const text = (await cubby(['metrics', 'counted'])).stdout;
+    assert.match(text, /^counted: 4 views, 2 visitors in the last 24h\n {2}Active now 2, peak 2\n {2}API: 0 requests, 0 errors \(0\.0%\)\n {2}Accounts: 0, 0 new\n/);
   });
   test('errors are clear: someone else\'s app, a bad range', async () => {
     const r = await cubby(['metrics', 'bobs-app', '--json']);
@@ -127,5 +130,66 @@ describe('who sees metrics', () => {
     assert.deepEqual(mine.data.map((a) => [a.app, a.views, a.visitors]), [['counted', 4, 2]]);
     assert.deepEqual((await bob('GET', '/api/metrics')).data.map((a) => [a.app, a.views]), [['bobs-app', 0]]);
     assert.equal((await alice('GET', '/api/metrics?range=week')).status, 400);
+  });
+});
+
+// Active now, API health and accounts, on a server of their own: its clock can be moved forward, and a PocketBase
+// hook gives the app a route that fails with a 500.
+describe('active now, API health and accounts', () => {
+  let live, dataDir, clockFile, owner, liveApp;
+  const json = { 'content-type': 'application/json' };
+  const report = async () => {
+    const r = await owner('GET', '/api/projects/live/metrics');
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    return r.data;
+  };
+  before(async () => {
+    dataDir = mkdtempSync(join(tmpdir(), 'cubby-metrics-live-'));
+    mkdirSync(join(dataDir, 'pb_hooks'));
+    writeFileSync(join(dataDir, 'pb_hooks', 'fail.pb.js'), 'routerAdd("GET", "/api/collections/live__boom/fail", (e) => e.json(500, { message: "boom" }));\n');
+    clockFile = join(dataDir, 'clock-offset');
+    writeFileSync(clockFile, '0');
+    live = await startServer({ DATA_DIR: dataDir, CUBBY_TEST_CLOCK_FILE: clockFile });
+    owner = api(live.url, await signup(live.url, 'live-owner@test.dev'));
+    assert.equal((await owner('POST', '/api/projects', { body: { slug: 'live' } })).status, 200);
+    assert.equal((await owner('PUT', '/api/projects/live/schema', { body: { collections: [{ name: 'users', type: 'auth', createRule: '' }] } })).status, 200);
+    assert.equal((await deployTo(owner, 'live', { 'index.html': '<h1>live</h1>' })).status, 200);
+    liveApp = app(live, 'live');
+  });
+  after(async () => {
+    await live?.stop();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  test('every /pb response counts as an API request, and a 5xx from PocketBase as an error', async () => {
+    assert.equal((await liveApp('GET', '/pb/api/health')).status, 200);
+    assert.equal((await liveApp('GET', '/pb/api/collections/live__boom/fail')).status, 500);
+    assert.equal((await liveApp('GET', '/pb/api/collections/users/records')).status, 403); // refused by the proxy
+    const r = await report();
+    assert.deepEqual([r.api_requests, r.api_errors], [3, 1]);
+    assert.ok(Math.abs(r.api_error_rate - 1 / 3) < 1e-9);
+    assert.deepEqual([r.hours.at(-1).api_requests, r.hours.at(-1).api_errors], [3, 1]);
+  });
+  test('accounts are the app\'s own users, with new signups in the range', async () => {
+    for (const email of ['ann@live.test', 'ben@live.test']) {
+      const body = { email, password: 'password1234', passwordConfirm: 'password1234' };
+      assert.equal((await liveApp('POST', '/pb/api/collections/live__users/records', { body, headers: json })).status, 200);
+    }
+    const { accounts } = await report();
+    assert.deepEqual([accounts.total, accounts.new, accounts.days.at(-1).signups], [2, 2, 2]);
+  });
+  test('active now counts people on pages and on /pb, then drops to 0 after 5 minutes without traffic', async () => {
+    await liveApp('GET', '/', { headers: { 'user-agent': BROWSER, 'x-forwarded-for': '203.0.113.20' } });
+    await liveApp('GET', '/pb/api/health', { headers: { 'user-agent': BROWSER, 'x-forwarded-for': '203.0.113.21' } });
+    await liveApp('GET', '/pb/api/health', { headers: { 'user-agent': 'curl/8.7.1', 'x-forwarded-for': '203.0.113.22' } }); // not a person
+    let r = await report();
+    assert.deepEqual([r.active_now, r.peak_active], [2, 2]);
+    writeFileSync(clockFile, String(5 * 60_000));
+    r = await report();
+    assert.deepEqual([r.active_now, r.peak_active], [0, 2], 'the peak stays');
+  });
+  test('only the owner sees them', async () => {
+    const stranger = api(live.url, await signup(live.url, 'live-stranger@test.dev'));
+    assert.equal((await stranger('GET', '/api/projects/live/metrics')).status, 404);
   });
 });

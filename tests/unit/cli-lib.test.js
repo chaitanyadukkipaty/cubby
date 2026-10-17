@@ -183,22 +183,30 @@ describe('jobs and env helpers', () => {
     assert.match(lib.formatEnv([{ key: 'API_KEY', updated: 'U' }]), /^API_KEY\s+set U$/);
     assert.match(lib.formatEnv([]), /No secrets/);
   });
-  test('formatMetrics: totals for the range, then each UTC day', () => {
+  test('formatMetrics: totals for the range, live and API numbers, accounts, then each UTC day', () => {
     const text = lib.formatMetrics({
       app: 'polls', range: '24h', views: 1234, visitors: 3,
+      active_now: 2, peak_active: 7, api_requests: 1500, api_errors: 3, api_error_rate: 0.002,
       days: [{ start: '2026-10-16T00:00:00.000Z', views: 4, visitors: 1 }, { start: '2026-10-17T00:00:00.000Z', views: 1230, visitors: 2 }],
+      accounts: { total: 42, new: 5, days: [{ start: '2026-10-16T00:00:00.000Z', signups: 1 }, { start: '2026-10-17T00:00:00.000Z', signups: 4 }] },
     });
     assert.equal(text, [
       'polls: 1234 views, 3 visitors in the last 24h',
-      '  2026-10-16      4 views     1 visitors',
-      '  2026-10-17   1230 views     2 visitors',
+      '  Active now 2, peak 7',
+      '  API: 1500 requests, 3 errors (0.2%)',
+      '  Accounts: 42, 5 new',
+      '  2026-10-16      4 views     1 visitors     1 signups',
+      '  2026-10-17   1230 views     2 visitors     4 signups',
     ].join('\n'));
   });
   test('formatMetricsList: one line per app', () => {
-    const text = lib.formatMetricsList([{ app: 'polls', range: '7d', views: 12, visitors: 5 }, { app: 'a-much-longer-app-name', range: '7d', views: 0, visitors: 0 }]);
+    const text = lib.formatMetricsList([
+      { app: 'polls', range: '7d', views: 12, visitors: 5, active_now: 1, api_errors: 2 },
+      { app: 'a-much-longer-app-name', range: '7d', views: 0, visitors: 0, active_now: 0, api_errors: 0 },
+    ]);
     assert.match(text, /^Last 7d\n/);
-    assert.match(text, /\n {2}polls\s+12 views\s+5 visitors\n/);
-    assert.match(text, /a-much-longer-app-name\s+0 views\s+0 visitors$/);
+    assert.match(text, /\n {2}polls\s+12 views\s+5 visitors\s+1 active\s+2 API errors\n/);
+    assert.match(text, /a-much-longer-app-name\s+0 views\s+0 visitors\s+0 active\s+0 API errors$/);
     assert.match(lib.formatMetricsList([]), /No apps yet/);
   });
   test('parseEnvAssignment splits at the first =', () => {

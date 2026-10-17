@@ -12,7 +12,7 @@ import { scheduleBackups, createBackupRunner, runMaintenance } from './backups.j
 import { scanStorage, createTtlCache, listBackups, checkBackupDelete, planRetention, deleteBackup } from './storage.js';
 import { listJobs, runNow, jobRuns, setPaused, allJobs, scheduleJobs, recoverRuns, deployJobs } from './jobs.js';
 import { listEnv, setEnv, unsetEnv } from './secrets.js';
-import { createMetrics, pocketbaseStore, countsAsView, parseRange } from './metrics.js';
+import { createMetrics, pocketbaseStore, countsAsView, isPerson, parseRange, metricsClock, appAccounts } from './metrics.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
@@ -54,8 +54,8 @@ function requireAdmin(user) {
   if (!user.is_admin) throw new HttpError(403, 'Admins only');
 }
 
-// Page views and visitors per app: counted in memory, flushed to cubby_metrics every minute.
-const metrics = createMetrics({ store: pocketbaseStore(admin) });
+// Page views, visitors, active now and /pb health per app: counted in memory, flushed to cubby_metrics every minute.
+const metrics = createMetrics({ store: pocketbaseStore(admin), now: metricsClock(process.env.CUBBY_TEST_CLOCK_FILE) });
 
 // Owners see their apps' metrics; admins see any app's.
 async function metricsProject(user, slug) {
@@ -188,7 +188,9 @@ const routes = [
     const range = url.searchParams.get('range') || '24h';
     const hours = parseRange(range);
     const project = await metricsProject(user, slug);
-    return { app: project.slug, range, ...(await metrics.report([project.id], hours))[project.id] };
+    const report = (await metrics.report([project.id], hours))[project.id];
+    const accounts = await appAccounts(admin, prefixFor(project.slug), Date.parse(report.from), Date.parse(report.to));
+    return { app: project.slug, range, ...report, accounts };
   }],
   ['GET', '/api/metrics', 'user', async (req, user, params, url) => {
     const range = url.searchParams.get('range') || '24h';
@@ -196,8 +198,8 @@ const routes = [
     const list = await admin.collection('cubby_projects').getFullList({ filter: admin.filter('owner = {:u}', { u: user.id }), sort: 'slug' });
     const report = await metrics.report(list.map((p) => p.id), hours);
     return list.map((p) => {
-      const { from, to, views, visitors } = report[p.id];
-      return { app: p.slug, name: p.name, range, from, to, views, visitors };
+      const { from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate } = report[p.id];
+      return { app: p.slug, name: p.name, range, from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate };
     });
   }],
 
@@ -378,7 +380,12 @@ const appSlugFromHost = (host) => logic.appSlugFromHost(host, config.baseDomain)
 async function handleApp(req, res, slug, url) {
   const project = await findProject(slug);
   if (!project) return sendPage(res, 404, 'No app here', `Nothing is deployed at <b>${slug}</b>.`);
-  if (url.pathname.startsWith('/pb/')) return proxyPocketBase(req, res, slug, url);
+  if (url.pathname.startsWith('/pb/')) {
+    // Counted around the proxy, never changing what it decides. A realtime stream counts when it ends.
+    if (isPerson(req.headers)) metrics.seen(project.id, { ip: clientIp(req), ua: req.headers['user-agent'] });
+    res.once('close', () => metrics.apiResponse(project.id, res.statusCode));
+    return proxyPocketBase(req, res, slug, url);
+  }
   if (url.pathname === '/__cubby/config.js') {
     const cfg = { project: slug, prefix: prefixFor(slug), pbUrl: '/pb' };
     res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' });

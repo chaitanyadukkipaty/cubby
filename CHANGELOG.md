@@ -59,6 +59,10 @@ All notable changes to Cubby are documented here. The format follows
   are flushed to the database every minute (and on shutdown): views per hour, views and visitors per UTC day.
   `cubby metrics <app>` shows one app, `cubby metrics` all of yours, `--range` up to 90d (default 24h). Owners see
   their apps; admins see any. `/api/info` lists `metrics` in `features`.
+- Live and backend metrics in `cubby metrics`: active now (visitors seen on a page or a `/pb` call in the last 5
+  minutes, in memory only, no heartbeat) and its peak per hour; `/pb` API requests and 5xx errors per hour with the
+  error rate; and the app's accounts with signups per day, read from PocketBase when asked. `cubby metrics` without
+  an app also shows each app's active now and API errors.
 
 ### Changed
 

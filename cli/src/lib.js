@@ -318,17 +318,23 @@ export const formatEnv = (list) => list.map((e) => `${e.key.padEnd(32)} set ${e.
 
 const counts = (b) => `${String(b.views).padStart(6)} views  ${String(b.visitors).padStart(4)} visitors`;
 
-// `cubby metrics <app>`: visitors are unique per UTC day, so each day is listed with its own count.
-export const formatMetrics = (r) => [
-  `${r.app}: ${r.views} views, ${r.visitors} visitors in the last ${r.range}`,
-  ...r.days.map((d) => `  ${d.start.slice(0, 10)} ${counts(d)}`),
-].join('\n');
+// `cubby metrics <app>`: visitors are unique per UTC day, so each day is listed with its own count (and signups: the same days).
+export function formatMetrics(r) {
+  const signups = new Map(r.accounts.days.map((d) => [d.start, d.signups]));
+  return [
+    `${r.app}: ${r.views} views, ${r.visitors} visitors in the last ${r.range}`,
+    `  Active now ${r.active_now}, peak ${r.peak_active}`,
+    `  API: ${r.api_requests} requests, ${r.api_errors} errors (${(r.api_error_rate * 100).toFixed(1)}%)`,
+    `  Accounts: ${r.accounts.total}, ${r.accounts.new} new`,
+    ...r.days.map((d) => `  ${d.start.slice(0, 10)} ${counts(d)}  ${String(signups.get(d.start)).padStart(4)} signups`),
+  ].join('\n');
+}
 
 // `cubby metrics`: every app of yours.
 export function formatMetricsList(list) {
   if (!list.length) return 'No apps yet. Create one with `cubby init <app>`.';
   const width = Math.max(...list.map((a) => a.app.length));
-  return [`Last ${list[0].range}`, ...list.map((a) => `  ${a.app.padEnd(width)} ${counts(a)}`)].join('\n');
+  return [`Last ${list[0].range}`, ...list.map((a) => `  ${a.app.padEnd(width)} ${counts(a)}  ${String(a.active_now).padStart(3)} active  ${String(a.api_errors).padStart(4)} API errors`)].join('\n');
 }
 
 // `cubby env set NAME=value`
