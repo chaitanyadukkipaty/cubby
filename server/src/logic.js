@@ -143,7 +143,11 @@ export const jobTimeout = (s) => s?.job_timeout_s || JOB_TIMEOUT_DEFAULT;
 // Nightly backups kept. Seeded from BACKUP_KEEP on first boot; 0 (rows from before the setting) means BACKUP_KEEP.
 export const BACKUP_KEEP_MIN = 1;
 export const BACKUP_KEEP_MAX = 90;
-export const backupKeep = (s, fallback = config.backups.keep) => s?.backup_keep || fallback;
+// 1–90 like the API accepts; BACKUP_KEEP is seeded unchecked, and 0 or less would prune every backup.
+export const backupKeep = (s, fallback = config.backups.keep) => {
+  const n = Math.trunc(s?.backup_keep || fallback);
+  return Number.isFinite(n) ? Math.min(90, Math.max(1, n)) : 1;
+};
 
 export const settingsView = (s) => ({
   server_name: serverName(s), signup_code: s.signup_code, open_signup: s.open_signup, max_apps_per_user: s.max_apps_per_user,

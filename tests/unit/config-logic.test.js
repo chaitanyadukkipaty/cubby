@@ -64,6 +64,11 @@ describe('logic views', () => {
     assert.equal(logic.backupKeep({ backup_keep: 14 }, 7), 14);
     assert.equal(logic.backupKeep({ backup_keep: 0 }, 5), 5, 'rows from before the setting existed');
     assert.equal(logic.backupKeep(undefined, 5), 5);
+    // BACKUP_KEEP is seeded unchecked on first boot; never let it prune every backup or grow without bound.
+    assert.equal(logic.backupKeep({ backup_keep: -3 }, 7), 1);
+    assert.equal(logic.backupKeep(undefined, 0), 1);
+    assert.equal(logic.backupKeep({ backup_keep: 500 }, 7), 90);
+    assert.equal(logic.backupKeep(undefined, Number('nope')), 1);
     assert.equal(logic.settingsView({ backup_keep: 30 }).backup_keep, 30);
     assert.deepEqual(logic.settingsPatch({ backup_keep: '30' }), { backup_keep: 30 });
     assert.deepEqual(logic.settingsPatch({ backup_keep: 1 }), { backup_keep: 1 });
