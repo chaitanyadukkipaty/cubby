@@ -8,7 +8,7 @@
 <link rel="icon" href="assets/logo.svg?v=aa679b5d" type="image/svg+xml">
 <meta property="og:title" content="Cubby: a home for the apps your agents build">
 <meta property="og:description" content="Self-host one server, invite your friends, and let AI coding agents build, deploy and share full-stack apps.">
-<meta property="og:image" content="assets/dashboard-my-apps.png?v=e4b08ff1">
+<meta property="og:image" content="assets/dashboard-my-apps.png?v=15bb425b">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -299,9 +299,10 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
     <section id="invite">
       <p class="kicker">Admin</p>
       <h2>Invite people</h2>
-      <p>Send your friends the server URL and the signup code. In the dashboard's <b>Admin</b> tab, <b>Copy invite</b> copies both. They open the URL, sign up with the code, and land on their dashboard, headed with your server's name.</p>
+      <p>Send your friends the server URL and the signup code. On the dashboard's <b>Admin</b> page, <b>Copy invite</b> copies both. They open the URL, sign up with the code, and land on <b>Home</b>, under your server's name.</p>
+      <p>The dashboard has a sidebar (a bottom bar on phones): <b>Home</b> holds the setup prompt for their agent and a list of their apps, <b>Apps</b> has a card per app, <b>Explore</b> shows everyone's apps, and admins also get <b>Admin</b>. Every page has its own link, so a bookmark or a reload lands in the same place. It follows the system's light or dark setting, and the toggle under your email overrides it.</p>
       <div class="two">
-        <figure class="shot"><img src="assets/dashboard-my-apps.png?v=e4b08ff1" alt="Cubby dashboard showing the Copy prompt for agent button and the user's Friend Polls app with its scheduled jobs" loading="lazy" width="1280" height="1341"><figcaption>What a friend sees after signing up.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-my-apps.png?v=15bb425b" alt="Cubby dashboard Home: a sidebar with Home, Apps, Agents, Explore and Admin, the Copy prompt for agent button and a table of the user's apps" loading="lazy" width="1280" height="820"><figcaption>Home, what a friend sees after signing up.</figcaption></figure>
         <div>
           <p><b>Rotate code</b> invalidates the old code for new signups; existing accounts keep working.</p>
           <p><b>Open signup</b> drops the code requirement entirely. Leave it off for a server on the public internet: bots find open signup forms within days.</p>
@@ -313,7 +314,7 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
     <section id="agents">
       <p class="kicker">Everyone · once</p>
       <h2>Connect your agent</h2>
-      <p>Each person pastes one prompt into their coding agent. It's shown on their dashboard with the server's name and URL filled in:</p>
+      <p>Each person pastes one prompt into their coding agent. It's on their dashboard's Home page with the server's name and URL filled in:</p>
       <div class="code"><pre style="white-space:pre-wrap">I&#39;d like you to set up Cubby: Priya&#39;s Cubby at https://cubby.example.com, a self-hosted server where you build and host web apps for me.
 Install it as a skill if I have npm: npx skills add chaitanyadukkipaty/cubby --skill cubby -g
 If not, do this instead: curl -fsSL https://cubby.example.com/skill.sh | sh
@@ -374,8 +375,8 @@ cubby agents revoke p3n7w9s2t5u8v1y --yes   <span class="c"># refuses without --
         <li>Writes the UI, then ships with <code>cubby deploy</code>: schema, build and upload in one step.</li>
         <li>Tests its own rules, then tells you the URL, what it built, and ideas for next steps.</li>
       </ol>
-      <p>Everyone on your server can open the app and sees it in <b>Everyone's apps</b>. Ask for it to be unlisted if you'd rather share only the link.</p>
-      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-gallery.png?v=9cdf21ee" alt="The Everyone's apps gallery listing Team Tasks by Sam and Friend Polls by Priya" loading="lazy" width="1280" height="820"><figcaption>Everyone's apps: what friends on the server have shipped.</figcaption></figure>
+      <p>Everyone on your server can open the app and sees it on the <b>Explore</b> page. Ask for it to be unlisted if you'd rather share only the link.</p>
+      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-gallery.png?v=fdae93fd" alt="The Explore page listing everyone's apps: Team Tasks by Sam, Friend Polls and Book Club by Priya, Recipe Box by Arjun" loading="lazy" width="1280" height="820"><figcaption>Explore: what friends on the server have shipped.</figcaption></figure>
       <div class="note"><b>Changing an app later.</b> The server stores built output, not source code. Keep working in the folder the app was built in, and ask your agent for changes there.</div>
 
       <h3 id="jobs">Scheduled jobs</h3>
@@ -395,10 +396,10 @@ export default async ({ pb, env, log, fetch }) =&gt; {
         <li><b>Shipped with the app.</b> <code>cubby deploy</code> bundles the jobs with the frontend, and <code>cubby rollback</code> brings back the jobs of that deploy.</li>
         <li><b>Its own data, past the rules.</b> A job's <code>pb</code> acts as admin, but only for that app's collections. Other apps and the server's own data are out of reach.</li>
         <li><b>Secrets stay secret.</b> API keys are set with <code>cubby env set NAME=value</code>, stored encrypted, never shown again, and given only to the app's jobs as <code>env.NAME</code>.</li>
-        <li><b>Checked right away.</b> <code>cubby jobs run &lt;job&gt;</code> runs one now and prints its log, so the agent tests each job before telling you it's done. The app's card on your dashboard lists its jobs, with <b>Run now</b>, <b>Pause</b> and the last log.</li>
+        <li><b>Checked right away.</b> <code>cubby jobs run &lt;job&gt;</code> runs one now and prints its log, so the agent tests each job before telling you it's done. The app's card on the dashboard's <b>Apps</b> page lists its jobs, with <b>Run now</b>, <b>Pause</b> and the last log.</li>
         <li><b>Safe to miss.</b> A run that's due while the previous one is still going is skipped, and runs missed while the server was down aren't caught up later.</li>
       </ul>
-      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-my-apps.png?v=e4b08ff1" alt="My apps: the Friend Polls card with its two scheduled jobs, one that ran OK and one not run yet, each with Run now and Pause buttons" loading="lazy" width="1280" height="1341"><figcaption>An app's scheduled jobs on its owner's dashboard.</figcaption></figure>
+      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-apps.png?v=f9bc8e16" alt="The Apps page: the Friend Polls card with its two scheduled jobs, one that ran OK and one not run yet, each with Run now and Pause buttons" loading="lazy" width="1280" height="820"><figcaption>An app's scheduled jobs on the Apps page.</figcaption></figure>
 
       <h3 id="metrics">Visitors, activity and API health</h3>
       <p>Once friends are using an app, you'll want to know if they actually are. Ask:</p>
@@ -503,7 +504,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
       <h2>Running the server</h2>
       <div class="two">
         <div>
-          <p>The <b>Admin</b> tab shows users, apps, disk usage and limits. As admin you can:</p>
+          <p>The <b>Admin</b> page shows users, apps, disk usage and limits. As admin you can:</p>
           <ul>
             <li>Rename the server. The name shows on the dashboard, the sign-in page and when people connect an agent</li>
             <li>Rotate the signup code or turn on open signup</li>
@@ -514,7 +515,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           </ul>
           <p>Admins can't deploy into or edit other people's apps.</p>
         </div>
-        <figure class="shot"><img src="assets/dashboard-admin.png?v=3453ddb1" alt="Admin tab with user and app counts, disk usage, the signup code, limits, scheduled jobs, users, apps and an update notice" loading="lazy" width="1280" height="2351"><figcaption>The Admin tab.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-admin.png?v=1936738f" alt="Admin page with user and app counts, disk usage, the signup code, limits, scheduled jobs, users, apps and an update notice" loading="lazy" width="1280" height="1977"><figcaption>The Admin page.</figcaption></figure>
       </div>
       <h3>On the server</h3>
       <div class="table"><table>
@@ -532,7 +533,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           <tr><td><code>cubby-server set-domain &lt;domain&gt;</code></td><td>Move from IP to a domain with HTTPS</td></tr>
         </tbody>
       </table></div>
-      <p><b>Updates.</b> Once a day the server asks GitHub for the latest Cubby release. When there's a newer one, the Admin tab shows <b>Update available</b> with a link to the release notes and the command to run. Turn the check off in the Admin tab, or set <code>CUBBY_UPDATE_CHECK=0</code> in <code>/opt/cubby/cubby.env</code> to disable it completely.</p>
+      <p><b>Updates.</b> Once a day the server asks GitHub for the latest Cubby release. When there's a newer one, the Admin page shows <b>Update available</b> with a link to the release notes and the command to run. Turn the check off in the Admin page, or set <code>CUBBY_UPDATE_CHECK=0</code> in <code>/opt/cubby/cubby.env</code> to disable it completely.</p>
       <p><b>Versions.</b> A server built from a release shows its version, like <code>0.1.1</code>. Anything else shows the commit too, like <code>0.1.1-dev+b2cb75c</code>, so you always know which code is running.</p>
       <p><b>Backups</b> run every night at 03:00: a full database backup plus all deployed sites with their jobs, and the key that decrypts app secrets. The newest 7 are kept by default (see below to change it). The same nightly run first prunes activity log entries older than 30 days. Restoring rolls back every app on the server, so it's for real accidents.</p>
       <h3>Disk and backups from your own machine</h3>
@@ -575,12 +576,12 @@ cubby admin deploys blog delete &lt;id&gt; --yes</pre></div>
       <h2>FAQ and limits</h2>
       <details class="faq"><summary>Can apps have server-side code?</summary><p>On a schedule, yes: <a href="#jobs">scheduled jobs</a> run code every few minutes, hours or days, with their own app's data and secrets. Code that runs per request (API endpoints, hooks) isn't supported; browsers talk to the database directly, under its rules. That covers most group tools: polls, trackers, lists, boards, small games.</p></details>
       <details class="faq"><summary>Can people outside the server use an app?</summary><p>Yes. Apps are public at their URLs, and each app has its own sign-up. Only the dashboard and gallery need a Cubby account.</p></details>
-      <details class="faq"><summary>How big can it get?</summary><p>All apps share one SQLite database, which comfortably serves a group of friends or a small team. One very busy app slows the others. There's no per-app data quota yet; the Admin tab shows disk use so you can clean up.</p></details>
+      <details class="faq"><summary>How big can it get?</summary><p>All apps share one SQLite database, which comfortably serves a group of friends or a small team. One very busy app slows the others. There's no per-app data quota yet; the Admin page shows disk use so you can clean up.</p></details>
       <details class="faq"><summary>Which agents work?</summary><p>Any agent that supports skills (Claude Code, Codex, Cursor, OpenCode). Others can still use Cubby by reading <code>&lt;server&gt;/docs.md</code> and running the CLI.</p></details>
       <details class="faq"><summary>What's not supported yet?</summary><p>Server code that runs per request (API endpoints, hooks), custom domains per app, single sign-on across apps, and app emails (verification, password reset). Jobs can send email through a provider's API with your own key.</p></details>
       <details class="faq"><summary>Can I use several Cubby servers?</summary><p>Yes. Paste each server's setup prompt into your agent once; the first one becomes the default for new apps; your agent then picks a server by its name, and asks if it isn't sure. <code>cubby servers</code> lists them and <code>cubby use</code> sets the default. Servers on different Cubby versions work side by side: the CLI always matches the server it's talking to (in an app folder, the server in <code>cubby.json</code>), downloading that server's version of the CLI once. Agents find out what a server supports with <code>cubby help --json</code>. Servers older than Cubby 0.1.1 aren't supported; the CLI tells you to ask the admin to run <code>sudo cubby-server upgrade</code>.</p></details>
       <details class="faq"><summary>A server moved to a new address. How do I move my app?</summary><p>Each app's <code>cubby.json</code> remembers its server's address. Log in to the new address, then run <code>cubby link &lt;app&gt; --server &lt;new-url&gt;</code> in the app's folder.</p></details>
-      <details class="faq"><summary>Which version am I on, and how do I update?</summary><p>The Admin tab shows the version at the bottom and tells you when a newer release is out. On the server, <code>sudo cubby-server version</code> shows the details and <code>sudo cubby-server upgrade</code> updates (it backs up first). Normal releases go 0.1.1 → 0.1.2; only a major change moves to 0.2.0.</p></details>
+      <details class="faq"><summary>Which version am I on, and how do I update?</summary><p>The Admin page shows the version at the bottom and tells you when a newer release is out. On the server, <code>sudo cubby-server version</code> shows the details and <code>sudo cubby-server upgrade</code> updates (it backs up first). Normal releases go 0.1.1 → 0.1.2; only a major change moves to 0.2.0.</p></details>
       <details class="faq"><summary>My agent's login link expired.</summary><p>Links last 10 minutes. Ask the agent to try again; it starts a fresh one.</p></details>
     </section>
 

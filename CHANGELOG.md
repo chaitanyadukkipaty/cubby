@@ -77,6 +77,13 @@ All notable changes to Cubby are documented here. The format follows
   pairs behind. It now deletes whole pairs by date.
 - A backup on a server with no deploys and no secrets yet failed (`no paths specified to add to archive`); it now
   writes an empty sites tarball so every backup is a whole pair.
+- The dashboard has a sidebar (a bottom bar on phones) and its own page per link: Home (`/`, the setup prompt and
+  your apps), Apps (`/apps`, and `/apps/<app>` for one app), Agents (`/agents`, a placeholder for now), Explore
+  (`/explore`, everyone's apps, formerly the gallery tab) and Admin (`/admin`). Links can be bookmarked and survive a
+  reload; signing in from a deep link lands on that page. A crisp light theme and a near-black dark theme follow the
+  system, and a toggle under your email overrides it (remembered in the browser).
+- The dashboard is now an HTML shell, a stylesheet and ES modules served with hashed URLs (still no build step and
+  no dependencies), instead of one HTML file.
 
 ## [0.1.4] - 2026-10-17
 

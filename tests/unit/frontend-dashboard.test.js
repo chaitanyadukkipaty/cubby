@@ -1,14 +1,10 @@
-// Unit tests for the dashboard's pure helpers (server/public/index.html).
-// The helpers live in a delimited block of the inline script; we run that block in a vm with a tiny DOM stub.
-import { test, describe } from 'node:test';
+// Unit tests for the dashboard's pure helpers (server/public/js/helpers.js), imported directly.
+import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import vm from 'node:vm';
+import * as f from '../../server/public/js/helpers.js';
 
-const html = readFileSync(new URL('../../server/public/index.html', import.meta.url), 'utf8');
-const block = html.match(/\/\/ ---- BEGIN PURE HELPERS ----([\s\S]*?)\/\/ ---- END PURE HELPERS ----/)?.[1];
-
-// Minimal DOM: enough for h() to build elements we can inspect.
+// Minimal DOM: enough for h() to build elements we can inspect. Installed only while these tests run.
 class Node {}
 class FakeElement extends Node {
   constructor(tag) { super(); this.tagName = tag; this.attrs = {}; this.listeners = {}; this.children = []; }
@@ -16,19 +12,13 @@ class FakeElement extends Node {
   addEventListener(type, fn) { this.listeners[type] = fn; }
   append(c) { this.children.push(c); }
 }
+before(() => { globalThis.Node = Node; globalThis.document = { createElement: (t) => new FakeElement(t) }; });
+after(() => { delete globalThis.Node; delete globalThis.document; });
 
-function load() {
-  const ctx = vm.createContext({ Node, document: { createElement: (t) => new FakeElement(t) }, URLSearchParams, Date, String, Object });
-  vm.runInContext(block, ctx);
-  return vm.runInContext('({ h, fmtBytes, ago, maskToken, installCommand, setupPrompt, tokenLoginCommand, inviteText, isHttps, parseConnectCode, apiErrorMessage, displayName, connectHeading, connectAsker })', ctx);
-}
-
-test('the helper block exists and has no DOM-state or network access', () => {
-  assert.ok(block, 'BEGIN/END PURE HELPERS markers missing from index.html');
-  assert.doesNotMatch(block, /\bfetch\(|localStorage|location\.|getElementById/);
+test('the helpers module has no DOM state, network access or imports', () => {
+  const src = readFileSync(new URL('../../server/public/js/helpers.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /\bfetch\(|localStorage|location\.|getElementById|^import /m);
 });
-
-const f = load();
 
 describe('h()', () => {
   test('creates the element with attributes', () => {
@@ -152,10 +142,7 @@ describe('server names', () => {
 });
 
 describe('jobState', () => {
-  const ctx = vm.createContext({ Node, document: { createElement: (t) => new FakeElement(t) }, URLSearchParams, Date, String, Object });
-  vm.runInContext(block, ctx);
-  const jobState = vm.runInContext('jobState', ctx);
-  const st = (j) => ({ ...jobState(j) });
+  const st = (j) => f.jobState(j);
   test('paused and never-run jobs are muted', () => {
     assert.deepEqual(st({ paused: true, last_run: { status: 'error' } }), { kind: 'muted', text: 'paused' });
     assert.deepEqual(st({ paused: false, last_run: null }), { kind: 'muted', text: 'not run yet' });
@@ -170,13 +157,11 @@ describe('jobState', () => {
 });
 
 describe('updateNotice', () => {
-  const ctx = vm.createContext({ Node, document: { createElement: (t) => new FakeElement(t) }, URLSearchParams, Date, String, Object });
-  vm.runInContext(block, ctx);
-  const g = vm.runInContext('({ updateNotice, UPGRADE_COMMAND })', ctx);
+  const g = f;
   const on = { enabled: true, current: '0.1.1', checked_at: '2026-10-11T00:00:00Z', error: null };
   test('a newer release shows the version, the release notes and the exact upgrade command', () => {
     const n = g.updateNotice({ ...on, latest: 'v0.1.2', update_available: true, release_url: 'https://gh/r' });
-    assert.deepEqual({ ...n }, { kind: 'available', text: 'Update available: v0.1.2', command: 'sudo cubby-server upgrade', url: 'https://gh/r' });
+    assert.deepEqual(n, { kind: 'available', text: 'Update available: v0.1.2', command: 'sudo cubby-server upgrade', url: 'https://gh/r' });
     assert.equal(g.UPGRADE_COMMAND, 'sudo cubby-server upgrade');
   });
   test('up to date, no releases yet, still checking, unreachable', () => {
@@ -187,7 +172,7 @@ describe('updateNotice', () => {
     assert.equal(g.updateNotice({ ...on, latest: 'v0.1.1', error: 'offline' }).kind, 'current', 'a failed re-check keeps the last answer');
   });
   test('versionLabel marks development builds', () => {
-    const v = vm.runInContext('versionLabel', ctx);
+    const v = f.versionLabel;
     assert.equal(v('0.1.1'), 'Cubby 0.1.1');
     assert.equal(v('0.1.1-dev+abc1234'), 'Cubby 0.1.1 · development build abc1234');
     assert.equal(v('0.0.9-rc1'), 'Cubby 0.0.9-rc1');
@@ -197,5 +182,22 @@ describe('updateNotice', () => {
     assert.match(g.updateNotice({ enabled: false, reason: 'env' }).text, /CUBBY_UPDATE_CHECK=0/);
     assert.equal(g.updateNotice({ enabled: false, reason: 'setting' }).text, 'Update checks are off.');
     assert.equal(g.updateNotice(undefined).kind, 'unknown');
+  });
+});
+
+describe('theme', () => {
+  test('without a saved choice the system decides', () => {
+    assert.equal(f.effectiveTheme(null, false), 'light');
+    assert.equal(f.effectiveTheme(null, true), 'dark');
+  });
+  test('a saved choice wins over the system; anything else saved is ignored', () => {
+    assert.equal(f.effectiveTheme('light', true), 'light');
+    assert.equal(f.effectiveTheme('dark', false), 'dark');
+    assert.equal(f.effectiveTheme('purple', true), 'dark');
+  });
+  test('toggling flips what you currently see', () => {
+    assert.equal(f.toggledTheme(null, true), 'light');
+    assert.equal(f.toggledTheme(null, false), 'dark');
+    assert.equal(f.toggledTheme('dark', true), 'light');
   });
 });
