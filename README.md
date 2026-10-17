@@ -79,7 +79,7 @@ else's platform and you can't bring your own agent.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=2a8e741c" alt="Dashboard with the Connect your AI agent card"><p align="center"><sub>Your dashboard on Priya's Cubby: connect your agent, see your apps</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=2db02665" alt="Dashboard with the Connect your AI agent card"><p align="center"><sub>Your dashboard on Priya's Cubby: connect your agent, see your apps</sub></p></td>
 <td width="50%"><img src="docs/assets/connect-approve.png?v=fd35d280" alt="Approval page for connecting an AI agent"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
 </tr>
 <tr>
@@ -142,11 +142,18 @@ automatically; see [Releases](CONTRIBUTING.md#releases).
 ## Connect your agent and build
 
 1. Open the server URL and **sign up** with the signup code.
-2. Run the command shown on your dashboard, once per server:
-   ```sh
-   curl -fsSL https://your-server.com/skill.sh | sh
+2. Copy the setup prompt from your dashboard and paste it into your agent (Claude Code, Codex, Cursor or OpenCode),
+   once per server. It has your server's name and URL filled in:
+   ```text
+   I'd like you to set up Cubby: Priya's Cubby at https://your-server.com, a self-hosted server where you build and host web apps for me.
+   Install it as a skill if I have npm: npx skills add chaitanyadukkipaty/cubby --skill cubby -g
+   If not, do this instead: curl -fsSL https://your-server.com/skill.sh | sh
+   After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to connect to https://your-server.com (you'll send me a link to approve), review the docs at https://your-server.com/docs.md and ask me what I'd like to build.
    ```
-   It installs the `cubby` agent skill and adds the server to `~/.cubby/config.json`.
+   The agent installs the `cubby` skill (from GitHub with `npx skills add`, or from your server's `/skill.sh` without
+   npm), sends you a link to approve, and adds the server to `~/.cubby/config.json`. It's a prompt rather than a
+   bare `curl … | sh` so the agent knows what you're asking for: pasted on its own, agents rightly flag a pipe-to-shell
+   from an unfamiliar domain as suspicious.
 3. Ask your agent for an app in plain words, naming the server if you have more than one. That's it.
 
 <details>
@@ -176,9 +183,10 @@ automatically; see [Releases](CONTRIBUTING.md#releases).
 Most people end up on more than one server: a friends' cubby and a team's, say. One skill and one CLI handle all of
 them by name:
 
+Paste each server's setup prompt into your agent once. The first server you add becomes the default for new apps;
+`cubby use <name>` changes it.
+
 ```sh
-curl -fsSL https://priyas-server.com/skill.sh | sh     # adds "Priya's Cubby"
-curl -fsSL https://cubby.acme.dev/skill.sh | sh        # adds "Acme Cubby"
 cubby servers
 # * Priya's Cubby   https://priyas-server.com  alex@example.com  v0.1.0
 #   Acme Cubby      https://cubby.acme.dev     alex@acme.dev     v0.2.0

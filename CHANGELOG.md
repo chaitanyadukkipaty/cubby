@@ -5,6 +5,14 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard's "Connect your AI agent" card shows a prompt to paste into your agent instead of a bare
+  `curl … | sh` command, which agents rightly flagged as suspicious. The prompt names the server, installs the skill
+  with `npx skills add chaitanyadukkipaty/cubby --skill cubby -g` (or the server's `/skill.sh` without npm) and has
+  the agent connect, so the server becomes your default. `/skill.sh` keeps working as before.
+- The skill takes the server URL from the user's message when the CLI isn't installed yet.
+
 ## [0.1.3] - 2026-10-17
 
 ### Fixed

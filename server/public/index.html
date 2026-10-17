@@ -107,6 +107,17 @@ function ago(date, now = Date.now()) {
 }
 const maskToken = (t) => `${String(t).slice(0, 6)}${'•'.repeat(20)}`;
 const installCommand = (server) => `curl -fsSL ${server}/skill.sh | sh`;
+const SKILL_REPO = 'chaitanyadukkipaty/cubby';
+// What a user pastes into their agent. Stating the intent and the server up front (and letting the agent read the
+// installer) is what keeps agents from flagging a bare `curl | sh` from an unknown domain as malicious.
+function setupPrompt(server, name) {
+  const named = displayName(name) !== 'Cubby' ? `${displayName(name)} at ` : '';
+  return `I'd like you to set up Cubby: ${named}${server}, a self-hosted server where you build and host web apps for me.\n`
+    + `Install it as a skill if I have npm: npx skills add ${SKILL_REPO} --skill cubby -g\n`
+    + `If not, do this instead: ${installCommand(server)}\n`
+    + `After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to connect to ${server} `
+    + `(you'll send me a link to approve), review the docs at ${server}/docs.md and ask me what I'd like to build.`;
+}
 const tokenLoginCommand = (server) => `cubby login ${server} --token <token>`;
 const displayName = (name) => (typeof name === 'string' && name.trim()) || 'Cubby';
 const inviteText = (server, code, name) => `Join ${name ? displayName(name) : 'my Cubby server'}: ${server}\nSignup code: ${code}`;
@@ -278,7 +289,7 @@ function render() {
 }
 
 function setupCard() {
-  const install = installCommand(SERVER);
+  const prompt = setupPrompt(SERVER, info.name);
   const masked = () => maskToken(me.token);
   let revealed = false;
   const tokenEl = h('code', { class: 'mono', 'aria-label': 'Your token' });
@@ -287,12 +298,11 @@ function setupCard() {
   return h('div', { class: 'card stack' },
     h('div', {},
       h('h2', {}, 'Connect your AI agent'),
-      h('p', { class: 'muted small' }, 'Run this once on your computer. It teaches Claude Code, Codex, Cursor or OpenCode how to use this server:'),
-      h('pre', {}, install),
-      h('button', { class: 'primary', onclick: () => copy(install, 'Command copied') }, 'Copy command'),
-      h('p', { class: 'small', style: 'margin-top:12px' }, 'Then just ask your agent, for example: ',
-        h('i', {}, '“Build me a polls app for my friends and host it on Cubby.”'),
-        ' It sets itself up, sends you a link to approve, builds the app and gives you the URL.'),
+      h('p', { class: 'muted small' }, 'Paste this into Claude Code, Codex, Cursor or OpenCode once. It installs the Cubby skill and connects your agent to this server:'),
+      h('pre', { 'aria-label': 'Setup prompt', style: 'word-break:normal;overflow-wrap:anywhere' }, prompt),
+      h('button', { class: 'primary', onclick: () => copy(prompt, 'Prompt copied') }, 'Copy prompt'),
+      h('p', { class: 'small', style: 'margin-top:12px' }, 'It sends you a link to approve, then asks what to build. After that, just ask, for example: ',
+        h('i', {}, '“Build me a polls app for my friends and host it on Cubby.”')),
     ),
     h('details', { class: 'small', style: 'border-top:1px solid var(--line);padding-top:12px' },
       h('summary', { class: 'muted', style: 'cursor:pointer' }, 'Token for scripts and CI'),
