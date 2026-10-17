@@ -100,6 +100,66 @@ export const agentView = (k, currentKeyId) => ({
   last_used_at: k.last_used || null,
 });
 
+// --- Activity log: one row per mutation, attributed to the agent key that made it ---
+// `actor.agent` is { id, name } for an agent's key, null for the manual token (the dashboard).
+export const activityRow = (actor, { action, app = '', summary = '' }, now = new Date()) => ({
+  user: actor.id,
+  agent: actor.agent?.id ?? '',
+  agent_name: actor.agent?.name ?? '',
+  app,
+  action,
+  summary: String(summary).slice(0, 300),
+  at: now.toISOString(),
+});
+
+export const ACTIVITY_LIMIT = { default: 50, max: 500 };
+export const ACTIVITY_DAYS = 30;
+// Rows before this are pruned. PocketBase's own date format ("2026-10-17 09:30:00.000Z"), so it compares cleanly.
+export const activityCutoff = (now) => new Date(now.getTime() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ');
+
+// The PocketBase filter for listing activity. A user sees only rows they made (their apps and agents);
+// `all` (admins, /api/admin/activity) drops that. agent=dashboard means the manual token.
+export function activityQuery(user, { app, agent, limit } = {}, { all = false } = {}) {
+  const parts = [];
+  const params = {};
+  const add = (text, key, value) => (parts.push(text), (params[key] = value));
+  if (!all) add('user = {:u}', 'u', user.id);
+  if (app) add('app = {:app}', 'app', String(app));
+  if (agent) add('agent = {:agent}', 'agent', agent === 'dashboard' ? '' : String(agent));
+  const n = Number.parseInt(limit, 10);
+  return {
+    filter: { text: parts.join(' && '), params },
+    limit: Number.isFinite(n) ? Math.min(Math.max(n, 1), ACTIVITY_LIMIT.max) : ACTIVITY_LIMIT.default,
+  };
+}
+
+// "Pushed schema: created notes; kept notes.body" from applySchema's changes.
+export function schemaSummary({ created = [], updated = [], kept = [] }) {
+  const parts = [['created', created], ['updated', updated], ['kept', kept]]
+    .filter(([, list]) => list.length).map(([verb, list]) => `${verb} ${list.join(', ')}`);
+  return `Pushed schema: ${parts.join('; ') || 'no changes'}`;
+}
+
+// 'Made "x" unlisted, renamed it to "X"' — what an owner's PATCH changed.
+export function patchSummary(slug, patch) {
+  const parts = [];
+  if ('unlisted' in patch) parts.push(patch.unlisted ? 'made it unlisted' : 'listed it in the gallery');
+  if ('name' in patch) parts.push(`renamed it to "${patch.name}"`);
+  if ('description' in patch) parts.push('changed its description');
+  return `Updated "${slug}": ${parts.join(', ')}`;
+}
+
+export const activityView = (r) => ({
+  id: r.id,
+  at: r.at,
+  user: r.expand?.user?.email ?? null,
+  via: r.agent ? 'agent' : 'dashboard',
+  agent: r.agent ? { id: r.agent, name: r.agent_name } : null,
+  app: r.app || null,
+  action: r.action,
+  summary: r.summary,
+});
+
 // Each server has a display name ("Priya's Cubby"), shown to friends and agents.
 export const SERVER_NAME_MAX = 60;
 

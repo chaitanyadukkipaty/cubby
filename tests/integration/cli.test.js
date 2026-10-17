@@ -126,6 +126,9 @@ describe('login', () => {
       assert.deepEqual(agents.filter((a) => a.current).map((a) => a.name), [`Claude Code · ${machine}`]);
       assert.ok(agents.some((a) => a.name === 'Manual token' && !a.current), 'the manual token still works and is listed');
       assert.match(ok(await cubby(['agents'], { home: h2 })).stdout, new RegExp(`^\\* \\w+\\s+Claude Code · ${machine} .*just now$`, 'm'));
+      const [login] = ok(await cubby(['activity', '--json'], { home: h2 })).json;
+      assert.equal(login.action, 'agent.login');
+      assert.equal(login.agent.name, `Claude Code · ${machine}`);
     } finally {
       rmSync(h2, { recursive: true, force: true });
     }
@@ -160,6 +163,9 @@ describe('login', () => {
       const r = ok(await cubby(['agents', 'revoke', otherId, '--yes', '--json'], { home: h5 })).json;
       assert.deepEqual(r, { ok: true, id: otherId, current: false, logged_out: false });
       assert.equal((await api(srv.url, other)('GET', '/api/me')).status, 401);
+      const actions = ok(await cubby(['activity', '--json'], { home: h5 })).json.map((a) => a.action);
+      assert.ok(actions.includes('agent.rename'), actions.join());
+      assert.equal(actions[0], 'agent.revoke', 'newest first');
       assert.equal((await cubby(['agents', 'revoke', 'nosuchid1234567', '--yes'], { home: h5 })).code, 1);
       assert.match((await cubby(['agents', 'frob'], { home: h5 })).stderr, /Usage: cubby agents \[rename <id> <name> \| revoke <id> --yes\]/);
 
@@ -234,6 +240,16 @@ describe('app lifecycle', () => {
     ok(await inApp(['rollback', one.id]));
     assert.equal(ok(await inApp(['info', '--json'])).json.current_deploy, one.id);
     assert.equal((await inApp(['rollback'])).code, 1);
+  });
+  test('activity: what happened to an app, by whom, with filters', async () => {
+    const rows = ok(await cubby(['activity', 'cli-app', '--json'])).json;
+    assert.deepEqual(rows.map((r) => r.action), ['rollback', 'deploy', 'deploy', 'schema.push', 'app.create']);
+    assert.ok(rows.every((r) => r.via === 'dashboard' && r.app === 'cli-app'), 'the --token login is the manual token');
+    assert.equal(ok(await cubby(['activity', '--agent', 'dashboard', '--limit', '2', '--json'])).json.length, 2);
+    assert.match(ok(await cubby(['activity', 'cli-app'])).stdout, /^\S+ \S+ {2}cli-app {2}dashboard {2}Rolled back to \w+$/m);
+    const all = await cubby(['activity', '--all']);
+    assert.equal(all.code, 1);
+    assert.match(all.stderr, /Admins only/);
   });
   test('schema pull / push / drop', async () => {
     const schemaFile = join(dir(), 'cubby/schema.json');

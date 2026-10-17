@@ -11,7 +11,7 @@ import {
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
   jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
-  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents,
+  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents, formatActivity,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -27,7 +27,7 @@ const { values: flags, positionals } = parseArgs({
     token: { type: 'string' }, code: { type: 'string' }, client: { type: 'string' }, 'no-skill': { type: 'boolean' }, wait: { type: 'boolean' }, 'no-wait': { type: 'boolean' },
     'no-install': { type: 'boolean' }, 'no-build': { type: 'boolean' }, unlisted: { type: 'boolean' }, listed: { type: 'boolean' },
     yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
-    run: { type: 'string' }, limit: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
+    run: { type: 'string' }, limit: { type: 'string' }, agent: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
     keep: { type: 'string' },
   },
 });
@@ -293,6 +293,15 @@ const commands = {
       return out(human, { ...r, logged_out: loggedOut });
     }
     throw new CliError(usage);
+  },
+  // Your actions (admins: everyone's, with --all), newest first. --agent <id> or --agent dashboard.
+  async activity(app) {
+    const q = new URLSearchParams();
+    if (app) q.set('app', app);
+    if (flags.agent) q.set('agent', flags.agent);
+    if (flags.limit) q.set('limit', flags.limit);
+    const list = await api('GET', `${flags.all ? '/api/admin/activity' : '/api/activity'}?${q}`);
+    out(formatActivity(list, { users: Boolean(flags.all) }), list);
   },
 
   async init(slug) {

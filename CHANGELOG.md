@@ -44,6 +44,15 @@ All notable changes to Cubby are documented here. The format follows
   (`PATCH` / `DELETE /api/agents/:id`). A revoked key gets 401 on its next request while your other agents keep
   working; an agent may revoke itself, which logs it out like `cubby logout`. You can only see and change your own
   agents. `cubby agents` shows each agent's ID and when it was last seen.
+- An activity log of who changed what: app create, update and delete, deploys (deploy id and file count),
+  rollbacks, schema pushes (created, updated and kept) and drops, secrets set and removed (key names only, never
+  values), jobs run now, paused and resumed, agent logins, and admin actions on users, apps and backups
+  (`cubby admin backups create|delete`). Each entry names the agent that made it, or "dashboard" for the dashboard
+  and the manual token. Reads aren't logged. `cubby activity [app] [--agent <id>|dashboard] [--limit n]` (and
+  `GET /api/activity`) shows your own entries; admins see everyone's with `--all` (`GET /api/admin/activity`).
+  Entries older than 30 days are pruned before every backup (nightly, `cubby admin backups create` and
+  `cubby-server backup`). An app's entries outlive the app until they age out; deleting a user deletes theirs.
+  Stored in a new platform collection, `cubby_activity`, closed to apps like the others.
 
 ### Changed
 

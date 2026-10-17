@@ -353,6 +353,13 @@ After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to c
       <div class="code"><pre>cubby agents rename p3n7w9s2t5u8v1y "Old desktop"
 cubby agents revoke p3n7w9s2t5u8v1y --yes   <span class="c"># refuses without --yes</span></pre></div>
       <p>An agent can revoke itself too; the CLI then forgets the dead token, like <code>cubby logout</code>. You can only see, rename and revoke your own agents. <b>Regenerate</b> on the dashboard replaces only your manual token; agents keep their own keys.</p>
+      <h3>See which agent did what</h3>
+      <p>Cubby keeps a short log of every change: creating, hiding and deleting apps, deploys (with the deploy id and file count), rollbacks, schema pushes and drops, secrets set or removed (by name, never the value), jobs run, paused or resumed, agent logins, and admin actions on users, apps and backups. Each entry says which agent made it, or <b>dashboard</b> for the dashboard and the manual token. Reads aren't logged, and entries are pruned after 30 days.</p>
+      <div class="code"><pre>cubby activity friend-polls
+<span class="c"># 2026-10-17 09:30  friend-polls  Claude Code · chaitanya-mbp  Deployed k3x9q2 (14 files)</span>
+<span class="c"># 2026-10-17 09:29  friend-polls  Claude Code · chaitanya-mbp  Added secret EMAIL_API_KEY</span>
+<span class="c"># 2026-10-16 18:02  friend-polls  dashboard                    Updated "friend-polls": made it unlisted</span></pre></div>
+      <p>Leave out the app to see everything you and your agents did. <code>--agent &lt;id&gt;</code> (ids are in <code>cubby agents --json</code>) or <code>--agent dashboard</code> narrows it to one; <code>--limit</code> sets how many (50 by default, up to 500). You only ever see your own entries; admins can see everyone's with <code>--all</code>. An app's history stays after the app is deleted until it ages out, and deleting a user deletes theirs.</p>
     </section>
 
     <section id="build">
@@ -409,6 +416,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           <tr><td><code>cubby agents</code></td><td>List your agents (one per approved login) with tool, machine, date and last seen; <code>*</code> marks this one.</td></tr>
           <tr><td><code>cubby agents rename &lt;id&gt; &lt;name&gt;</code></td><td>Give an agent a name you'll recognize.</td></tr>
           <tr><td><code>cubby agents revoke &lt;id&gt; --yes</code></td><td>Revoke an agent's key at once; the others keep working. Revoking this agent logs it out here.</td></tr>
+          <tr><td><code>cubby activity [app] [--agent &lt;id&gt;] [--limit n]</code></td><td>What changed in the last 30 days, newest first, and which agent (or the dashboard) did it. <code>--agent dashboard</code> for the dashboard's changes; <code>--all</code> shows everyone's (admins).</td></tr>
           <tr><td><code>cubby logout [--server &lt;name&gt;] [--all]</code></td><td>Forget one server (the current one by default) or all of them.</td></tr>
           <tr><td><code>cubby version</code></td><td>Show which CLI version runs for the current server, and the server's version.</td></tr>
           <tr><td><code>cubby help [&lt;command&gt;] [--json]</code></td><td>Every command and flag the targeted server supports. Agents use <code>--json</code>.</td></tr>
@@ -504,7 +512,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
       </table></div>
       <p><b>Updates.</b> Once a day the server asks GitHub for the latest Cubby release. When there's a newer one, the Admin tab shows <b>Update available</b> with a link to the release notes and the command to run. Turn the check off in the Admin tab, or set <code>CUBBY_UPDATE_CHECK=0</code> in <code>/opt/cubby/cubby.env</code> to disable it completely.</p>
       <p><b>Versions.</b> A server built from a release shows its version, like <code>0.1.1</code>. Anything else shows the commit too, like <code>0.1.1-dev+b2cb75c</code>, so you always know which code is running.</p>
-      <p><b>Backups</b> run every night at 03:00: a full database backup plus all deployed sites with their jobs, and the key that decrypts app secrets. The newest 7 are kept by default (see below to change it). Restoring rolls back every app on the server, so it's for real accidents.</p>
+      <p><b>Backups</b> run every night at 03:00: a full database backup plus all deployed sites with their jobs, and the key that decrypts app secrets. The newest 7 are kept by default (see below to change it). The same nightly run first prunes activity log entries older than 30 days. Restoring rolls back every app on the server, so it's for real accidents.</p>
       <h3>Disk and backups from your own machine</h3>
       <p>You don't need to SSH in to see where the disk goes or to free some of it. Logged in as the admin, you or your agent can run:</p>
       <div class="code"><pre>cubby admin storage                          <span class="c"># database, uploads, current and older deploys, backups, free disk; per app</span>
@@ -533,6 +541,7 @@ cubby admin deploys blog delete &lt;id&gt; --yes</pre></div>
         <li><b>Jobs are sandboxed.</b> Each run is a separate Node.js process with the permission model on: it can't read the server's files, start processes or see its environment, and it can only connect to public internet addresses, never to the database or anything else on the server's network. Its database client reaches only its own app's records, checked by the same code as the proxy. Runs have a time limit and a 128 MB memory cap, and at most two run at once. This stops accidents and snooping between apps; like the rest of Cubby, it assumes people with accounts aren't attackers.</li>
         <li><b>Secrets are encrypted</b> with a server key that's kept outside the database (and backed up with it). The database admin UI shows only ciphertext, and values are never shown again after they're set.</li>
         <li><b>Every agent has its own key.</b> Each approved login gets a separate token, named after its tool and machine. Your manual token is stored so the dashboard can show it again. <code>cubby agents revoke</code> cuts one agent off immediately, and <b>Regenerate</b> replaces the manual token without touching agents.</li>
+        <li><b>Changes are logged, secrets aren't.</b> The activity log records who changed what and through which agent, for 30 days. It stores secret names only, never values, and like every platform collection it's reachable only through the server, never from apps. Users see their own entries; admins see everyone's.</li>
         <li><b>Use a domain.</b> On an IP-only server, traffic is unencrypted.</li>
         <li><b>One outbound request of its own.</b> The daily release check to GitHub is the only request Cubby itself makes, and it sends nothing about your server or users. Admins can turn it off. Apps' scheduled jobs make the requests their owners write.</li>
       </ul>

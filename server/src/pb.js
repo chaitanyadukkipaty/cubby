@@ -194,4 +194,26 @@ async function ensurePlatformCollections() {
     ],
     indexes: ['CREATE UNIQUE INDEX idx_cubby_app_env_key ON cubby_app_env (project, `key`)'],
   });
+
+  // Activity log (activity.js): one small row per mutation, pruned after 30 days. `app` is a slug, not a relation,
+  // so an app's history outlives it; `agent` is a key id plus its name at the time, so it outlives the key too.
+  // Empty agent = the manual token (the dashboard, or `cubby login --token`). `at` is set by the server.
+  await upsertCollection({
+    name: 'cubby_activity',
+    type: 'base',
+    ...LOCKED,
+    fields: [
+      { name: 'user', type: 'relation', collectionId: users.id, maxSelect: 1, required: true, cascadeDelete: true },
+      { name: 'agent', type: 'text', max: 40 },
+      { name: 'agent_name', type: 'text', max: 100 },
+      { name: 'app', type: 'text', max: 40 },
+      { name: 'action', type: 'text', required: true, max: 40 },
+      { name: 'summary', type: 'text', max: 300 },
+      { name: 'at', type: 'date', required: true },
+    ],
+    indexes: [
+      'CREATE INDEX idx_cubby_activity_user ON cubby_activity (user, at)',
+      'CREATE INDEX idx_cubby_activity_at ON cubby_activity (at)',
+    ],
+  });
 }

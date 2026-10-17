@@ -107,6 +107,19 @@ describe('formatters', () => {
     assert.equal(lib.lastSeen(at(-5000), now), 'just now', 'a server clock slightly ahead');
     assert.equal(lib.lastSeen('garbage', now), 'never');
   });
+
+  test('formatActivity shows when, which app, who (agent or dashboard) and what, newest first as given', () => {
+    const rows = [
+      { at: '2026-10-17 09:30:12.000Z', app: 'todo', via: 'agent', agent: { id: 'k1', name: 'Claude Code · mbp' }, user: 'a@x.dev', summary: 'Deployed d2 (3 files)' },
+      { at: '2026-10-16 08:00:00.000Z', app: null, via: 'dashboard', agent: null, user: 'a@x.dev', summary: 'Disabled user b@x.dev' },
+    ];
+    assert.equal(lib.formatActivity(rows), [
+      '2026-10-17 09:30  todo  Claude Code · mbp  Deployed d2 (3 files)',
+      '2026-10-16 08:00  -     dashboard          Disabled user b@x.dev',
+    ].join('\n'));
+    assert.equal(lib.formatActivity(rows, { users: true }).split('\n')[0], '2026-10-17 09:30  a@x.dev  todo  Claude Code · mbp  Deployed d2 (3 files)');
+    assert.equal(lib.formatActivity([]), 'No activity in the last 30 days');
+  });
   test('formatProjects flags undeployed apps', () => {
     assert.equal(lib.formatProjects([{ slug: 'a', url: 'u1', current_deploy: 'd' }, { slug: 'b', url: 'u2' }]),
       `${'a'.padEnd(24)} u1\n${'b'.padEnd(24)} u2  (not deployed)`);

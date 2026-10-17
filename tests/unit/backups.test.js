@@ -1,6 +1,6 @@
 import { test, describe, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { backupDue, scheduleBackups, createBackupRunner } from '../../server/src/backups.js';
+import { backupDue, scheduleBackups, createBackupRunner, runMaintenance } from '../../server/src/backups.js';
 
 describe('createBackupRunner', () => {
   test('shows the backup as running, refuses a second one meanwhile, and records how it ended', async () => {
@@ -85,5 +85,20 @@ describe('scheduleBackups', () => {
       errors.mock.restore();
       mock.timers.reset();
     }
+  });
+});
+
+describe('runMaintenance', () => {
+  test('prunes the activity log first, then backs up', async () => {
+    const order = [];
+    await runMaintenance({ prune: async () => (order.push('prune'), 3), backup: async () => order.push('backup'), log: () => {} });
+    assert.deepEqual(order, ['prune', 'backup']);
+  });
+  test('a failed prune never stops the backup', async () => {
+    const errors = [];
+    let backedUp = false;
+    await runMaintenance({ prune: async () => { throw new Error('db busy'); }, backup: async () => { backedUp = true; }, log: () => {}, error: (...a) => errors.push(a.join(' ')) });
+    assert.equal(backedUp, true);
+    assert.match(errors.join('\n'), /activity prune failed: db busy/);
   });
 });

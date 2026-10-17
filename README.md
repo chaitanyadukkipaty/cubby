@@ -60,6 +60,16 @@ A week later you ask for more, and it doesn't have to happen in anyone's browser
 The agent stores the email service's API key as a secret, writes two **scheduled jobs** next to the app, deploys,
 runs each one once to check it works, and tells you when they'll run next.
 
+And when something changed and you're not sure who did it, ask: *"what happened to friend-polls this week?"*
+
+```sh
+cubby activity friend-polls
+# 2026-10-17 09:31  friend-polls  Claude Code · laptop  Ran job "weekly-digest" now (ok)
+# 2026-10-17 09:30  friend-polls  Claude Code · laptop  Deployed k3x9q2 (14 files)
+# 2026-10-17 09:29  friend-polls  Claude Code · laptop  Added secret EMAIL_API_KEY
+# 2026-10-16 18:02  friend-polls  dashboard             Updated "friend-polls": made it unlisted
+```
+
 ## Why Cubby
 
 Coding agents can write a whole web app from a sentence. **Hosting it is the hard part**: it needs a database,
@@ -80,6 +90,8 @@ else's platform and you can't bring your own agent.
 - **Real backend for every app.** Collections, user accounts, file uploads and live updates from a shared [PocketBase](https://pocketbase.io). Each app is walled off by collection prefix, and its security comes from database rules.
 - **One-command deploys.** `cubby deploy` pushes schema changes, builds and publishes. The last 10 deploys are kept for instant rollback.
 - **Scheduled jobs.** Apps can run code on a cron schedule (digests, reminders, cleanups, syncing from an API) with encrypted secrets. Each run is sandboxed and can only reach its own app's data and the public internet.
+- **Know who did what.** Every change (deploys, rollbacks, schema, secrets, jobs, logins, admin actions on users, apps and backups) is logged
+  for 30 days with the agent that made it, or "dashboard". `cubby activity` shows yours; admins can see everyone's.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps in a gallery, and manage users, limits and disk from an admin tab.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
@@ -214,6 +226,10 @@ account" error.
    Your other agents keep working. An agent can revoke itself too, which logs it out like `cubby logout`.
    **Regenerate** on the dashboard replaces only the manual token; agents keep their own keys.
 3. Ask your agent for an app in plain words, naming the server if you have more than one. That's it.
+4. Later, `cubby activity` answers "which agent deployed this?": every change to your apps and agents from the
+   last 30 days, newest first, with the agent that made it. Changes made from the dashboard (or with the manual
+   token) say "dashboard". Filter with `cubby activity <app>`, `--agent <id>` (from `cubby agents --json`) or
+   `--agent dashboard`, and `--limit`. Reads aren't logged, and secrets show up by name only, never their values.
 
 <details>
 <summary><b>CLI reference</b> (your agent runs these; every command takes <code>--json</code>)</summary>
@@ -223,6 +239,7 @@ account" error.
 | `cubby login <server>` | Log in by approving a link in the browser (`--token` for CI). Adds the server to your list. Each approved login is a new named agent. |
 | `cubby agents` | Your agents: one per approved login, with tool, machine, date and last seen; `*` marks this one |
 | `cubby agents rename <id> <name>` / `cubby agents revoke <id> --yes` | Rename an agent, or revoke its key at once (revoking this agent logs it out here) |
+| `cubby activity [app] [--agent <id>] [--limit n]` | What changed in the last 30 days and which agent (or the dashboard) did it; `--all` for admins |
 | `cubby servers` / `cubby use <name>` | List your servers with their names and versions, set the default |
 | `cubby logout [--server <name>] [--all]` | Forget one server (the current one by default) or all of them |
 | `cubby init <app>` | Create an app from the template |
@@ -362,5 +379,8 @@ for groups who trust each other, not as a hostile multi-tenant cloud.
   determined attacker with an account. At most two run at once per server.
 - Agents are managed from the CLI (`cubby agents`); the dashboard doesn't list them yet. "Last seen" is updated at
   most once a minute per agent.
+- The activity log keeps 30 days (pruned nightly) and shows your own actions. An admin's actions on your app (like
+  deleting it) are in the admin's log, not yours. An app's history stays after the app is deleted, until it ages
+  out; deleting a user deletes their history.
 - Not yet supported: server code that runs per request (API endpoints, hooks), custom domains per app, single sign-on
   across apps, app emails.

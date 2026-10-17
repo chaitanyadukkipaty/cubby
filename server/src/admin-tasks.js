@@ -1,14 +1,15 @@
 // Maintenance tasks run inside the container by `cubby-server` (docker exec), against the live PocketBase.
 //   node server/src/admin-tasks.js backup | code | reset-password <email> <new-password>
 import { connectAdmin, admin } from './pb.js';
-import { runBackup } from './backups.js';
+import { runMaintenance } from './backups.js';
 import { getSettings } from './settings.js';
 
 const [task, ...args] = process.argv.slice(2);
 await connectAdmin();
 
 if (task === 'backup') {
-  await runBackup();
+  // The nightly maintenance, now: prunes old activity, then backs up.
+  await runMaintenance();
 } else if (task === 'code') {
   const s = await getSettings();
   console.log(s.signup_code + (s.open_signup ? '  (open signup is on — no code needed)' : ''));

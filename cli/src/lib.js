@@ -91,6 +91,19 @@ export function formatAgents(list, now = Date.now()) {
   ].join('\n');
 }
 
+// --- Activity: who did what, newest first. `users` adds an email column (admins see everyone's) ---
+export function formatActivity(list, { users = false } = {}) {
+  if (!list.length) return 'No activity in the last 30 days';
+  const cols = [
+    (r) => String(r.at).replace('T', ' ').slice(0, 16),
+    ...(users ? [(r) => r.user ?? '-'] : []),
+    (r) => r.app ?? '-',
+    (r) => r.agent?.name ?? 'dashboard',
+  ];
+  const widths = cols.map((get) => Math.max(...list.map((r) => get(r).length)) + 2);
+  return list.map((r) => cols.map((get, i) => get(r).padEnd(widths[i])).join('') + r.summary).join('\n');
+}
+
 export const formatProjects = (list) =>
   list.map((p) => `${p.slug.padEnd(24)} ${p.url}${p.current_deploy ? '' : '  (not deployed)'}`).join('\n') || 'No projects yet';
 

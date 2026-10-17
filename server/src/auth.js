@@ -6,6 +6,7 @@ import { admin } from './pb.js';
 import { config } from './config.js';
 import { HttpError } from './http.js';
 import { getSettings } from './settings.js';
+import { recordActivity } from './activity.js';
 import { checkSignup, agentName, agentView, agentLabel, isAgentKey, touchThrottle } from './logic.js';
 
 // Last-used times ("last seen" in `cubby agents`) are written at most once a minute per key.
@@ -21,20 +22,23 @@ async function manualKey(userId) {
   return list.items[0] ?? null;
 }
 
+// Returns the new key record (with the key itself).
 async function issueKey(userId, fields = { label: 'default' }) {
   const key = `hk_${randomBytes(24).toString('base64url')}`;
   // `scopes` is reserved for limiting a key later; empty means full access.
-  await admin.collection('cubby_api_keys').create({ owner: userId, ...fields, scopes: [], key, key_hash: hash(key) });
-  return key;
+  return admin.collection('cubby_api_keys').create({ owner: userId, ...fields, scopes: [], key, key_hash: hash(key) });
 }
 
 async function tokenFor(userId) {
-  return (await manualKey(userId))?.key ?? (await issueKey(userId));
+  return (await manualKey(userId))?.key ?? (await issueKey(userId)).key;
 }
 
 // A new key for each approved device login, named after the client hint the CLI sent.
 export async function issueAgentToken(userId, hint = {}) {
-  return issueKey(userId, { label: agentName(hint), kind: 'agent', tool: hint.tool || '', machine: hint.machine || '' });
+  const record = await issueKey(userId, { label: agentName(hint), kind: 'agent', tool: hint.tool || '', machine: hint.machine || '' });
+  const agent = { id: record.id, name: record.label };
+  await recordActivity({ id: userId, agent }, { action: 'agent.login', summary: `Connected agent "${agent.name}"` });
+  return record.key;
 }
 
 export async function listAgents(user) {
@@ -57,7 +61,9 @@ async function ownedAgent(user, id) {
 export async function renameAgent(user, id, name) {
   const label = agentLabel(name);
   const k = await ownedAgent(user, id);
-  return agentView(await admin.collection('cubby_api_keys').update(k.id, { label }), user.keyId);
+  const renamed = await admin.collection('cubby_api_keys').update(k.id, { label });
+  await recordActivity(user, { action: 'agent.rename', summary: `Renamed agent "${k.label}" to "${label}"` });
+  return agentView(renamed, user.keyId);
 }
 
 // Deleting the key is the revoke: authenticate looks every request up by hash, so it fails from the next request.
@@ -65,6 +71,7 @@ export async function revokeAgent(user, id) {
   const k = await ownedAgent(user, id);
   await admin.collection('cubby_api_keys').delete(k.id);
   lastUsed.forget(k.id);
+  await recordActivity(user, { action: 'agent.revoke', summary: `Revoked agent "${k.label}"` });
   return { ok: true, id: k.id, current: k.id === user.keyId };
 }
 
@@ -75,7 +82,9 @@ export async function regenerateToken(userId) {
     await admin.collection('cubby_api_keys').delete(k.id);
     lastUsed.forget(k.id);
   }
-  return issueKey(userId);
+  const key = (await issueKey(userId)).key;
+  await recordActivity({ id: userId }, { action: 'token.regenerate', summary: 'Replaced the manual token' });
+  return key;
 }
 
 export async function signup({ email, password, code }) {
@@ -118,5 +127,6 @@ export async function authenticate(req) {
   if (lastUsed.due(record.id, Date.now())) {
     await admin.collection('cubby_api_keys').update(record.id, { last_used: new Date().toISOString() }).catch(() => {});
   }
-  return { ...userView(owner), key, keyId: record.id };
+  // `agent` attributes this request's actions in the activity log; null for the manual token (the dashboard).
+  return { ...userView(owner), key, keyId: record.id, agent: isAgentKey(record) ? { id: record.id, name: record.label } : null };
 }

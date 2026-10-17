@@ -8,6 +8,7 @@ export const COMMANDS = [
   { name: 'signup', usage: 'cubby signup <server-url> --email <e> --password <p> --code <signup-code>', summary: 'Create an account with the signup code from the admin.', flags: ['--email', '--password', '--code'] },
   { name: 'whoami', usage: 'cubby whoami', summary: 'Who you are on the server.', flags: [] },
   { name: 'agents', usage: 'cubby agents [rename <id> <name> | revoke <id> --yes]', summary: 'Your agents: one per approved `cubby login`, named after the tool and machine, with when each was last seen (* = this agent). Rename one, or revoke its key (revoking this agent logs it out here).', flags: ['--yes'] },
+  { name: 'activity', usage: 'cubby activity [app] [--agent <id>|dashboard] [--limit n] [--all]', summary: 'What you (and your agents) changed in the last 30 days, newest first: deploys, rollbacks, schema, secrets (names only), jobs, logins. --all: everyone\'s (admins).', flags: ['--agent', '--limit', '--all'] },
   { name: 'servers', usage: 'cubby servers', summary: "Servers you've added (* = default).", flags: [] },
   { name: 'use', usage: 'cubby use <name|url>', summary: 'Make a server the default for new apps.', flags: [] },
   { name: 'logout', usage: 'cubby logout [--server <name|url>] [--all]', summary: 'Forget one server (the current one by default) or all of them.', flags: ['--all'] },
