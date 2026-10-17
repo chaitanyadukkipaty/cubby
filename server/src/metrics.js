@@ -175,7 +175,7 @@ export function appMetricsRow(project, range, r) {
   const { from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate } = r;
   return {
     app: project.slug, name: project.name, range, from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate,
-    days: (r.days ?? []).map((d) => ({ start: d.start, views: d.views ?? 0, visitors: d.visitors ?? 0 })),
+    days: r.days.map((d) => ({ start: d.start, views: d.views ?? 0, visitors: d.visitors ?? 0 })),
   };
 }
 
