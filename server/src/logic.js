@@ -1,5 +1,5 @@
 // Pure request logic (no I/O): routing, validation and view shaping. Unit-tested in isolation.
-import { SLUG_RE, RESERVED_SLUGS, prefixFor } from './config.js';
+import { SLUG_RE, RESERVED_SLUGS, prefixFor, config } from './config.js';
 import { HttpError } from './http.js';
 
 // What this server supports beyond the basics, in /api/info (dashboards and newer CLIs check it).
@@ -118,6 +118,11 @@ export function settingsPatch(body = {}, newCode) {
     if (!Number.isInteger(n) || n < JOB_TIMEOUT_MIN || n > JOB_TIMEOUT_MAX) throw new HttpError(400, `job_timeout_s must be a whole number between ${JOB_TIMEOUT_MIN} and ${JOB_TIMEOUT_MAX}`);
     patch.job_timeout_s = n;
   }
+  if (body.backup_keep !== undefined) {
+    const n = Number(body.backup_keep);
+    if (!Number.isInteger(n) || n < BACKUP_KEEP_MIN || n > BACKUP_KEEP_MAX) throw new HttpError(400, `backup_keep must be a whole number between ${BACKUP_KEEP_MIN} and ${BACKUP_KEEP_MAX}`);
+    patch.backup_keep = n;
+  }
   if (body.rotate_code) patch.signup_code = newCode();
   for (const key of ['max_apps_per_user', 'max_deploy_mb']) {
     if (body[key] !== undefined) {
@@ -135,9 +140,19 @@ export const JOB_TIMEOUT_MIN = 5;
 export const JOB_TIMEOUT_MAX = 290;
 export const jobTimeout = (s) => s?.job_timeout_s || JOB_TIMEOUT_DEFAULT;
 
+// Nightly backups kept. Seeded from BACKUP_KEEP on first boot; 0 (rows from before the setting) means BACKUP_KEEP.
+export const BACKUP_KEEP_MIN = 1;
+export const BACKUP_KEEP_MAX = 90;
+// 1–90 like the API accepts; BACKUP_KEEP is seeded unchecked, and 0 or less would prune every backup.
+export const backupKeep = (s, fallback = config.backups.keep) => {
+  const n = Math.trunc(s?.backup_keep || fallback);
+  return Number.isFinite(n) ? Math.min(90, Math.max(1, n)) : 1;
+};
+
 export const settingsView = (s) => ({
   server_name: serverName(s), signup_code: s.signup_code, open_signup: s.open_signup, max_apps_per_user: s.max_apps_per_user,
   max_deploy_mb: s.max_deploy_mb, update_check: !s.update_check_off, jobs: !s.jobs_off, job_timeout_s: jobTimeout(s),
+  backup_keep: backupKeep(s),
 });
 
 // Signup rules that don't need the database: required fields, password length, signup code.

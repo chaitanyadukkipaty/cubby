@@ -1,11 +1,11 @@
 // Admin storage breakdown and backup management (API ↔ PocketBase backups ↔ disk).
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
 import { startServer, ADMIN } from '../helpers/server.js';
-import { api, signup, adminToken, deployTo } from '../helpers/integration.js';
+import { api, signup, adminToken, deployTo, app } from '../helpers/integration.js';
 
 let srv, adminCall, user;
 
@@ -82,6 +82,13 @@ describe('admin storage and backups', () => {
     assert.ok(!existsSync(join(srv.dataDir, 'pb_data', 'backups', `cubby-${today}.zip`)));
     assert.ok(!existsSync(join(srv.dataDir, 'backups', `sites-${today}.tar.gz`)));
 
+    // How much a different retention would save (the setting is 7 here), without changing anything.
+    const preview = (await adminCall('GET', '/api/admin/backups?keep=1')).data;
+    assert.equal(preview.keep, 7, 'the setting is unchanged');
+    assert.deepEqual(preview.estimate, { keep: 1, backups: 2, delete: ['2000-01-01'], frees_bytes: preview.backups[1].total_bytes, adds_bytes: 0 });
+    assert.equal((await adminCall('GET', '/api/admin/backups')).data.estimate.keep, 7, 'defaults to the current setting');
+    assert.equal((await adminCall('GET', '/api/admin/backups?keep=0')).status, 400);
+
     const older = await adminCall('DELETE', '/api/admin/backups/2000-01-01');
     assert.equal(older.data.warning, null);
     assert.deepEqual(await dates(), ['2000-01-02']);
@@ -96,5 +103,45 @@ describe('admin storage and backups', () => {
     assert.deepEqual(await dates(), []);
     assert.equal((await adminCall('DELETE', '/api/admin/backups/2000-01-02')).status, 404);
     assert.equal((await adminCall('DELETE', '/api/admin/backups/latest')).status, 400);
+  });
+  test('admins delete older deploys of any app, oldest first, with their jobs folders; never the current one', async () => {
+    await user('POST', '/api/projects', { body: { slug: 'pruned-app' } });
+    for (const v of ['v1', 'v2', 'v3', 'v4']) await deployTo(user, 'pruned-app', { 'index.html': v.repeat(50) }, `?message=${v}`);
+    const before = (await adminCall('GET', '/api/admin/apps/pruned-app/deploys')).data;
+    const id = (m) => before.find((d) => d.message === m).id;
+    // Roll back to v3: v4 is newer but no longer current.
+    assert.equal((await user('POST', '/api/projects/pruned-app/rollback', { body: { deploy: id('v3') } })).status, 200);
+    const site = join(srv.dataDir, 'sites', 'pruned-app');
+    mkdirSync(join(site, `jobs-${id('v1')}`));
+    writeFileSync(join(site, `jobs-${id('v1')}`, 'job.mjs'), 'x');
+    assert.ok((await adminCall('GET', '/api/admin/storage')).data.breakdown.sites_older_bytes > 0, 'caches a breakdown with older deploys');
+
+    const current = await adminCall('DELETE', `/api/admin/apps/pruned-app/deploys/${id('v3')}`);
+    assert.equal(current.status, 409);
+    assert.match(current.data.error, /current deploy/);
+
+    const pruned = await adminCall('POST', '/api/admin/apps/pruned-app/deploys/prune', { body: { keep: 1 } });
+    assert.equal(pruned.status, 200, JSON.stringify(pruned.data));
+    assert.deepEqual(pruned.data.deleted, [id('v1'), id('v2')]);
+    assert.equal(pruned.data.freed_bytes, 2 * 100 + 1);
+    assert.deepEqual(pruned.data.deploys.map((d) => [d.message, d.current]), [['v4', false], ['v3', true]]);
+    assert.ok(!existsSync(join(site, id('v1'))) && !existsSync(join(site, `jobs-${id('v1')}`)));
+    const rollback = (await user('GET', '/api/projects/pruned-app/deploys')).data;
+    assert.deepEqual(rollback.map((d) => d.message), ['v4', 'v3'], 'the owner\'s rollback list shows it too');
+
+    const one = await adminCall('DELETE', `/api/admin/apps/pruned-app/deploys/${id('v4')}`);
+    assert.equal(one.status, 200, JSON.stringify(one.data));
+    assert.deepEqual(one.data.deleted, [id('v4')]);
+    assert.deepEqual(one.data.deploys.map((d) => d.message), ['v3']);
+    const s = (await adminCall('GET', '/api/admin/storage')).data;
+    assert.equal(s.apps.find((a) => a.slug === 'pruned-app').older_deploys_bytes, 0, 'the storage cache is cleared');
+    assert.equal((await app(srv, 'pruned-app')('GET', '/')).text, 'v3'.repeat(50), 'the app still serves its current deploy');
+
+    assert.equal((await adminCall('POST', '/api/admin/apps/pruned-app/deploys/prune', { body: {} })).data.deleted.length, 0);
+    assert.equal((await adminCall('POST', '/api/admin/apps/pruned-app/deploys/prune', { body: { keep: -1 } })).status, 400);
+    assert.equal((await adminCall('GET', '/api/admin/apps/no-such-app/deploys')).status, 404);
+    for (const [m, p] of [['GET', '/api/admin/apps/pruned-app/deploys'], ['POST', '/api/admin/apps/pruned-app/deploys/prune'], ['DELETE', `/api/admin/apps/pruned-app/deploys/${id('v3')}`]]) {
+      assert.equal((await user(m, p)).status, 403, `${m} ${p}`);
+    }
   });
 });

@@ -7,8 +7,8 @@ import { existsSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
 import * as tar from 'tar';
-import { startServer, ROOT, SIGNUP_CODE } from '../helpers/server.js';
-import { api, signup, deployTo } from '../helpers/integration.js';
+import { startServer, ROOT, SIGNUP_CODE, ADMIN } from '../helpers/server.js';
+import { api, signup, deployTo, adminToken } from '../helpers/integration.js';
 
 let srv;
 const task = (args, env = {}) => new Promise((resolve) => {
@@ -57,6 +57,30 @@ describe('admin tasks', () => {
     assert.ok(entries.some((p) => p.startsWith('sites/kept-app/')), 'deployed sites');
     assert.ok(entries.includes('secrets/env.key'), 'the secrets key');
     assert.ok(existsSync(join(srv.dataDir, 'pb_data', 'backups', `cubby-${today}.zip`)));
+  });
+  test('BACKUP_KEEP seeds the retention setting; changing it decides the next prune, which removes whole pairs by date', async () => {
+    const adminCall = api(srv.url, await adminToken(srv.url, ADMIN));
+    assert.equal((await adminCall('GET', '/api/admin/overview')).data.settings.backup_keep, 2, 'seeded from BACKUP_KEEP on first boot');
+    const patched = await adminCall('PATCH', '/api/admin/settings', { body: { backup_keep: 3 } });
+    assert.equal(patched.status, 200, JSON.stringify(patched.data));
+    assert.equal(patched.data.backup_keep, 3);
+
+    // Half pairs on purpose: zips and tarballs pruned separately would keep a different set of dates.
+    const pb = new PocketBase(srv.pbUrl);
+    await pb.collection('_superusers').authWithPassword(srv.env.PB_SUPERUSER_EMAIL, srv.env.PB_SUPERUSER_PASSWORD);
+    for (const old of ['cubby-2000-01-04.zip', 'cubby-2000-01-05.zip']) await pb.backups.create(old);
+    const siteBackups = join(srv.dataDir, 'backups');
+    writeFileSync(join(siteBackups, 'sites-2000-01-06.tar.gz'), 'old');
+
+    const r = await task(['backup']);
+    assert.equal(r.code, 0, r.stderr);
+    const today = new Date().toISOString().slice(0, 10);
+    const keys = (await pb.backups.getFullList()).map((b) => b.key).filter((k) => k.startsWith('cubby-')).sort();
+    assert.deepEqual(keys, ['cubby-2000-01-05.zip', `cubby-${today}.zip`]);
+    assert.deepEqual(readdirSync(siteBackups).sort(), ['sites-2000-01-06.tar.gz', `sites-${today}.tar.gz`]);
+    const listed = (await adminCall('GET', '/api/admin/backups')).data;
+    assert.equal(listed.keep, 3);
+    assert.deepEqual(listed.backups.map((b) => b.date), [today, '2000-01-06', '2000-01-05']);
   });
   test('reset-password lets the user log in with the new password', async () => {
     const r = await task(['reset-password', 'owner@test.dev', 'brand-new-pass']);

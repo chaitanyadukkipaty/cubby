@@ -83,7 +83,7 @@ else's platform and you can't bring your own agent.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps in a gallery, and manage users, limits and disk from an admin tab.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
-- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin tab tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins (or their agent) see where the disk goes and manage backups with `cubby admin storage` and `cubby admin backups`.
+- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin tab tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins (or their agent) see where the disk goes and manage backups and older deploys with `cubby admin storage`, `cubby admin backups` and `cubby admin deploys`.
 
 <table>
 <tr>
@@ -149,15 +149,30 @@ automatically; see [Releases](CONTRIBUTING.md#releases).
 
 ### Disk and backups
 
-Every night Cubby backs up the database and the deployed sites (the last 7 are kept). As the admin, you or your agent
-can see where the disk goes and manage those backups from your own machine, with your admin login:
+Every night Cubby backs up the database and the deployed sites, and keeps the newest 7 (a server setting). As the
+admin, you or your agent can see where the disk goes and free some of it from your own machine, with your admin
+login:
 
 ```sh
 cubby admin storage                    # database, uploads, current and older deploys, backups, free disk; per app
 cubby admin backups                    # backups by date: database size, sites size, total
 cubby admin backups create             # back up now (waits until it's done; --no-wait to return at once)
 cubby admin backups delete 2026-10-01 --yes
+cubby admin backups keep 3 --yes       # keep 3 nightly backups from now on; says what that deletes and frees
+cubby admin deploys blog               # every deploy of an app, * marks the one it serves
+cubby admin deploys blog prune --keep 2 --yes      # delete older deploys, oldest first, sparing the newest 2
+cubby admin deploys blog delete <deploy-id> --yes  # delete one older deploy
 ```
+
+**How many backups to keep** (1 to 90) is a server setting. `BACKUP_KEEP` in the env file only seeds it on first boot;
+servers set up before the setting existed keep using `BACKUP_KEEP` (7 if unset) until you change it. The change applies
+at the next nightly backup, which deletes whole pairs by date beyond the newest N. `keep` tells you first: lowering
+it prints the dates that will go and the space that frees, and needs `--yes`; raising it estimates the extra disk
+from your average backup.
+
+**Older deploys** are what `cubby rollback` goes back to (each app keeps its last 10). Deleting them frees their
+files and their jobs and takes them off the app's rollback list. The deploy an app is serving is never deleted:
+roll back to another one first if you really want it gone.
 
 A backup is a pair of files, `cubby-<date>.zip` (database) and `sites-<date>.tar.gz` (sites and the secrets key), and
 delete always removes both. Deleting the newest backup prints a warning; deleting the only one is refused unless you
@@ -200,7 +215,8 @@ account" error.
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
 | `cubby admin storage` | Admins: disk use by category (database, uploads, current/older deploys, backups) and per app |
-| `cubby admin backups [create \| delete <date> --yes]` | Admins: list backups by date, back up now, delete a backup pair (`--leave-none` for the only one) |
+| `cubby admin backups [create \| delete <date> --yes \| keep <n>]` | Admins: list backups by date, back up now, delete a backup pair (`--leave-none` for the only one), set how many nightly backups to keep |
+| `cubby admin deploys <app> [prune [--keep <n>] \| delete <id>] --yes` | Admins: list an app's deploys, delete older ones oldest first or one by id (never the current one) |
 | `cubby skill install \| remove \| status` | Manage the agent skill |
 | `cubby version` | Show which CLI version runs for the current server, and the server's version |
 | `cubby help [<command>] [--json]` | Every command and flag the targeted server supports |

@@ -33,6 +33,7 @@ export async function bootstrap() {
       open_signup: false,
       max_apps_per_user: config.initial.maxAppsPerUser,
       max_deploy_mb: config.initial.maxDeployMb,
+      backup_keep: config.backups.keep,
     });
   }
 

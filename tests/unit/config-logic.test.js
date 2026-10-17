@@ -58,7 +58,22 @@ describe('logic views', () => {
   });
   test('settingsView exposes exactly the editable settings', () => {
     assert.deepEqual(logic.settingsView({ id: 'x', server_name: "Priya's Cubby", signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9, created: 'z' }),
-      { server_name: "Priya's Cubby", signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9, update_check: true, jobs: true, job_timeout_s: 60 });
+      { server_name: "Priya's Cubby", signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9, update_check: true, jobs: true, job_timeout_s: 60, backup_keep: 7 });
+  });
+  test('backup retention: a setting from 1 to 90, falling back to BACKUP_KEEP for rows from before it existed', () => {
+    assert.equal(logic.backupKeep({ backup_keep: 14 }, 7), 14);
+    assert.equal(logic.backupKeep({ backup_keep: 0 }, 5), 5, 'rows from before the setting existed');
+    assert.equal(logic.backupKeep(undefined, 5), 5);
+    // BACKUP_KEEP is seeded unchecked on first boot; never let it prune every backup or grow without bound.
+    assert.equal(logic.backupKeep({ backup_keep: -3 }, 7), 1);
+    assert.equal(logic.backupKeep(undefined, 0), 1);
+    assert.equal(logic.backupKeep({ backup_keep: 500 }, 7), 90);
+    assert.equal(logic.backupKeep(undefined, Number('nope')), 1);
+    assert.equal(logic.settingsView({ backup_keep: 30 }).backup_keep, 30);
+    assert.deepEqual(logic.settingsPatch({ backup_keep: '30' }), { backup_keep: 30 });
+    assert.deepEqual(logic.settingsPatch({ backup_keep: 1 }), { backup_keep: 1 });
+    assert.deepEqual(logic.settingsPatch({ backup_keep: 90 }), { backup_keep: 90 });
+    for (const bad of [0, 91, 2.5, 'x', null]) assert.throws(() => logic.settingsPatch({ backup_keep: bad }), /backup_keep must be a whole number between 1 and 90/, String(bad));
   });
   test('jobs: the kill switch is stored inverted and the time limit defaults to 60s', () => {
     assert.equal(logic.settingsView({ jobs_off: true, job_timeout_s: 120 }).jobs, false);

@@ -192,3 +192,23 @@ describe('cli-dist', () => {
     assert.deepEqual(pkg.bin, { cubby: 'src/launcher.js' });
   });
 });
+
+describe('oldDeploys', () => {
+  // Newest first, as listDeploys returns them; the app was rolled back to d3.
+  const list = ['d5', 'd4', 'd3', 'd2', 'd1'].map((id) => ({ id, current: id === 'd3' }));
+  const ids = (picked) => picked.map((d) => d.id);
+  test('picks every deploy but the current one, oldest first', () => {
+    assert.deepEqual(ids(sites.oldDeploys(list)), ['d1', 'd2', 'd4', 'd5']);
+  });
+  test('keep N spares the N newest besides the current one', () => {
+    assert.deepEqual(ids(sites.oldDeploys(list, { keep: 2 })), ['d1', 'd2']);
+    assert.deepEqual(ids(sites.oldDeploys(list, { keep: '1' })), ['d1', 'd2', 'd4']);
+    assert.deepEqual(ids(sites.oldDeploys(list, { keep: 10 })), []);
+    for (const bad of [-1, 1.5, 'x']) assert.throws(() => sites.oldDeploys(list, { keep: bad }), (e) => e.status === 400 && /keep must be a whole number/.test(e.message), String(bad));
+  });
+  test('one deploy by id, but never the current one', () => {
+    assert.deepEqual(ids(sites.oldDeploys(list, { id: 'd4' })), ['d4']);
+    assert.throws(() => sites.oldDeploys(list, { id: 'd3' }), (e) => e.status === 409 && /current deploy/.test(e.message));
+    assert.throws(() => sites.oldDeploys(list, { id: 'nope' }), (e) => e.status === 404);
+  });
+});

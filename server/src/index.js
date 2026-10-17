@@ -5,11 +5,11 @@ import { HttpError, sendJson, readJson, readBody, rateLimiter } from './http.js'
 import { admin, startPocketBase } from './pb.js';
 import { signup, login, authenticate, tokenFor, regenerateToken } from './auth.js';
 import { applySchema, readSchema, dropFromSchema, projectCollections, deleteCollections } from './schema.js';
-import { createDeploy, listDeploys, rollback, removeSite, serveSite, sendPage, appDiskUsage, dirSize } from './sites.js';
+import { createDeploy, listDeploys, oldDeploys, deleteDeploys, rollback, removeSite, serveSite, sendPage, appDiskUsage, dirSize } from './sites.js';
 import { proxyPocketBase } from './proxy.js';
 import { bootstrap, getSettings, updateSettings, newSignupCode } from './settings.js';
 import { scheduleBackups, createBackupRunner, runBackup } from './backups.js';
-import { scanStorage, createTtlCache, listBackups, checkBackupDelete, deleteBackup } from './storage.js';
+import { scanStorage, createTtlCache, listBackups, checkBackupDelete, planRetention, deleteBackup } from './storage.js';
 import { listJobs, runNow, jobRuns, setPaused, allJobs, scheduleJobs, recoverRuns, deployJobs } from './jobs.js';
 import { listEnv, setEnv, unsetEnv } from './secrets.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
@@ -206,7 +206,14 @@ const routes = [
   }],
   ['GET', '/api/admin/jobs', 'admin', async () => allJobs()],
   ['GET', '/api/admin/storage', 'admin', async () => storageCache.get(computeStorage)],
-  ['GET', '/api/admin/backups', 'admin', async () => ({ backups: await listBackups(admin, config.dataDir), ...backups.state(), keep: config.backups.keep })],
+  // `estimate`: what the next nightly prune deletes (whole pairs) and frees, for the setting or a ?keep=N to preview.
+  ['GET', '/api/admin/backups', 'admin', async (req, user, params, url) => {
+    const keep = logic.backupKeep(await getSettings());
+    const asked = url.searchParams.get('keep');
+    const list = await listBackups(admin, config.dataDir);
+    const estimate = planRetention(list, asked === null ? keep : logic.settingsPatch({ backup_keep: asked }).backup_keep);
+    return { backups: list, ...backups.state(), keep, estimate };
+  }],
   ['POST', '/api/admin/backups', 'admin', async () => {
     const { promise, ...run } = backups.start();
     promise.catch((err) => console.error('backup failed:', err.message));
@@ -220,14 +227,34 @@ const routes = [
     storageCache.clear();
     return { ok: true, deleted: date, files, warning };
   }],
+  // Older deploys of any app (kept for rollback), oldest first; never the current one.
+  ['GET', '/api/admin/apps/:slug/deploys', 'admin', async (req, user, { slug }) => listDeploys(await adminProject(slug))],
+  ['POST', '/api/admin/apps/:slug/deploys/prune', 'admin', async (req, user, { slug }) => {
+    const project = await adminProject(slug);
+    return removeDeploys(project, oldDeploys(await listDeploys(project), { keep: (await readJson(req)).keep ?? 0 }));
+  }],
+  ['DELETE', '/api/admin/apps/:slug/deploys/:id', 'admin', async (req, user, { slug, id }) => {
+    const project = await adminProject(slug);
+    return removeDeploys(project, oldDeploys(await listDeploys(project), { id }));
+  }],
   ['DELETE', '/api/admin/apps/:slug', 'admin', async (req, user, { slug }) => {
-    const project = await findProject(slug);
-    if (!project) throw new HttpError(404, `App "${slug}" not found`);
-    await removeProject(project);
+    await removeProject(await adminProject(slug));
     return { ok: true };
   }],
 ];
 const compiledRoutes = logic.compileRoutes(routes);
+
+async function adminProject(slug) {
+  const project = await findProject(slug);
+  if (!project) throw new HttpError(404, `App "${slug}" not found`);
+  return project;
+}
+
+async function removeDeploys(project, picked) {
+  const freed = await deleteDeploys(project, picked);
+  if (picked.length) storageCache.clear();
+  return { ok: true, deleted: picked.map((d) => d.id), freed_bytes: freed, deploys: await listDeploys(project) };
+}
 
 // Storage breakdown for admins: computed on demand (a full size scan), cached for 5 minutes, never stored.
 const storageCache = createTtlCache(5 * 60_000);

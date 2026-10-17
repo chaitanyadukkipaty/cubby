@@ -9,8 +9,8 @@
   ],
   "report-dir": "coverage/unit",
   "check-coverage": true,
-  "lines": 86.3,
-  "statements": 86.3,
-  "functions": 87.8,
+  "lines": 86.4,
+  "statements": 86.4,
+  "functions": 88,
   "branches": 97.9
 }

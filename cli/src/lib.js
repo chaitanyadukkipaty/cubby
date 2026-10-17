@@ -87,6 +87,13 @@ export function formatBackups(r) {
   return lines.join('\n');
 }
 
+// What a backup retention means (the server's `estimate` from GET /api/admin/backups).
+export function formatRetention(e) {
+  if (e.delete.length) return `the next nightly backup deletes ${e.delete.length} (${e.delete.join(', ')}), freeing ${formatBytes(e.frees_bytes)}`;
+  const more = e.keep - e.backups;
+  return more > 0 && e.adds_bytes ? `nothing is deleted; ${more} more nightly backups take about ${formatBytes(e.adds_bytes)}` : 'nothing is deleted';
+}
+
 export function formatError(err) {
   return `error: ${err.message}${err.details ? '\n  - ' + [].concat(err.details).join('\n  - ') : ''}`;
 }
