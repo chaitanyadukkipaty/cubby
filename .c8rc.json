@@ -1,10 +1,18 @@
 {
-  "include": ["server/src/**", "cli/src/**"],
-  "reporter": ["text", "html", "lcov", "json-summary"],
+  "include": [
+    "server/src/**",
+    "cli/src/**"
+  ],
+  "reporter": [
+    "text",
+    "html",
+    "lcov",
+    "json-summary"
+  ],
   "report-dir": "coverage",
   "check-coverage": true,
   "lines": 99.4,
   "statements": 99.4,
   "functions": 99.4,
-  "branches": 95.8
+  "branches": 95.9
 }

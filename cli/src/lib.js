@@ -50,6 +50,43 @@ export const formatDeploys = (list) =>
 export const formatProjects = (list) =>
   list.map((p) => `${p.slug.padEnd(24)} ${p.url}${p.current_deploy ? '' : '  (not deployed)'}`).join('\n') || 'No projects yet';
 
+export function formatBytes(n) {
+  if (n === null || n === undefined) return '-';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return i ? `${n.toFixed(1)} ${units[i]}` : `${n} B`;
+}
+
+const STORAGE_ROWS = [
+  ['database_bytes', 'Database'], ['uploads_bytes', 'Uploaded files'], ['sites_current_bytes', 'Current deploys'],
+  ['sites_older_bytes', 'Older deploys (rollback)'], ['backups_bytes', 'Backups'], ['other_bytes', 'Other'],
+];
+
+export function formatStorage(s) {
+  const row = (label, bytes) => `  ${label.padEnd(26)}${formatBytes(bytes).padStart(10)}`;
+  const width = Math.max(4, ...s.apps.map((a) => a.slug.length)) + 2;
+  return [
+    `Storage (as of ${s.computed_at}, refreshed every 5 minutes)`,
+    ...STORAGE_ROWS.map(([key, label]) => row(label, s.breakdown[key])),
+    row('Total', s.data_bytes),
+    `Disk: ${formatBytes(s.disk.free_bytes)} free of ${formatBytes(s.disk.total_bytes)}`,
+    '',
+    s.apps.length ? 'Apps:' : 'No apps yet',
+    ...s.apps.map((a) => `  ${a.slug.padEnd(width)}${formatBytes(a.total_bytes).padStart(10)}  current ${formatBytes(a.current_deploy_bytes)} · older ${formatBytes(a.older_deploys_bytes)} · uploads ${formatBytes(a.uploads_bytes)}  ${a.owner ?? ''}`.trimEnd()),
+  ].join('\n');
+}
+
+export function formatBackups(r) {
+  const lines = r.backups.length
+    ? [`Backups (newest first, ${r.keep} kept):`, ...r.backups.map((b) => `  ${b.date}  database ${formatBytes(b.db_bytes).padEnd(9)} sites ${formatBytes(b.sites_bytes).padEnd(9)} total ${formatBytes(b.total_bytes)}${b.complete ? '' : '  (incomplete)'}`)]
+    : ['No backups yet.'];
+  if (r.running) lines.push(`A backup is running (started ${r.running.started_at}).`);
+  if (r.last && !r.last.ok) lines.push(`The last backup failed: ${r.last.error}`);
+  lines.push('Restore one on the server with: sudo cubby-server restore <date>');
+  return lines.join('\n');
+}
+
 export function formatError(err) {
   return `error: ${err.message}${err.details ? '\n  - ' + [].concat(err.details).join('\n  - ') : ''}`;
 }

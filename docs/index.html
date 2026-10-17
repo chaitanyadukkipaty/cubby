@@ -409,6 +409,8 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           <tr><td><code>cubby schema drop &lt;c&gt;[.&lt;f&gt;] --yes</code></td><td>Delete a collection or field and its data.</td></tr>
           <tr><td><code>cubby projects</code> · <code>info</code> · <code>link &lt;app&gt;</code></td><td>List your apps, show the current one, or attach this folder to an existing app.</td></tr>
           <tr><td><code>cubby delete &lt;app&gt; --yes</code></td><td>Delete an app, its data and deploys.</td></tr>
+          <tr><td><code>cubby admin storage</code></td><td>Admins only: disk use by category (database, uploads, current and older deploys, backups) and per app, with free disk.</td></tr>
+          <tr><td><code>cubby admin backups [create | delete &lt;date&gt; --yes]</code></td><td>Admins only: list backups by date, back up now, or delete one (both files; the only backup also needs <code>--leave-none</code>).</td></tr>
           <tr><td><code>cubby skill install | remove | status</code></td><td>Manage the agent skill. <code>login</code> installs it too.</td></tr>
           <tr><td><code>--server &lt;name|url&gt;</code></td><td>On any command: which server to use. Otherwise it's <code>CUBBY_SERVER</code>, then the app's <code>cubby.json</code>, then the default.</td></tr>
         </tbody>
@@ -477,7 +479,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           <tr><td><code>cubby-server upgrade --ref &lt;ref&gt;</code></td><td>Run any branch, tag or commit (not a release)</td></tr>
           <tr><td><code>cubby-server version</code></td><td>What's running, what it follows, and the latest release</td></tr>
           <tr><td><code>cubby-server code</code></td><td>Show the current signup code</td></tr>
-          <tr><td><code>cubby-server backup</code> · <code>backups</code></td><td>Back up now, or list backups</td></tr>
+          <tr><td><code>cubby-server backup</code> · <code>backups</code></td><td>Back up now, or list backups (from your own machine: <code>cubby admin backups</code>, below)</td></tr>
           <tr><td><code>cubby-server restore &lt;YYYY-MM-DD&gt;</code></td><td>Restore all apps and accounts to that day</td></tr>
           <tr><td><code>cubby-server reset-password &lt;email&gt; &lt;pw&gt;</code></td><td>Reset anyone's password</td></tr>
           <tr><td><code>cubby-server set-domain &lt;domain&gt;</code></td><td>Move from IP to a domain with HTTPS</td></tr>
@@ -486,6 +488,13 @@ export default async ({ pb, env, log, fetch }) =&gt; {
       <p><b>Updates.</b> Once a day the server asks GitHub for the latest Cubby release. When there's a newer one, the Admin tab shows <b>Update available</b> with a link to the release notes and the command to run. Turn the check off in the Admin tab, or set <code>CUBBY_UPDATE_CHECK=0</code> in <code>/opt/cubby/cubby.env</code> to disable it completely.</p>
       <p><b>Versions.</b> A server built from a release shows its version, like <code>0.1.1</code>. Anything else shows the commit too, like <code>0.1.1-dev+b2cb75c</code>, so you always know which code is running.</p>
       <p><b>Backups</b> run every night at 03:00: a full database backup plus all deployed sites with their jobs, and the key that decrypts app secrets. The last 7 are kept. Restoring rolls back every app on the server, so it's for real accidents.</p>
+      <h3>Disk and backups from your own machine</h3>
+      <p>You don't need to SSH in to see where the disk goes or to tidy up backups. Logged in as the admin, you or your agent can run:</p>
+      <div class="code"><pre>cubby admin storage                          <span class="c"># database, uploads, current and older deploys, backups, free disk; per app</span>
+cubby admin backups                          <span class="c"># backups by date: database size, sites size, total</span>
+cubby admin backups create                   <span class="c"># back up now (waits until done; --no-wait returns at once)</span>
+cubby admin backups delete 2026-10-01 --yes</pre></div>
+      <p>A backup is a pair of files for one day, <code>cubby-&lt;date&gt;.zip</code> (the database) and <code>sites-&lt;date&gt;.tar.gz</code> (sites, jobs and the secrets key). Deleting always removes both. Deleting the newest backup prints a warning, and deleting the only one is refused unless you add <code>--leave-none</code>. Only one backup runs at a time. Storage is measured when you ask and the result is reused for 5 minutes; nothing is stored. Restoring stays on the server on purpose: <code>sudo cubby-server restore &lt;date&gt;</code>. Anyone who isn't an admin gets a clear "needs an admin account" error.</p>
       <p>The PocketBase admin UI is only reachable from the server itself: <code>ssh -L 8090:127.0.0.1:8090 you@server</code>, then open <code>http://localhost:8090/_/</code>. If 8090 was taken at install, the installer printed the port it used instead (<code>CUBBY_PB_PORT</code> in <code>/opt/cubby/cubby.env</code>).</p>
     </section>
 

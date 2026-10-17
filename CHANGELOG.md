@@ -18,10 +18,22 @@ All notable changes to Cubby are documented here. The format follows
 - The dashboard lists an app's jobs on its card, with Run now, Pause and the last log. The Admin tab lists every
   app's jobs and has a switch to stop them all and a time limit per run (60 seconds by default).
 - `/api/info` lists optional server features (`features: ["jobs"]`).
+- Admin storage and backups from the CLI, the first `cubby admin` commands. `cubby admin storage` shows where the disk
+  goes (database, uploaded files, current deploys, older deploys kept for rollback, backups, free disk) and per app,
+  measured on demand and reused for 5 minutes. `cubby admin backups` lists backups by date with their database and
+  sites sizes; `create` backs up now (one at a time, shared with the nightly run); `delete <date> --yes` removes both
+  files of the pair, warns when it was the newest, and refuses the only backup without `--leave-none`. Restore stays
+  `sudo cubby-server restore <date>`. Non-admins get a clear error. API: `GET /api/admin/storage`,
+  `GET|POST /api/admin/backups`, `DELETE /api/admin/backups/<date>[?leave_none=1]`.
 
 ### Changed
 
 - `cubby rollback` restores the jobs a deploy shipped, not just the frontend.
+
+### Fixed
+
+- A backup on a server with no deploys and no secrets yet failed (`no paths specified to add to archive`); it now
+  writes an empty sites tarball so every backup is a whole pair.
 
 ## [0.1.4] - 2026-10-17
 

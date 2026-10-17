@@ -8,7 +8,8 @@ import { applySchema, readSchema, dropFromSchema, projectCollections, deleteColl
 import { createDeploy, listDeploys, rollback, removeSite, serveSite, sendPage, appDiskUsage, dirSize } from './sites.js';
 import { proxyPocketBase } from './proxy.js';
 import { bootstrap, getSettings, updateSettings, newSignupCode } from './settings.js';
-import { scheduleBackups } from './backups.js';
+import { scheduleBackups, createBackupRunner, runBackup } from './backups.js';
+import { scanStorage, createTtlCache, listBackups, checkBackupDelete, deleteBackup } from './storage.js';
 import { listJobs, runNow, jobRuns, setPaused, allJobs, scheduleJobs, recoverRuns, deployJobs } from './jobs.js';
 import { listEnv, setEnv, unsetEnv } from './secrets.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
@@ -204,6 +205,21 @@ const routes = [
     return projects.map((p) => ({ ...projectView(p), disk_bytes: usage.get(p.slug) ?? 0 }));
   }],
   ['GET', '/api/admin/jobs', 'admin', async () => allJobs()],
+  ['GET', '/api/admin/storage', 'admin', async () => storageCache.get(computeStorage)],
+  ['GET', '/api/admin/backups', 'admin', async () => ({ backups: await listBackups(admin, config.dataDir), ...backups.state(), keep: config.backups.keep })],
+  ['POST', '/api/admin/backups', 'admin', async () => {
+    const { promise, ...run } = backups.start();
+    promise.catch((err) => console.error('backup failed:', err.message));
+    return { started: true, ...run };
+  }],
+  // Always both files of the pair. The only backup needs ?leave_none=1. Restore stays `cubby-server restore`.
+  ['DELETE', '/api/admin/backups/:date', 'admin', async (req, user, { date }, url) => {
+    const list = await listBackups(admin, config.dataDir);
+    const { warning } = checkBackupDelete(list, date, { leaveNone: url.searchParams.get('leave_none') === '1', running: Boolean(backups.state().running) });
+    const files = await deleteBackup(admin, config.dataDir, list.find((b) => b.date === date));
+    storageCache.clear();
+    return { ok: true, deleted: date, files, warning };
+  }],
   ['DELETE', '/api/admin/apps/:slug', 'admin', async (req, user, { slug }) => {
     const project = await findProject(slug);
     if (!project) throw new HttpError(404, `App "${slug}" not found`);
@@ -212,6 +228,28 @@ const routes = [
   }],
 ];
 const compiledRoutes = logic.compileRoutes(routes);
+
+// Storage breakdown for admins: computed on demand (a full size scan), cached for 5 minutes, never stored.
+const storageCache = createTtlCache(5 * 60_000);
+// One backup at a time, whether started by an admin or the nightly schedule. A finished backup changes the
+// breakdown, so it drops the cached one. (`cubby-server backup` runs in another process and isn't guarded.)
+const backups = createBackupRunner({ run: () => runBackup().finally(() => storageCache.clear()) });
+async function computeStorage() {
+  const [projects, cols, fs] = await Promise.all([
+    admin.collection('cubby_projects').getFullList({ expand: 'owner' }),
+    admin.collections.getFullList({ batch: 500 }),
+    statfs(config.dataDir),
+  ]);
+  const apps = projects.map((p) => ({
+    slug: p.slug, owner: p.expand?.owner?.email ?? null, current_deploy: p.current_deploy,
+    collectionIds: cols.filter((c) => c.name.startsWith(prefixFor(p.slug))).map((c) => c.id),
+  }));
+  return {
+    computed_at: new Date().toISOString(),
+    disk: { total_bytes: fs.blocks * fs.bsize, free_bytes: fs.bavail * fs.bsize },
+    ...(await scanStorage(config.dataDir, apps)),
+  };
+}
 
 async function appUsage(projects) {
   const cols = await admin.collections.getFullList({ batch: 500 });
@@ -317,7 +355,7 @@ const server = http.createServer(async (req, res) => {
 await startPocketBase();
 await bootstrap();
 await buildCliTarball();
-scheduleBackups();
+scheduleBackups({ run: async () => backups.start().promise });
 await recoverRuns();
 scheduleJobs();
 scheduleUpdateChecks({ checker: updates, isEnabled: updatesOn });

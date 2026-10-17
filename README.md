@@ -83,7 +83,7 @@ else's platform and you can't bring your own agent.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps in a gallery, and manage users, limits and disk from an admin tab.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
-- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin tab tells you when one is out, and `cubby-server upgrade` installs it after a backup.
+- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin tab tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins (or their agent) see where the disk goes and manage backups with `cubby admin storage` and `cubby admin backups`.
 
 <table>
 <tr>
@@ -147,6 +147,24 @@ A server built from a release reports its version, like `0.1.1`. Anything else r
 `0.1.1-dev+b2cb75c`, so you always know exactly what code is running. Releases are cut by the maintainer and published
 automatically; see [Releases](CONTRIBUTING.md#releases).
 
+### Disk and backups
+
+Every night Cubby backs up the database and the deployed sites (the last 7 are kept). As the admin, you or your agent
+can see where the disk goes and manage those backups from your own machine, with your admin login:
+
+```sh
+cubby admin storage                    # database, uploads, current and older deploys, backups, free disk; per app
+cubby admin backups                    # backups by date: database size, sites size, total
+cubby admin backups create             # back up now (waits until it's done; --no-wait to return at once)
+cubby admin backups delete 2026-10-01 --yes
+```
+
+A backup is a pair of files, `cubby-<date>.zip` (database) and `sites-<date>.tar.gz` (sites and the secrets key), and
+delete always removes both. Deleting the newest backup prints a warning; deleting the only one is refused unless you
+add `--leave-none`. The storage numbers are measured when you ask and reused for 5 minutes. Restoring stays on the
+server, on purpose: `sudo cubby-server restore <date>`. Anyone who isn't an admin gets a clear "needs an admin
+account" error.
+
 ## Connect your agent and build
 
 1. Open the server URL and **sign up** with the signup code.
@@ -181,6 +199,8 @@ automatically; see [Releases](CONTRIBUTING.md#releases).
 | `cubby schema push \| pull \| drop` | Manage the data model (push never deletes) |
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
+| `cubby admin storage` | Admins: disk use by category (database, uploads, current/older deploys, backups) and per app |
+| `cubby admin backups [create \| delete <date> --yes]` | Admins: list backups by date, back up now, delete a backup pair (`--leave-none` for the only one) |
 | `cubby skill install \| remove \| status` | Manage the agent skill |
 | `cubby version` | Show which CLI version runs for the current server, and the server's version |
 | `cubby help [<command>] [--json]` | Every command and flag the targeted server supports |
