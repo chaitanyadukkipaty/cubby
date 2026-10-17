@@ -1,4 +1,6 @@
-// Nightly backups: a PocketBase backup (all app data) plus a tarball of deployed sites.
+// Nightly backups: a PocketBase backup (all app data) plus a tarball of deployed sites (with their jobs) and the
+// key that decrypts app secrets, which must be restored together with the data.
+import { existsSync } from 'node:fs';
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as tar from 'tar';
@@ -14,7 +16,8 @@ export async function runBackup() {
   if ((await admin.backups.getFullList()).some((b) => b.key === name)) await admin.backups.delete(name);
   await admin.backups.create(name);
   await mkdir(backupDir, { recursive: true });
-  await tar.c({ gzip: true, cwd: config.dataDir, file: join(backupDir, `sites-${stamp}.tar.gz`) }, ['sites']).catch(() => {});
+  const dirs = ['sites', 'secrets'].filter((d) => existsSync(join(config.dataDir, d)));
+  await tar.c({ gzip: true, cwd: config.dataDir, file: join(backupDir, `sites-${stamp}.tar.gz`) }, dirs).catch(() => {});
 
   const pbBackups = (await admin.backups.getFullList()).filter((b) => b.key.startsWith('cubby-')).sort((a, b) => b.key.localeCompare(a.key));
   for (const b of pbBackups.slice(config.backups.keep)) await admin.backups.delete(b.key);

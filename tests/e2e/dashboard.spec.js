@@ -107,3 +107,28 @@ test('a deployed app shows in My apps and the gallery; its owner can unlist and 
   expect((await api.project(owner.token, slug)).status).toBe(404);
   await friendPage.close();
 });
+
+test("an app's scheduled jobs: run one now, read its log, pause and resume it", async ({ api, dashboard }) => {
+  const owner = await api.createUser('jobs');
+  const slug = await api.createAppWithJobs(owner.token, 'jobs', {
+    'weekly-digest': { schedule: '0 9 * * 1', code: "export default async ({ log }) => log('sent 3 digests');" },
+  });
+  await dashboard.openAs(owner.token);
+  const app = dashboard.myApps.app(slug);
+  await app.jobsToggle.click();
+  const job = app.job('weekly-digest');
+  await expect(job.state).toHaveText('not run yet');
+  await expect(job.details).toContainText('0 9 * * 1 UTC · never run · next');
+
+  await job.runButton.click();
+  await expect(dashboard.toast).toHaveText('weekly-digest: ok');
+  await expect(job.state).toHaveText('ok');
+  await job.lastLogButton.click();
+  await expect(job.log).toHaveText('sent 3 digests');
+
+  await job.pauseButton.click();
+  await expect(dashboard.toast).toHaveText('weekly-digest paused');
+  await expect(job.state).toHaveText('paused');
+  await job.resumeButton.click();
+  await expect(job.state).toHaveText('ok');
+});

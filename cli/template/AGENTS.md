@@ -9,7 +9,8 @@ Live URL: {{URL}}
 npm run dev            # local dev server; backend calls go to the real Cubby backend
 cubby schema push      # apply cubby/schema.json now (needed before `npm run dev` can use new collections)
 cubby deploy -m "msg"  # push schema (if changed) + build + publish. This is the only command needed to ship.
-cubby deploys          # list deploys;  cubby rollback <id> to revert the frontend
+cubby deploys          # list deploys;  cubby rollback <id> to revert the frontend and its jobs
+cubby jobs run <name>  # run a scheduled job now and print its log (see "Scheduled jobs" below)
 ```
 
 Set a one-line `description` in `package.json`; it's shown in the server's app gallery.
@@ -26,7 +27,8 @@ Add `--json` to any `cubby` command for machine-readable output. Auth comes from
    The build warning "can't be bundled without type=module" about it is expected; ignore it.
 3. **The data model lives in `cubby/schema.json`**, using *unprefixed* names. `cubby deploy` applies it automatically.
    `cubby schema pull` writes the live schema back to the file.
-4. **This is a static frontend.** There is no server code. Put all security in collection API rules.
+4. **The frontend is static.** Browser code can only do what collection API rules allow, so put all security in
+   the rules. The only server-side code is scheduled jobs in `cubby/jobs/` (below); there are no request handlers.
 5. Use client-side routing only (any unknown path serves `index.html`).
 
 ## Schema format (`cubby/schema.json`)
@@ -83,6 +85,42 @@ pb.collection(col('posts')).subscribe('*', (e) => {...});      // realtime
 
 Always build filters with `pb.filter()` to avoid injection.
 
+## Scheduled jobs (`cubby/jobs/`)
+
+Code that runs on the server on a schedule: send a digest, close expired polls, sync from an API. One file per job;
+the file name is the job name (lowercase, digits, hyphens). Files starting with `_` are shared helpers, not jobs.
+
+```ts
+// cubby/jobs/close-expired-polls.ts
+import type { JobContext } from './_context';
+
+export const schedule = '*/15 * * * *';   // 5-field cron, always UTC; write it exactly like this
+
+export default async ({ pb, env, log, fetch }: JobContext) => {
+  const now = new Date().toISOString().replace('T', ' ');
+  const expired = await pb.collection('polls').getFullList({ filter: pb.filter('closed = false && closes_at < {:now}', { now }) });
+  for (const poll of expired) await pb.collection('polls').update(poll.id, { closed: true });
+  log(`closed ${expired.length} polls`);
+};
+```
+
+- `pb` acts as admin for **this app's collections only**: API rules don't apply, so a job can read and change every
+  user's records. Use **unprefixed** names (`pb.collection('polls')`, no `col()`); in `@collection.` filter joins use
+  `col('name')`. Other apps and the server's own data are unreachable.
+- `fetch` reaches the public internet only (no localhost or private networks). Use `fetch`, not `node:http`.
+- `env` holds secrets: `cubby env set RESEND_API_KEY=...` (or `--from-stdin`). Values are never shown again; never put
+  them in code. `cubby env list` shows names; `cubby env unset NAME --yes` deletes one.
+- npm packages are bundled in at deploy. There is no file system to write to, no child processes, and no `process.env`.
+- Limits: the server's time limit per run (60s by default), 128 MB memory, two jobs at a time server-wide.
+  A job never overlaps itself: a run due while the previous one is going is skipped. Runs missed while the server
+  was down are not caught up, so write jobs that are safe to run late or twice (e.g. "close polls past their date").
+- `cubby deploy` bundles and ships the jobs with the frontend; `cubby rollback` restores the jobs of that deploy.
+
+Test a job right after deploying: `cubby jobs run <name>` runs it now with the same limits and prints its log
+(exit code 1 if it failed). `cubby jobs` lists jobs with their next and last run; `cubby jobs logs <name>` shows past
+runs; `cubby jobs pause|resume <name>` stops and restarts the schedule.
+
 ## Not supported (yet)
 
-Server-side code/hooks, cron jobs, OAuth providers, emails (verification/reset), custom domains, SQL views.
+Request handlers/hooks (server code that runs per request), OAuth providers, emails (verification/reset), custom
+domains, SQL views.

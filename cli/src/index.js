@@ -10,6 +10,7 @@ import {
   CliError, normalizeServerArg, parseSchemaText, describeSchemaChanges, versionWarning,
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
+  jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -25,6 +26,7 @@ const { values: flags, positionals } = parseArgs({
     token: { type: 'string' }, code: { type: 'string' }, client: { type: 'string' }, 'no-skill': { type: 'boolean' }, wait: { type: 'boolean' }, 'no-wait': { type: 'boolean' },
     'no-install': { type: 'boolean' }, 'no-build': { type: 'boolean' }, unlisted: { type: 'boolean' }, listed: { type: 'boolean' },
     yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
+    run: { type: 'string' }, limit: { type: 'string' }, 'from-stdin': { type: 'boolean' },
   },
 });
 
@@ -119,6 +121,19 @@ function useServerArg(url) {
     flags.server = normalizeServerArg(url);
     targetCache = undefined;
   }
+}
+
+// Bundles cubby/jobs/* into <dist>/__cubby_jobs/ with jobs.json (names and schedules), which the deploy carries.
+function buildJobs(dist) {
+  const src = resolve('cubby/jobs');
+  if (!existsSync(src)) return;
+  const entries = jobEntries(readdirSync(src));
+  if (!Object.keys(entries).length) return;
+  const jobs = Object.entries(entries).map(([name, file]) => ({ name, schedule: jobSchedule(readFileSync(join(src, file), 'utf8'), `cubby/jobs/${file}`) }));
+  const out = join(dist, '__cubby_jobs');
+  const input = Object.fromEntries(Object.entries(entries).map(([name, file]) => [name, join(src, file)]));
+  run(process.execPath, ['--input-type=module', '-e', jobsBuildScript(input, out)], process.cwd());
+  writeJsonFile(join(out, 'jobs.json'), { format: 1, jobs });
 }
 
 function readSchemaFile(file) {
@@ -321,12 +336,14 @@ const commands = {
     if (!flags['no-build']) run('npm', ['run', 'build'], process.cwd());
     const dist = resolve(flags.dir ?? 'dist');
     if (!existsSync(join(dist, 'index.html'))) throw new CliError(`${dist}/index.html not found — did the build succeed?`);
+    if (!flags['no-build']) buildJobs(dist);
     // 3. Upload.
     const chunks = [];
     for await (const chunk of tar.c({ gzip: true, cwd: dist, portable: true }, ['.'])) chunks.push(chunk);
     const params = deployParams({ ...flags, description: readJsonFile(resolve('package.json')).description });
     const d = await api('POST', `/api/projects/${slug}/deploys?${params}`, { raw: Buffer.concat(chunks), contentType: 'application/gzip' });
-    out(`Deployed ${d.id} to ${await where()} (${d.files} files, ${(d.bytes / 1024).toFixed(0)} KB)\n  ${d.url}`, { ...d, server: serverUrl(), server_name: await serverName() });
+    const jobs = d.jobs?.length ? `\n  jobs: ${d.jobs.join(', ')} (see \`cubby jobs\`)` : '';
+    out(`Deployed ${d.id} to ${await where()} (${d.files} files, ${(d.bytes / 1024).toFixed(0)} KB)\n  ${d.url}${jobs}`, { ...d, server: serverUrl(), server_name: await serverName() });
   },
   async deploys() {
     const list = await api('GET', `/api/projects/${requireProject()}/deploys`);
@@ -336,6 +353,53 @@ const commands = {
     if (!id) throw new CliError('Usage: cubby rollback <deploy-id>');
     const r = await api('POST', `/api/projects/${requireProject()}/rollback`, { body: { deploy: id } });
     out(`Now serving ${id} at ${r.url}`, r);
+  },
+
+  async jobs(sub, name) {
+    const base = `/api/projects/${requireProject()}/jobs`;
+    if (!sub || sub === 'list') {
+      const list = await api('GET', base);
+      return out(formatJobs(list), list);
+    }
+    if (!['run', 'logs', 'pause', 'resume'].includes(sub)) throw new CliError('Usage: cubby jobs [run|logs|pause|resume <job>]');
+    if (!name) throw new CliError(`Usage: cubby jobs ${sub} <job>`);
+    const job = `${base}/${encodeURIComponent(name)}`;
+    if (sub === 'run') {
+      const r = await api('POST', `${job}/run`);
+      out(formatRun(r), r);
+      if (r.status !== 'ok') process.exitCode = 1;
+      return;
+    }
+    if (sub === 'logs') {
+      const params = new URLSearchParams();
+      if (flags.limit) params.set('limit', flags.limit);
+      if (flags.run) params.set('run', flags.run);
+      const list = await api('GET', `${job}/runs?${params}`);
+      return out(list.map(formatRun).join('\n\n') || `No runs of ${name} yet`, list);
+    }
+    const r = await api('PATCH', job, { body: { paused: sub === 'pause' } });
+    out(`${name} ${r.paused ? 'paused: it won\'t run until `cubby jobs resume`' : 'resumed'}`, r);
+  },
+
+  async env(sub, arg) {
+    const base = `/api/projects/${requireProject()}/env`;
+    if (!sub || sub === 'list') {
+      const list = await api('GET', base);
+      return out(formatEnv(list), list);
+    }
+    if (sub === 'set') {
+      // --from-stdin keeps the value out of shell history and process lists.
+      const { key, value } = flags['from-stdin'] ? { key: arg, value: readFileSync(0, 'utf8').replace(/\r?\n$/, '') } : parseEnvAssignment(arg);
+      const r = await api('PUT', `${base}/${encodeURIComponent(key ?? '')}`, { body: { value } });
+      return out(`Set ${r.key}. Jobs read it as env.${r.key}; the value won't be shown again.`, r);
+    }
+    if (sub === 'unset') {
+      if (!arg) throw new CliError('Usage: cubby env unset NAME --yes');
+      if (!flags.yes) throw new CliError(`This deletes the secret ${arg}; its value can't be recovered. Re-run with --yes.`);
+      const r = await api('DELETE', `${base}/${encodeURIComponent(arg)}`);
+      return out(`Removed ${arg}`, r);
+    }
+    throw new CliError('Usage: cubby env list | set NAME=value | set NAME --from-stdin | unset NAME --yes');
   },
 };
 

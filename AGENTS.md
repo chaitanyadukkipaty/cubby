@@ -17,6 +17,28 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 - Rules written by agents use unprefixed `@collection.x`; the server rewrites them. Don't make clients prefix them:
   PocketBase rejects `@collection` in client filters for non-superusers anyway.
 
+## Scheduled jobs (server/src/jobs.js, job-runner.js, job-sandbox.js)
+
+- A job's PocketBase access never leaves the server process: the child sends requests over IPC and
+  `forwardJobRequest` checks them (`jobRequestAllowed`: this app's `/records` and files only, plus
+  `checkForeignRefs`) before forwarding as superuser. Treat every IPC message as untrusted (job code can call
+  `process.send`). Never hand the child a token, and never widen the allowlist to collection, batch or auth routes:
+  as superuser they'd reach other apps and platform collections.
+- The Node permission model doesn't restrict the network, so job-sandbox.js patches `net.Socket#connect` (with a
+  filtered `lookup`) to refuse loopback and private addresses before job code loads. Keep new connection paths
+  going through it; PocketBase listens on 0.0.0.0 inside the container.
+- The child may read only server/src, server/package.json, the PocketBase SDK and its job folder, all as real paths
+  (macOS tmp dirs are symlinks). Keep job-runner.js and job-sandbox.js free of imports beyond Node built-ins, and
+  never put secrets under server/src.
+- V8 can't write coverage under the permission model, so job-runner.js never shows in coverage; test the logic in
+  job-sandbox.js in-process (tests/unit/job-sandbox.test.js).
+- Job code lives at `sites/<app>/jobs-<deployId>/`, beside the site, never inside it: createDeploy moves
+  `__cubby_jobs/` out before the deploy goes live. Backups must include `secrets/` (the key for `cubby env`
+  values) together with the database, or restored secrets can't be decrypted.
+- The scheduler is in-process and per-minute (single server process, like the rest of the in-memory state). Missed
+  minutes are skipped on purpose, and `cubby jobs run` waits on the HTTP response, which is why the time limit is
+  capped under fetch's 300s headers timeout.
+
 ## Schema changes must never lose data
 
 - Push is non-destructive on purpose: fields/collections missing from `schema.json` are kept and reported as `kept`.
@@ -126,8 +148,8 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   `X.Y.Z-dev+<sha>` (server/src/version.js). The launcher picks CLIs by this string, so don't "simplify" it to
   package.json. Docker builds get the commit/tag via `CUBBY_COMMIT`/`CUBBY_TAG` build args from `cubby-server`;
   tests set both to `''` (= unknown, plain version) in tests/helpers/server.js.
-- The daily release check (server/src/updates.js) is the only outbound request a server makes. Tests must never
-  reach GitHub: the helper sets `CUBBY_UPDATE_CHECK=0`; tests that need it point `CUBBY_UPDATE_URL` at a local stub.
+- The daily release check (server/src/updates.js) is the only outbound request Cubby itself makes (app jobs make
+  their own). Tests must never reach GitHub: the helper sets `CUBBY_UPDATE_CHECK=0`; tests that need it point `CUBBY_UPDATE_URL` at a local stub.
 - docker/ref.sh is sourced by both install.sh (downloaded from main when piped) and cubby-server, so it must stay
   compatible with older checkouts' callers. cubby-server runs everything inside `main()` and replaces itself by
   rename at the end of `upgrade`; keep both, or an upgrade can edit the script bash is executing.

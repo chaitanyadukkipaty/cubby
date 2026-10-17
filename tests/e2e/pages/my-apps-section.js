@@ -22,6 +22,20 @@ export class MyAppsSection {
       showInGallery: card.getByLabel('Show in gallery'),
       unlistedBadge: card.getByText('unlisted', { exact: true }),
       deleteButton: card.getByRole('button', { name: 'Delete' }),
+      jobsToggle: card.getByText(/^Scheduled jobs \(\d+\)$/),
+      job: (job) => {
+        const group = card.getByRole('group', { name: `Job ${job}` });
+        return {
+          group,
+          state: group.locator('.badge'),
+          details: group.getByText(/ UTC · /),
+          runButton: group.getByRole('button', { name: 'Run now' }),
+          pauseButton: group.getByRole('button', { name: 'Pause' }),
+          resumeButton: group.getByRole('button', { name: 'Resume' }),
+          lastLogButton: group.getByRole('button', { name: 'Last log' }),
+          log: group.locator('pre'),
+        };
+      },
     };
   }
 

@@ -8,6 +8,7 @@ import * as tar from 'tar';
 import { admin } from './pb.js';
 import { config } from './config.js';
 import { HttpError } from './http.js';
+import { JOBS_DIR, jobsDir, readJobsBundle } from './jobs.js';
 
 const sitesDir = (slug) => join(config.dataDir, 'sites', slug);
 
@@ -44,13 +45,19 @@ export async function extractDeploy(tarball, dir) {
 export async function createDeploy(project, tarball, message = '', client = '') {
   const tmp = join(config.dataDir, 'tmp', `${project.slug}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const { files, bytes } = await extractDeploy(tarball, tmp);
+  const jobs = await readJobsBundle(join(tmp, JOBS_DIR)).catch(async (err) => {
+    await rm(tmp, { recursive: true, force: true });
+    throw err;
+  });
 
   const record = await admin.collection('cubby_deploys').create({ project: project.id, files, bytes, message, client });
   await mkdir(sitesDir(project.slug), { recursive: true });
   await rename(tmp, join(sitesDir(project.slug), record.id));
+  // Job code moves out of the site before the deploy goes live, so it's never served.
+  if (jobs) await rename(join(sitesDir(project.slug), record.id, JOBS_DIR), jobsDir(project.slug, record.id));
   await admin.collection('cubby_projects').update(project.id, { current_deploy: record.id, last_deployed: record.created });
   await pruneDeploys(project);
-  return { id: record.id, files, bytes, message, client, created: record.created };
+  return { id: record.id, files, bytes, message, client, created: record.created, jobs: (jobs ?? []).map((j) => j.name) };
 }
 
 async function pruneDeploys(project) {
@@ -58,6 +65,7 @@ async function pruneDeploys(project) {
   for (const d of deploys.slice(config.keepDeploys)) {
     await admin.collection('cubby_deploys').delete(d.id);
     await rm(join(sitesDir(project.slug), d.id), { recursive: true, force: true });
+    await rm(jobsDir(project.slug, d.id), { recursive: true, force: true });
   }
 }
 

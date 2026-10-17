@@ -49,6 +49,8 @@
   .banner { background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 10px 14px; font-size: 14px; margin-bottom: 16px; }
   .badge { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border-radius: 99px; background: var(--code); color: var(--muted); }
   .badge.accent { background: var(--accent); color: var(--accent-fg); }
+  .badge.ok { color: var(--ok); }
+  .badge.danger { color: var(--danger); }
 
   /* Logged out */
   .hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; min-height: 80vh; }
@@ -161,6 +163,13 @@ function updateNotice(u) {
   if (u.error && !u.latest) return { kind: 'unknown', text: "Couldn't reach GitHub to check for updates. Cubby will try again tomorrow." };
   if (!u.checked_at) return { kind: 'unknown', text: 'Checking for updates…' };
   return { kind: 'current', text: u.latest ? `You're on the latest release (${u.latest}).` : 'No releases published yet.' };
+}
+// A job's state at a glance, from /api/projects/:slug/jobs or /api/admin/jobs.
+function jobState(j) {
+  if (j.paused) return { kind: 'muted', text: 'paused' };
+  if (!j.last_run) return { kind: 'muted', text: 'not run yet' };
+  const s = j.last_run.status;
+  return { kind: s === 'ok' ? 'ok' : s === 'skipped' || s === 'running' ? 'muted' : 'danger', text: s === 'ok' ? 'ok' : s };
 }
 // ---- END PURE HELPERS ----
 
@@ -392,6 +401,47 @@ function renderConnect() {
   );
 }
 
+// An app's scheduled jobs, loaded when its "Jobs" section is opened.
+function jobsPanel(a) {
+  const body = h('div', { class: 'stack small' }, h('p', { class: 'muted' }, 'Loading…'));
+  const draw = async () => {
+    const jobs = await api('GET', `/api/projects/${a.slug}/jobs`);
+    body.replaceChildren(...jobs.map((j) => {
+      const st = jobState(j);
+      const log = h('pre', { hidden: true });
+      return h('div', { class: 'stack', role: 'group', 'aria-label': `Job ${j.name}` },
+        h('div', {}, h('b', { class: 'mono' }, j.name), ' ', h('span', { class: `badge ${st.kind}` }, st.text)),
+        h('p', { class: 'muted' }, h('span', { class: 'mono' }, j.schedule), ' UTC · ', j.last_run ? `last run ${ago(j.last_run.started)}` : 'never run',
+          j.next_run ? ` · next ${new Date(j.next_run).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : ''),
+        h('div', { class: 'row' },
+          h('button', { onclick: async (e) => {
+            e.target.disabled = true;
+            try {
+              const r = await api('POST', `/api/projects/${a.slug}/jobs/${j.name}/run`);
+              toast(`${j.name}: ${r.status}`);
+              await draw();
+            } catch (ex) { toast(ex.message); e.target.disabled = false; }
+          } }, 'Run now'),
+          h('button', { onclick: async () => {
+            await api('PATCH', `/api/projects/${a.slug}/jobs/${j.name}`, { paused: !j.paused });
+            toast(j.paused ? `${j.name} resumed` : `${j.name} paused`);
+            await draw();
+          } }, j.paused ? 'Resume' : 'Pause'),
+          j.last_run ? h('button', { class: 'link', onclick: async () => {
+            if (log.hidden) log.textContent = (await api('GET', `/api/projects/${a.slug}/jobs/${j.name}/runs?limit=1`))[0]?.log || '(no output)';
+            log.hidden = !log.hidden;
+          } }, 'Last log') : null,
+        ),
+        log,
+      );
+    }));
+  };
+  return h('details', { class: 'small', style: 'border-top:1px solid var(--line);padding-top:10px', ontoggle: (e) => { if (e.target.open) draw().catch((ex) => toast(ex.message)); } },
+    h('summary', { class: 'muted', style: 'cursor:pointer' }, `Scheduled jobs (${a.jobs})`),
+    body,
+  );
+}
+
 async function renderMyApps(el) {
   const list = h('div', { class: 'grid' }, h('p', { class: 'muted' }, 'Loading…'));
   el.replaceChildren(setupCard(), h('h3', {}, 'Your apps'), list);
@@ -422,6 +472,7 @@ async function renderMyApps(el) {
         render();
       } }, 'Delete'),
     ),
+    a.jobs ? jobsPanel(a) : null,
   )));
 }
 
@@ -459,13 +510,13 @@ function updateCard(update, s) {
         toast(e.target.checked ? 'Update checks on' : 'Update checks off');
         render();
       } }),
-      'Check for new Cubby releases once a day (asks GitHub; the only outbound request Cubby makes)'),
+      'Check for new Cubby releases once a day (asks GitHub; the only request Cubby itself makes)'),
   );
 }
 
 async function renderAdmin(el) {
   el.replaceChildren(h('p', { class: 'muted' }, 'Loading…'));
-  const [overview, users, apps] = await Promise.all([api('GET', '/api/admin/overview'), api('GET', '/api/admin/users'), api('GET', '/api/admin/apps')]);
+  const [overview, users, apps, jobs] = await Promise.all([api('GET', '/api/admin/overview'), api('GET', '/api/admin/users'), api('GET', '/api/admin/apps'), api('GET', '/api/admin/jobs')]);
   const s = overview.settings;
   const srv = overview.server;
   const invite = inviteText(SERVER, s.signup_code, s.server_name);
@@ -536,6 +587,37 @@ async function renderAdmin(el) {
 
     h('h3', {}, 'Limits'),
     h('div', { class: 'card' }, limitsForm),
+
+    h('h3', {}, `Scheduled jobs (${jobs.length})`),
+    h('div', { class: 'card stack' },
+      h('label', { class: 'check small' },
+        h('input', { type: 'checkbox', checked: s.jobs, onchange: async (e) => {
+          await api('PATCH', '/api/admin/settings', { jobs: e.target.checked });
+          toast(e.target.checked ? 'Jobs will run on schedule' : 'All jobs stopped');
+          render();
+        } }),
+        'Run scheduled jobs (turn off to stop every app\'s jobs at once)'),
+      h('form', { class: 'row', onsubmit: async (e) => {
+        e.preventDefault();
+        try {
+          await api('PATCH', '/api/admin/settings', { job_timeout_s: Number(new FormData(e.target).get('job_timeout_s')) });
+          toast('Time limit saved');
+        } catch (ex) { toast(ex.message); }
+      } },
+        h('label', { class: 'small' }, 'Time limit per run (seconds)', h('input', { type: 'number', name: 'job_timeout_s', min: 5, max: 290, value: s.job_timeout_s, style: 'width:110px;display:block' })),
+        h('button', { type: 'submit', style: 'align-self:flex-end' }, 'Save'),
+      ),
+      jobs.length ? h('div', { class: 'table-wrap' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, 'App'), h('th', {}, 'Job'), h('th', {}, 'Schedule (UTC)'), h('th', {}, 'Last run'))),
+        h('tbody', {}, jobs.map((j) => {
+          const st = jobState(j);
+          return h('tr', {},
+            h('td', {}, j.app, h('div', { class: 'muted small' }, j.owner)), h('td', { class: 'mono' }, j.name), h('td', { class: 'mono' }, j.schedule),
+            h('td', {}, h('span', { class: `badge ${st.kind}` }, st.text), ' ', h('span', { class: 'muted small' }, j.last_run ? ago(j.last_run.started) : '')),
+          );
+        })),
+      )) : h('p', { class: 'muted small' }, 'No app has jobs yet. Apps add them in cubby/jobs/.'),
+    ),
 
     h('h3', {}, `Users (${users.length})`),
     h('div', { class: 'card table-wrap' }, h('table', {},

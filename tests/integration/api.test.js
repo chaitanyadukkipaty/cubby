@@ -25,7 +25,7 @@ describe('bootstrap', () => {
     // Built without git info (tests/helpers/server.js), so the plain package.json version and no commit.
     const pkgVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
     assert.equal(info.data.version, pkgVersion);
-    assert.deepEqual(info.data, { name: 'Test Cubby', version: pkgVersion, commit: null, open_signup: false, https: false, base_domain: `localhost:${srv.port}` });
+    assert.deepEqual(info.data, { name: 'Test Cubby', version: pkgVersion, commit: null, open_signup: false, https: false, base_domain: `localhost:${srv.port}`, features: ['jobs'] });
     assert.equal(info.headers.get('x-cubby-version'), info.data.version);
     const me = await adminCall('GET', '/api/me');
     assert.equal(me.data.email, ADMIN.email);

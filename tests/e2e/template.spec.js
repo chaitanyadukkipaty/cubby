@@ -1,6 +1,6 @@
 // The app a user gets from `cubby init`: created and deployed through the real CLI, then used in a browser.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, expect } from './support/fixtures.js';
@@ -10,7 +10,7 @@ import { ROOT } from '../helpers/server.js';
 
 test.describe.configure({ mode: 'serial' });
 
-let url, appDir, workDir, homeDir;
+let url, appDir, workDir, homeDir, cubby;
 
 test.beforeAll(async () => {
   test.setTimeout(300_000); // real npm install + vite build
@@ -19,12 +19,23 @@ test.beforeAll(async () => {
   workDir = mkdtempSync(join(tmpdir(), 'cubby-e2e-work-'));
   const env = { ...process.env, HOME: homeDir, npm_config_cache: join(homedir(), '.npm') };
   delete env.CUBBY_TOKEN;
-  const cubby = (args, cwd) => execFileSync(process.execPath, [join(ROOT, 'cli/src/launcher.js'), ...args, '--json'], { cwd, env, encoding: 'utf8' });
+  cubby = (args, cwd) => execFileSync(process.execPath, [join(ROOT, 'cli/src/launcher.js'), ...args, '--json'], { cwd, env, encoding: 'utf8' });
 
   const slug = uid('tpl');
   cubby(['login', serverUrl(), '--token', user.token, '--no-skill'], workDir);
   cubby(['init', slug], workDir);
   appDir = join(workDir, slug);
+  // A scheduled job in TypeScript with an npm import, bundled by the template's real Vite on deploy.
+  writeFileSync(join(appDir, 'cubby/jobs/count-tasks.ts'), `import PocketBase from 'pocketbase';
+import type { JobContext } from './_context';
+
+export const schedule = '0 * * * *';
+
+export default async ({ pb, log }: JobContext) => {
+  const tasks = await pb.collection('tasks').getFullList();
+  log(\`tasks: \${tasks.length}, sdk: \${typeof PocketBase}\`);
+};
+`);
   cubby(['deploy', '-m', 'e2e'], appDir);
   url = appUrl(slug);
 });
@@ -98,6 +109,14 @@ test("app users can't see each other's tasks", async ({ browser }) => {
 
   await alice.page.close();
   await bobContext.close();
+});
+
+test('a TypeScript job bundled by the real Vite runs on the server', () => {
+  const run = JSON.parse(cubby(['jobs', 'run', 'count-tasks'], appDir));
+  expect(run.status, run.log).toBe('ok');
+  expect(run.log).toMatch(/tasks: \d+, sdk: function/);
+  const [job] = JSON.parse(cubby(['jobs'], appDir));
+  expect(job).toMatchObject({ name: 'count-tasks', schedule: '0 * * * *', paused: false });
 });
 
 test('the generated app typechecks', () => {

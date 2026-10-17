@@ -81,7 +81,9 @@ The essentials:
 - Frontend: Vite + React + Tailwind in `src/`. Backend: PocketBase, defined in `cubby/schema.json`.
 - Always access collections as `pb.collection(col('name'))`.
 - Keep `<script src="/__cubby/config.js">` in `index.html`.
-- There is no server-side code. All data security lives in each collection's API rules.
+- Browser code can only do what collection API rules allow, so all data security lives in those rules.
+  Server-side features (such as scheduled jobs) vary by server version: the app's `AGENTS.md` and
+  `cubby help --json` say what this server supports. Don't promise what they don't list.
 - Set `description` in `package.json`: it shows in the server's app gallery.
 
 ## Ship

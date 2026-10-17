@@ -58,8 +58,19 @@ describe('logic views', () => {
   });
   test('settingsView exposes exactly the editable settings', () => {
     assert.deepEqual(logic.settingsView({ id: 'x', server_name: "Priya's Cubby", signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9, created: 'z' }),
-      { server_name: "Priya's Cubby", signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9, update_check: true });
+      { server_name: "Priya's Cubby", signup_code: 'c', open_signup: true, max_apps_per_user: 3, max_deploy_mb: 9, update_check: true, jobs: true, job_timeout_s: 60 });
   });
+  test('jobs: the kill switch is stored inverted and the time limit defaults to 60s', () => {
+    assert.equal(logic.settingsView({ jobs_off: true, job_timeout_s: 120 }).jobs, false);
+    assert.equal(logic.settingsView({ jobs_off: true, job_timeout_s: 120 }).job_timeout_s, 120);
+    assert.equal(logic.jobTimeout({ job_timeout_s: 0 }), 60);
+    assert.equal(logic.jobTimeout(undefined), 60);
+    assert.deepEqual(logic.settingsPatch({ jobs: false }), { jobs_off: true });
+    assert.deepEqual(logic.settingsPatch({ jobs: true, job_timeout_s: '90' }), { jobs_off: false, job_timeout_s: 90 });
+    assert.deepEqual(logic.settingsPatch({ jobs: 'no' }), {});
+    for (const bad of [4, 291, 1.5, 'x']) assert.throws(() => logic.settingsPatch({ job_timeout_s: bad }), /job_timeout_s must be a whole number between 5 and 290/, String(bad));
+  });
+  test('/api/info lists the optional features', () => assert.deepEqual(logic.FEATURES, ['jobs']));
   test('the update check is stored inverted, so settings rows from before it existed keep it on', () => {
     assert.equal(logic.settingsView({ update_check_off: true }).update_check, false);
     assert.deepEqual(logic.settingsPatch({ update_check: false }), { update_check_off: true });

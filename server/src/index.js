@@ -9,6 +9,8 @@ import { createDeploy, listDeploys, rollback, removeSite, serveSite, sendPage, a
 import { proxyPocketBase } from './proxy.js';
 import { bootstrap, getSettings, updateSettings, newSignupCode } from './settings.js';
 import { scheduleBackups } from './backups.js';
+import { listJobs, runNow, jobRuns, setPaused, allJobs, scheduleJobs, recoverRuns, deployJobs } from './jobs.js';
+import { listEnv, setEnv, unsetEnv } from './secrets.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
@@ -57,7 +59,7 @@ const deviceLimit = rateLimiter(20, 60_000);
 const routes = [
   ['GET', '/api/info', 'public', async () => {
     const s = await getSettings();
-    return { name: logic.serverName(s), version: config.version, commit: config.commit, open_signup: Boolean(s.open_signup), https: config.publicUrl.startsWith('https'), base_domain: config.baseDomain };
+    return { name: logic.serverName(s), version: config.version, commit: config.commit, open_signup: Boolean(s.open_signup), https: config.publicUrl.startsWith('https'), base_domain: config.baseDomain, features: logic.FEATURES };
   }],
   ['POST', '/api/signup', 'public', async (req) => (authLimit(req), signup(await readJson(req)))],
   ['POST', '/api/login', 'public', async (req) => (authLimit(req), login(await readJson(req)))],
@@ -70,7 +72,7 @@ const routes = [
 
   ['GET', '/api/projects', 'user', async (req, user) => {
     const list = await admin.collection('cubby_projects').getFullList({ filter: admin.filter('owner = {:u}', { u: user.id }), sort: '-created' });
-    return list.map(projectView);
+    return Promise.all(list.map(async (p) => ({ ...projectView(p), jobs: (await deployJobs(p.slug, p.current_deploy)).length })));
   }],
   ['POST', '/api/projects', 'user', async (req, user) => {
     const { slug, name, description } = await readJson(req);
@@ -120,6 +122,22 @@ const routes = [
     await rollback(project, deploy);
     return { ok: true, current_deploy: deploy, url: appUrl(slug) };
   }],
+
+  ['GET', '/api/projects/:slug/jobs', 'user', async (req, user, { slug }) => listJobs(await ownedProject(user, slug))],
+  ['POST', '/api/projects/:slug/jobs/:name/run', 'user', async (req, user, { slug, name }) => runNow(await ownedProject(user, slug), name)],
+  ['GET', '/api/projects/:slug/jobs/:name/runs', 'user', async (req, user, { slug, name }, url) => (
+    jobRuns(await ownedProject(user, slug), name, { limit: url.searchParams.get('limit'), id: url.searchParams.get('run') })
+  )],
+  ['PATCH', '/api/projects/:slug/jobs/:name', 'user', async (req, user, { slug, name }) => {
+    const project = await ownedProject(user, slug);
+    const { paused } = await readJson(req);
+    if (typeof paused !== 'boolean') throw new HttpError(400, 'Body must be { "paused": true | false }');
+    return setPaused(project, name, paused);
+  }],
+
+  ['GET', '/api/projects/:slug/env', 'user', async (req, user, { slug }) => listEnv(await ownedProject(user, slug))],
+  ['PUT', '/api/projects/:slug/env/:key', 'user', async (req, user, { slug, key }) => setEnv(await ownedProject(user, slug), key, (await readJson(req, 64 * 1024)).value)],
+  ['DELETE', '/api/projects/:slug/env/:key', 'user', async (req, user, { slug, key }) => unsetEnv(await ownedProject(user, slug), key)],
 
   ['GET', '/api/gallery', 'user', async () => {
     const list = await admin.collection('cubby_projects').getFullList({ filter: 'unlisted = false && current_deploy != ""', sort: '-last_deployed', expand: 'owner' });
@@ -185,6 +203,7 @@ const routes = [
     const usage = await appUsage(projects);
     return projects.map((p) => ({ ...projectView(p), disk_bytes: usage.get(p.slug) ?? 0 }));
   }],
+  ['GET', '/api/admin/jobs', 'admin', async () => allJobs()],
   ['DELETE', '/api/admin/apps/:slug', 'admin', async (req, user, { slug }) => {
     const project = await findProject(slug);
     if (!project) throw new HttpError(404, `App "${slug}" not found`);
@@ -299,6 +318,8 @@ await startPocketBase();
 await bootstrap();
 await buildCliTarball();
 scheduleBackups();
+await recoverRuns();
+scheduleJobs();
 scheduleUpdateChecks({ checker: updates, isEnabled: updatesOn });
 server.listen(config.port, () => {
   console.log(`cubby ${config.version} on ${config.publicUrl}`);

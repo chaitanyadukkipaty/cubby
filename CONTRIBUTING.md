@@ -71,7 +71,7 @@ docker run --rm -p 8088:80 --env-file .env -e BASE_DOMAIN=localhost:8088 -e PUBL
 
 | Path | What lives there |
 | --- | --- |
-| `server/src/` | Control API, app hosting, PocketBase proxy and tenant isolation, schema translation, device login, backups |
+| `server/src/` | Control API, app hosting, PocketBase proxy and tenant isolation, schema translation, device login, backups, scheduled jobs and app secrets |
 | `server/public/` | The dashboard (single HTML file) and the skill installer script |
 | `cli/src/` | The `cubby` CLI |
 | `cli/template/` | The app template every `cubby init` copies (Vite + React + Tailwind + PocketBase) |

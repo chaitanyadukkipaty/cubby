@@ -20,9 +20,12 @@ export const COMMANDS = [
   { name: 'info', usage: 'cubby info', summary: "This folder's app.", flags: [] },
   { name: 'delete', usage: 'cubby delete <app> --yes', summary: 'Delete an app, its data and every deploy.', flags: ['--yes'] },
   { name: 'schema', usage: 'cubby schema push | pull | drop <collection>[.<field>] --yes', summary: 'Apply or fetch cubby/schema.json (push never deletes); drop deletes a collection or field and its data.', flags: ['--file', '--yes'] },
-  { name: 'deploy', usage: 'cubby deploy [-m <message>] [--unlisted | --listed] [--no-build] [--dir dist]', summary: 'Push the schema if it changed, build, and publish.', flags: ['--message', '--unlisted', '--listed', '--no-build', '--dir', '--file'] },
+  { name: 'deploy', usage: 'cubby deploy [-m <message>] [--unlisted | --listed] [--no-build] [--dir dist]', summary: 'Push the schema if it changed, build (with the jobs in cubby/jobs/), and publish.', flags: ['--message', '--unlisted', '--listed', '--no-build', '--dir', '--file'] },
   { name: 'deploys', usage: 'cubby deploys', summary: 'The last 10 deploys of this app.', flags: [] },
-  { name: 'rollback', usage: 'cubby rollback <deploy-id>', summary: 'Serve an earlier deploy again (frontend only).', flags: [] },
+  { name: 'rollback', usage: 'cubby rollback <deploy-id>', summary: 'Serve an earlier deploy again, with the jobs it shipped (data and secrets are not rolled back).', flags: [] },
+  // Scheduled jobs
+  { name: 'jobs', usage: 'cubby jobs [run | logs | pause | resume <job>] [--limit <n>] [--run <id>]', summary: 'Scheduled jobs from cubby/jobs/: list them with next and last run; run one now and print its log (exits 1 if it fails); show past logs; pause or resume.', flags: ['--limit', '--run'] },
+  { name: 'env', usage: 'cubby env list | set <NAME>=<value> | set <NAME> --from-stdin | unset <NAME> --yes', summary: 'Secrets for jobs, read as env.NAME. Values are encrypted and never shown again.', flags: ['--from-stdin', '--yes'] },
 ];
 
 // Accepted by every command.
