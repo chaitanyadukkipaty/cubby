@@ -146,6 +146,9 @@ All notable changes to Cubby are documented here. The format follows
 - Regenerate on the dashboard replaces only the manual token (for scripts and CI). Agents keep their own keys; revoke
   them one at a time with `cubby agents revoke`.
 - A key's last use is now written at most once a minute instead of on every request.
+- `GET /api/metrics` (and `cubby metrics --json` without an app) gives each app its views and visitors per UTC day
+  (`days: [{ start, views, visitors }]`). The dashboard's Home and Apps list draw every app's 7-day views from that
+  one request instead of asking each app for its full report.
 
 ### Fixed
 

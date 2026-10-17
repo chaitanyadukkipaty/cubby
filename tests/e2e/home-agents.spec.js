@@ -15,6 +15,9 @@ test('Home: first run shows the connect steps; once an agent deploys, the timeli
   const slug = uid('feed');
   await api.createApp(agent, slug);
   await api.deploy(agent, slug);
+  const perApp = [];
+  const onRequest = (r) => { if (/\/api\/projects\/[^/]+\/metrics/.test(r.url())) perApp.push(r.url()); };
+  page.on('request', onRequest);
   await page.reload();
 
   await expect(home.steps).toHaveCount(0);
@@ -24,6 +27,8 @@ test('Home: first run shows the connect steps; once an agent deploys, the timeli
   await expect(home.agentsCard.getByRole('link', { name: 'Claude Code · e2e-mbp' })).toBeVisible();
   await expect(home.activeNow.getByRole('link', { name: slug })).toBeVisible();
   await expect(home.views.getByRole('img', { name: /^Views per day, last 7 days/ })).toBeVisible();
+  page.off('request', onRequest);
+  expect(perApp, 'the summary draws from GET /api/metrics alone').toEqual([]);
 
   // Prompt chips copy fixed templates naming the app and the server.
   await home.nextPrompts.getByRole('button', { name: /^Copy prompt: Add a dark mode toggle/ }).click();

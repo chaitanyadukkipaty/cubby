@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createMetrics, countsAsView, parseRange, pocketbaseStore, visitorId, metricsClock, appAccounts, isPerson, rollupMetrics, summarizeMetrics } from '../../server/src/metrics.js';
+import { createMetrics, countsAsView, parseRange, pocketbaseStore, visitorId, metricsClock, appAccounts, isPerson, rollupMetrics, summarizeMetrics, appMetricsRow } from '../../server/src/metrics.js';
 
 // In-memory stand-in for the cubby_metrics collection.
 function memoryStore() {
@@ -623,5 +623,25 @@ describe('admin totals', () => {
       { start: 'D2', views: 3, visitors: 1, api_requests: 2, api_errors: 0, peak_active: 4 },
     ]);
     assert.deepEqual(s.hours, [{ start: 'H1', views: 8, peak_active: 2, api_requests: 4, api_errors: 2 }]);
+  });
+});
+
+// GET /api/metrics: one row per app, with a compact daily series so the dashboard needs no per-app request.
+describe('the per-app list row', () => {
+  test('has the totals and each day as { start, views, visitors } only, without hours, paths or API counts', () => {
+    const report = {
+      from: 'F', to: 'T', views: 7, visitors: 3, active_now: 1, peak_active: 2, api_requests: 10, api_errors: 1, api_error_rate: 0.1,
+      top_paths: [{ path: '/', views: 7 }], hours: [{ start: 'H1', views: 7 }],
+      days: [{ start: 'D1', views: 3, visitors: 1, api_requests: 4, api_errors: 0, peak_active: 1 }, { start: 'D2', views: 4, visitors: 2, api_requests: 6, api_errors: 1, peak_active: 2 }],
+    };
+    assert.deepEqual(appMetricsRow({ slug: 'polls', name: 'Polls' }, '7d', report), {
+      app: 'polls', name: 'Polls', range: '7d', from: 'F', to: 'T', views: 7, visitors: 3, active_now: 1, peak_active: 2,
+      api_requests: 10, api_errors: 1, api_error_rate: 0.1,
+      days: [{ start: 'D1', views: 3, visitors: 1 }, { start: 'D2', views: 4, visitors: 2 }],
+    });
+  });
+  test('days without traffic count zero', () => {
+    const row = appMetricsRow({ slug: 'a', name: 'A' }, '24h', { views: 0, visitors: 0, days: [{ start: 'D1' }] });
+    assert.deepEqual(row.days, [{ start: 'D1', views: 0, visitors: 0 }]);
   });
 });

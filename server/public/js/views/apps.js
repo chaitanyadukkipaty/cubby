@@ -4,7 +4,7 @@
 import { h, ago, fmtBytes, fmtCount, jobState } from '../helpers.js';
 import { emptyPrompt, lastDeployers, monogram } from '../feed.js';
 import { chartBuckets, deployMarkers, timeTicks } from '../charts.js';
-import { RANGES, chartSummary, kpis, rangeFrom, topPathRows } from '../app-view.js';
+import { RANGES, chartSummary, kpis, rangeFrom, topPathRows, weekViews } from '../app-view.js';
 import { APP_TABS, appPath } from '../routes.js';
 import { api, rerender } from '../session.js';
 import { navigate } from '../router.js';
@@ -41,16 +41,16 @@ export async function renderApps(el) {
         h('td', { class: 'muted hide-sm', 'data-col': 'deploy' }, a.current_deploy ? [`Deployed ${ago(a.last_deployed)}`, ...byLine(deployers[a.slug])] : 'Not deployed yet'),
         h('td', { class: 'r hide-sm' }, a.current_deploy ? h('a', { href: a.url, target: '_blank', rel: 'noopener', 'aria-label': `Open ${a.name}` }, 'Open ↗') : null));
     })))));
-  // Metrics fill in once they arrive.
-  await Promise.all(apps.map(async (a) => {
+  // Metrics fill in once they arrive: one request for every app's numbers and daily views.
+  const metrics = await api('GET', '/api/metrics?range=7d').catch(() => []);
+  for (const a of apps) {
     const c = cells.get(a.slug);
-    try {
-      const m = await api('GET', `/api/projects/${a.slug}/metrics?range=7d`);
-      c.active.replaceChildren(m.active_now ? h('span', { class: 'live-n' }, h('span', { class: 'dot live', 'aria-hidden': 'true' }), fmtCount(m.active_now)) : '–');
-      const days = m.days.slice(-7).map((d) => d.views);
-      c.views.replaceChildren(h('span', { class: 'num' }, fmtCount(m.views)), sparkSvg(days, { w: 96, h: 22, label: `${a.name} views per day: ${days.join(', ')}` }));
-    } catch { c.active.textContent = '–'; c.views.textContent = '–'; }
-  }));
+    const m = metrics.find((r) => r.app === a.slug);
+    if (!m) { c.active.textContent = '–'; c.views.textContent = '–'; continue; }
+    c.active.replaceChildren(m.active_now ? h('span', { class: 'live-n' }, h('span', { class: 'dot live', 'aria-hidden': 'true' }), fmtCount(m.active_now)) : '–');
+    const { values } = weekViews([m]);
+    c.views.replaceChildren(h('span', { class: 'num' }, fmtCount(m.views)), sparkSvg(values, { w: 96, h: 22, label: `${a.name} views per day: ${values.join(', ')}` }));
+  }
 }
 
 // ---------- /apps/:slug ----------

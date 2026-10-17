@@ -3,7 +3,7 @@
 // connect steps instead. Only the signed-in user's own apps are shown here; friends' apps are on Explore.
 import { h, ago, fmtCount, setupPrompt } from '../helpers.js';
 import { monogram, needsAttention, nextPrompts } from '../feed.js';
-import { sumSeries } from '../charts.js';
+import { weekViews } from '../app-view.js';
 import { appPath } from '../routes.js';
 import { state, api, rerender, SERVER } from '../session.js';
 import { agentBadge, copy, copyChip, icon, pageHeader, toast } from '../ui.js';
@@ -38,11 +38,13 @@ function agentsCard(agents) {
     connect);
 }
 
-// Fills the summary cards once the metrics arrive (the feed draws first).
+// Fills the summary cards once the metrics arrive (the feed draws first). Two list requests cover every app: the
+// last 24 hours (active now, and API errors worth a look) and 7 days by day (the views card). Jobs aren't in a list
+// response, so they're asked per app (only apps that have jobs).
 async function loadSummary(apps, activeCard, viewsCard, attention) {
   const [now, weekly, jobs] = await Promise.all([
     api('GET', '/api/metrics?range=24h'),
-    Promise.all(apps.map((a) => api('GET', `/api/projects/${a.slug}/metrics?range=7d`).catch(() => null))),
+    api('GET', '/api/metrics?range=7d'),
     Promise.all(apps.filter((a) => a.jobs).map((a) => api('GET', `/api/projects/${a.slug}/jobs`).then((list) => list.map((j) => ({ ...j, app: a.slug })), () => []))),
   ]);
   const name = (slug) => apps.find((a) => a.slug === slug)?.name ?? slug;
@@ -52,10 +54,9 @@ async function loadSummary(apps, activeCard, viewsCard, attention) {
       h('span', { class: `dot${m.active_now ? ' live' : ''}`, 'aria-hidden': 'true' }), h('a', { href: appPath(m.app), class: 'grow' }, name(m.app)),
       h('span', { class: 'num' }, m.active_now ? fmtCount(m.active_now) : '–')))));
 
-  const days = sumSeries(weekly.filter(Boolean).map((r) => r.days), 'views').slice(-7);
-  const views = days.reduce((n, d) => n + d.value, 0);
-  viewsCard.replaceChildren(h('div', { class: 'side-card-h' }, h('h3', {}, 'Views · 7 days'), h('b', { class: 'big' }, fmtCount(views))),
-    sparkSvg(days.map((d) => d.value), { w: 240, h: 40, label: `Views per day, last 7 days: ${days.map((d) => d.value).join(', ')}` }));
+  const week = weekViews(weekly);
+  viewsCard.replaceChildren(h('div', { class: 'side-card-h' }, h('h3', {}, 'Views · 7 days'), h('b', { class: 'big' }, fmtCount(week.total))),
+    sparkSvg(week.values, { w: 240, h: 40, label: `Views per day, last 7 days: ${week.values.join(', ')}` }));
 
   const items = needsAttention({ apps, jobs: jobs.flat(), metrics: now });
   attention.replaceChildren(...items.map((i) => h('div', { class: 'attention', role: 'group', 'aria-label': `${name(i.app)}: ${i.text}` },

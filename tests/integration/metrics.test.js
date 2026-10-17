@@ -150,6 +150,14 @@ describe('who sees metrics', () => {
     assert.deepEqual((await bob('GET', '/api/metrics')).data.map((a) => [a.app, a.views]), [['bobs-app', 0]]);
     assert.equal((await alice('GET', '/api/metrics?range=week')).status, 400);
   });
+  test("/api/metrics has each app's views and visitors per UTC day, matching its own report", async () => {
+    const [list, own] = await Promise.all([alice('GET', '/api/metrics?range=7d'), alice('GET', '/api/projects/counted/metrics?range=7d')]);
+    const row = list.data.find((a) => a.app === 'counted');
+    assert.deepEqual(row.days, own.data.days.map(({ start, views, visitors }) => ({ start, views, visitors })));
+    assert.ok(row.days.length >= 7);
+    assert.equal(row.days.reduce((n, d) => n + d.views, 0), 4);
+    assert.equal(row.hours, undefined, 'the list stays compact');
+  });
 });
 
 // Active now, API health and accounts, on a server of their own: its clock can be moved forward, and a PocketBase

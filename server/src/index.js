@@ -13,7 +13,7 @@ import { scheduleBackups, createBackupRunner, runMaintenance } from './backups.j
 import { scanStorage, createTtlCache, listBackups, checkBackupDelete, planRetention, deleteBackup } from './storage.js';
 import { listJobs, runNow, jobRuns, setPaused, allJobs, scheduleJobs, recoverRuns, deployJobs } from './jobs.js';
 import { listEnv, setEnv, unsetEnv } from './secrets.js';
-import { createMetrics, pocketbaseStore, countsAsView, isPerson, parseRange, metricsClock, appAccounts, summarizeMetrics } from './metrics.js';
+import { createMetrics, pocketbaseStore, countsAsView, isPerson, parseRange, metricsClock, appAccounts, summarizeMetrics, appMetricsRow } from './metrics.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
@@ -208,10 +208,7 @@ const routes = [
     const hours = parseRange(range);
     const list = await admin.collection('cubby_projects').getFullList({ filter: admin.filter('owner = {:u}', { u: user.id }), sort: 'slug' });
     const report = await metrics.report(list.map((p) => p.id), hours);
-    return list.map((p) => {
-      const { from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate } = report[p.id];
-      return { app: p.slug, name: p.name, range, from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate };
-    });
+    return list.map((p) => appMetricsRow(p, range, report[p.id]));
   }],
 
   // Data: what's in an app's collections, and clearing it (after a snapshot). Owners for their apps; admins any app.
