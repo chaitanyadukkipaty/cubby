@@ -1,7 +1,8 @@
 // An in-memory stand-in for the superuser PocketBase client, for unit-testing data clears and restores: collections
 // (from fake-pb.js), records with ids, cascades on delete, truncate, uploaded files under
 // <dataDir>/pb_data/storage/<collectionId>/<recordId>/ and a small filter language: clauses joined by `||` / `&&`,
-// each `field op value` with op `=`, `!=`, `?=`, `>`, `<` and value a "string", number, true/false or ''.
+// each `field op value` (or `relation.id op value`) with op `=`, `!=`, `?=`, `>`, `<` and value a "string", number,
+// true/false or ''. Cascades, relation filters and failed deletes behave like PocketBase 0.40.5 (see deleteRecord).
 // Auth records never expose a password, like the real one.
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,16 +19,26 @@ function parseValue(text) {
   throw Object.assign(new Error(`fake filter: bad value ${t}`), { status: 400, response: { message: 'Invalid filter' } });
 }
 
-// Returns a predicate for `filter`, or throws a 400 like PocketBase for anything it can't read.
-export function compileFilter(filter) {
+// Returns a predicate for `filter` on records of `col`, or throws a 400 like PocketBase for anything it can't read.
+// Like PocketBase 0.40.5 (checked against the real one): on a relation holding several ids, `rel ?= "x"` matches
+// nothing; `rel.id ?= "x"` matches records holding x among others and `rel.id = "x"` those holding only x.
+export function compileFilter(filter, col) {
   if (!filter) return () => true;
+  const multiRelation = (name) => col?.fields.some((f) => f.name === name && f.type === 'relation' && (f.maxSelect ?? 1) > 1);
   const ors = filter.split(/\s*\|\|\s*/).map((part) => part.replace(/^\(|\)$/g, '').split(/\s*&&\s*/).map((clause) => {
     const m = /^([a-zA-Z_][a-zA-Z0-9_.]*)\s*(\?=|!=|=|>|<)\s*(.+)$/.exec(clause.replace(/^\(|\)$/g, '').trim());
     if (!m) throw Object.assign(new Error(`fake filter: bad clause ${clause}`), { status: 400, response: { message: 'Invalid filter' } });
-    const [, field, op, raw] = m;
+    const [, path, op, raw] = m;
     const want = parseValue(raw);
+    const byId = path.endsWith('.id');
+    const field = byId ? path.slice(0, -3) : path;
     return (r) => {
       const v = r[field] ?? '';
+      if (byId && op !== '!=') {
+        const list = [].concat(v).filter(Boolean);
+        return op === '?=' ? list.includes(want) : list.length > 0 && list.every((x) => x === want);
+      }
+      if (op === '?=' && multiRelation(field)) return false;
       if (op === '?=') return Array.isArray(v) ? v.includes(want) : v === want;
       if (op === '=') return Array.isArray(v) ? (want === '' ? v.length === 0 : false) : v === want;
       if (op === '!=') return Array.isArray(v) ? (want === '' ? v.length > 0 : true) : v !== want;
@@ -50,25 +61,45 @@ export function fakePocketBase({ dataDir } = {}) {
   };
   const storage = (col, id) => join(dataDir, 'pb_data', 'storage', col.id, id);
 
-  // Deletes a record the way PocketBase does: records pointing at it by a cascading relation go too; other relations
-  // pointing at it lose that id. A required non-cascading relation blocks the delete.
-  function deleteRecord(col, id) {
+  // Deletes a record the way PocketBase does (checked against 0.40.5): each record pointing at it loses that id; one
+  // left with no ids in a cascading relation is deleted too (and so on down), and one left with none in a required
+  // relation that doesn't cascade fails the whole delete, which changes nothing (PocketBase runs it in a transaction).
+  // Uploaded files go only once the delete went through.
+  const requiredRef = () => Object.assign(new Error('Failed to delete record. Make sure that the record is not part of a required relation reference.'), { status: 400, response: { status: 400, data: {}, message: 'Failed to delete record. Make sure that the record is not part of a required relation reference.' } });
+  function deleteCascading(col, id, gone) {
     const rows = rowsOf(col);
     if (!rows.has(id)) throw notFound();
+    gone.push([col, id]);
     for (const other of collections.cols.values()) {
       for (const f of other.fields.filter((x) => x.type === 'relation' && x.collectionId === col.id)) {
         for (const r of [...rowsOf(other).values()]) {
+          if (gone.some(([c, x]) => c === other && x === r.id)) continue;
           const v = r[f.name];
-          const hit = Array.isArray(v) ? v.includes(id) : v === id;
-          if (!hit) continue;
-          if (f.cascadeDelete) deleteRecord(other, r.id);
-          else if (f.required) throw Object.assign(new Error('referenced'), { status: 400, response: { message: 'The record is referenced' } });
-          else r[f.name] = Array.isArray(v) ? v.filter((x) => x !== id) : '';
+          const ids = [].concat(v).filter(Boolean);
+          if (!ids.includes(id)) continue;
+          const left = ids.filter((x) => x !== id);
+          if (f.cascadeDelete && !left.length) { deleteCascading(other, r.id, gone); continue; }
+          if (f.required && !left.length) throw requiredRef();
+          r[f.name] = Array.isArray(v) ? left : '';
         }
       }
     }
     rows.delete(id);
-    if (dataDir) rmSync(storage(col, id), { recursive: true, force: true });
+  }
+  function atomically(fn) {
+    const saved = new Map([...records].map(([k, rows]) => [k, new Map([...rows].map(([id, r]) => [id, structuredClone(r)]))]));
+    try {
+      return fn();
+    } catch (err) {
+      records.clear();
+      for (const [k, rows] of saved) records.set(k, rows);
+      throw err;
+    }
+  }
+  function deleteRecord(col, id) {
+    const gone = [];
+    atomically(() => deleteCascading(col, id, gone));
+    if (dataDir) for (const [c, x] of gone) rmSync(storage(c, x), { recursive: true, force: true });
   }
 
   async function writeRecord(col, data, existing) {
@@ -110,9 +141,17 @@ export function fakePocketBase({ dataDir } = {}) {
   const pb = {
     collections: Object.assign(collections, {
       async getOne(idOrName) { const c = colOf(idOrName); if (!c) throw notFound(); return structuredClone(c); },
+      // All or nothing, like PocketBase (one transaction).
       async truncate(idOrName) {
         const c = colOf(idOrName);
-        for (const id of [...rowsOf(c).keys()]) deleteRecord(c, id);
+        const gone = [];
+        try {
+          atomically(() => { for (const id of [...rowsOf(c).keys()]) if (rowsOf(c).has(id)) deleteCascading(c, id, gone); });
+        } catch (err) {
+          if (err.status !== 400) throw err;
+          throw Object.assign(new Error('Failed to truncate collection (most likely due to required cascade delete record references).'), { status: 400, response: { status: 400, data: {}, message: 'Failed to truncate collection (most likely due to required cascade delete record references).' } });
+        }
+        if (dataDir) for (const [col, x] of gone) rmSync(storage(col, x), { recursive: true, force: true });
         return true;
       },
     }),
@@ -120,7 +159,7 @@ export function fakePocketBase({ dataDir } = {}) {
     collection(name) {
       const col = () => { const c = colOf(name); if (!c) throw notFound(); return c; };
       const matching = (filter, sort) => {
-        const keep = compileFilter(filter);
+        const keep = compileFilter(filter, col());
         const list = [...rowsOf(col()).values()].filter(keep);
         if (sort) list.sort((a, b) => String(a[sort.replace(/^-/, '')]).localeCompare(String(b[sort.replace(/^-/, '')])) * (sort.startsWith('-') ? -1 : 1));
         return list;

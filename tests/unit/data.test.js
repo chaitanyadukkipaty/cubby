@@ -105,7 +105,7 @@ describe('emptying collections', () => {
   });
   test('if the snapshot can\'t be written, nothing is deleted and no half snapshot is left', async () => {
     const real = pb.collection.bind(pb);
-    pb.collection = (name) => ({ ...real(name), getList: async (page, perPage, opts) => { if (opts?.skipTotal) throw new Error('disk full'); return real(name).getList(page, perPage, opts); } });
+    pb.collection = (name) => ({ ...real(name), getList: async (page, perPage, opts) => { if (opts?.skipTotal && !opts.fields) throw new Error('disk full'); return real(name).getList(page, perPage, opts); } });
     await assert.rejects(clearData('shop', { collections: ['products'] }, deps()), /disk full/);
     pb.collection = real;
     assert.equal(pb.records('shop__products').length, 2);
@@ -229,6 +229,34 @@ describe('deleting by filter or ids', () => {
       { collection: 'products', ids: [] }, { collection: 'products', ids: ['bad id!'] }, { collection: 'products', filter: 'a = 1', drop: true },
     ]) await assert.rejects(clearData('shop', body, deps()), (e) => e.status === 400, JSON.stringify(body));
     await assert.rejects(clearData('shop', { collection: 'other__products', ids: ['x1'] }, deps()), (e) => e.status === 404);
+  });
+});
+
+describe('relations holding several ids', () => {
+  beforeEach(async () => {
+    await applySchema('shop', { collections: [
+      { name: 'tags', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'posts', fields: [{ name: 't', type: 'text' }, { name: 'tags', type: 'relation', collection: 'tags', maxSelect: 5 }] },
+      { name: 'bundles', fields: [{ name: 'items', type: 'relation', collection: 'posts', maxSelect: 10, cascadeDelete: true }] },
+    ] }, pb.collections);
+    await pb.collection('shop__tags').create({ id: 't1', n: 'x' });
+    await pb.collection('shop__tags').create({ id: 't2', n: 'y' });
+    await pb.collection('shop__posts').create({ id: 'pa', t: 'A', tags: ['t1', 't2'] });
+    await pb.collection('shop__posts').create({ id: 'pb', t: 'B', tags: ['t1'] });
+    await pb.collection('shop__bundles').create({ id: 'bu1', items: ['pa'] });
+    await pb.collection('shop__bundles').create({ id: 'bu2', items: ['pa', 'pb'] });
+  });
+  const snapshotted = (r, name) => lines(join(dataDir, 'snapshots', 'shop', r.snapshot.id, 'records', `${name}.jsonl`)).map((x) => x.id);
+  test('by id: a cascading one deletes records left with no ids, and the others lose one; both are snapshotted', async () => {
+    const r = await clearData('shop', { collection: 'posts', ids: ['pa'] }, deps());
+    assert.deepEqual(r.cascade, [{ collection: 'bundles', field: 'items', records: 1, deletes: true }, { collection: 'bundles', field: 'items', records: 1, deletes: false }]);
+    assert.deepEqual(pb.records('shop__bundles').map((x) => [x.id, x.items]), [['bu2', ['pb']]], 'PocketBase deleted bu1 and unlinked bu2');
+    assert.deepEqual(snapshotted(r, 'bundles').sort(), ['bu1', 'bu2']);
+  });
+  test('by filter: records that lose one of their ids by a relation that doesn\'t cascade are counted and snapshotted', async () => {
+    const r = await clearData('shop', { collection: 'tags', filter: 'n = "x"' }, deps());
+    assert.deepEqual(r.cascade, [{ collection: 'posts', field: 'tags', records: 2, deletes: false }]);
+    assert.deepEqual(snapshotted(r, 'posts'), ['pa', 'pb']);
   });
 });
 

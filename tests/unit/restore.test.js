@@ -35,6 +35,30 @@ afterEach(() => rmSync(dataDir, { recursive: true, force: true }));
 const clear = (body) => clearData('shop', body, deps());
 const restore = async (id, opts = {}, extra) => restoreSnapshot(await findSnapshot(dataDir, id), opts, deps(extra));
 
+// Every record of the app, by collection, without what a restore can't keep (created/updated, upload names: an upload
+// is its size instead). Comparing this before a clear and after its restore shows anything lost.
+function dump() {
+  const out = {};
+  for (const col of [...pb.collections.cols.values()].filter((c) => c.name.startsWith('shop__')).sort((a, b) => a.name.localeCompare(b.name))) {
+    const files = col.fields.filter((f) => f.type === 'file').map((f) => f.name);
+    out[col.name.slice(6)] = pb.records(col.name).map(({ created, updated, password, ...r }) => {
+      for (const f of files) r[f] = [].concat(r[f]).filter(Boolean).map((name) => readFileSync(join(dataDir, 'pb_data', 'storage', col.id, r.id, name)).length);
+      return r;
+    }).sort((a, b) => a.id.localeCompare(b.id));
+  }
+  return out;
+}
+// Clears with `body`, checks it lost something, restores and checks everything is back as it was.
+async function clearAndRestore(body) {
+  const before = dump();
+  const cleared = await clear(body);
+  assert.notDeepEqual(dump(), before, 'the clear deleted something');
+  const restored = await restore(cleared.snapshot.id);
+  assert.deepEqual(restored.failures, []);
+  assert.deepEqual(dump(), before, 'the restore brings back everything the clear took');
+  return { cleared, restored };
+}
+
 describe('restoring a snapshot', () => {
   test('brings back the records with their ids, the ones lost by cascade, and the uploaded files', async () => {
     const { snapshot } = await clear({ collections: ['products'] });
@@ -108,6 +132,41 @@ describe('relations', () => {
     const r = await restore(snapshot.id);
     assert.deepEqual(r.collections.map((c) => [c.name, c.restored, c.failed]), [['folders', 2, 0]]);
     assert.equal(pb.records('shop__folders').find((x) => x.id === 'fa').parent, 'fb');
+  });
+});
+
+describe('everything a clear deletes comes back', () => {
+  test('a thread on a cascading self-relation: replies of replies of the deleted comment too', async () => {
+    await applySchema('shop', { collections: [{ name: 'comments', fields: [{ name: 'body', type: 'text' }, { name: 'parent', type: 'relation', collection: 'comments', cascadeDelete: true }] }] }, pb.collections);
+    await pb.collection('shop__comments').create({ id: 'top', body: 'top' });
+    await pb.collection('shop__comments').create({ id: 'rep1', body: 'r1', parent: 'top' });
+    await pb.collection('shop__comments').create({ id: 'rep2', body: 'r2', parent: 'rep1' });
+    await pb.collection('shop__comments').create({ id: 'other', body: 'other' });
+    const { cleared } = await clearAndRestore({ collection: 'comments', ids: ['top'] });
+    assert.deepEqual(cleared.cascade, [{ collection: 'comments', field: 'parent', records: 2, deletes: true }]);
+  });
+  async function chain() {
+    await applySchema('shop', { collections: [
+      { name: 'a', fields: [{ name: 't', type: 'text' }] },
+      { name: 'b', fields: [{ name: 'a', type: 'relation', collection: 'a', cascadeDelete: true }] },
+      { name: 'c', fields: [{ name: 'b', type: 'relation', collection: 'b', cascadeDelete: true }] },
+    ] }, pb.collections);
+    await pb.collection('shop__a').create({ id: 'a1', t: 'x' });
+    await pb.collection('shop__a').create({ id: 'a2', t: 'y' });
+    await pb.collection('shop__b').create({ id: 'b1', a: 'a1' });
+    await pb.collection('shop__c').create({ id: 'c1', b: 'b1' });
+    await pb.collection('shop__c').create({ id: 'c2', b: 'b1' });
+  }
+  test('a chain a <- b <- c cleared by id: what cascades two hops away too, in the preview and the snapshot', async () => {
+    await chain();
+    const dry = await clear({ collection: 'a', ids: ['a1'], dry_run: true });
+    assert.deepEqual(dry.cascade, [{ collection: 'b', field: 'a', records: 1, deletes: true }, { collection: 'c', field: 'b', records: 2, deletes: true }]);
+    await clearAndRestore({ collection: 'a', ids: ['a1'] });
+  });
+  test('the same chain when a is emptied whole', async () => {
+    await chain();
+    const { cleared } = await clearAndRestore({ collections: ['a'] });
+    assert.deepEqual(cleared.cascade, [{ collection: 'b', field: 'a', records: 1, deletes: true }, { collection: 'c', field: 'b', records: 2, deletes: true }]);
   });
 });
 

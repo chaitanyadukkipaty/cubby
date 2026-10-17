@@ -366,3 +366,78 @@ describe('snapshot lifetime', () => {
     assert.ok(!existsSync(join(srv.dataDir, 'snapshots', 'goner')));
   });
 });
+
+// Each scenario builds a small app, dumps every record, clears, restores, and compares: nothing may be lost.
+describe('whatever a clear deletes, a restore brings back (real PocketBase cascades)', () => {
+  const make = async (slug, collections) => {
+    assert.equal((await owner('POST', '/api/projects', { body: { slug } })).status, 200);
+    const r = await owner('PUT', `/api/projects/${slug}/schema`, { body: { collections } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+  };
+  const C = (slug, name) => pb.collection(`${slug}__${name}`);
+  // Records without what a restore can't keep: created/updated, and upload names (the bytes are compared instead).
+  const dump = async (slug) => {
+    const out = {};
+    for (const col of (await pb.collections.getFullList()).filter((c) => c.name.startsWith(`${slug}__`)).sort((a, b) => a.name.localeCompare(b.name))) {
+      const files = col.fields.filter((f) => f.type === 'file').map((f) => f.name);
+      out[col.name.slice(slug.length + 2)] = await Promise.all((await pb.collection(col.name).getFullList({ sort: 'id' })).map(async ({ created, updated, ...r }) => {
+        for (const f of files) r[f] = await Promise.all([].concat(r[f]).filter(Boolean).map(async (name) => (await (await fetch(pb.files.getURL(r, name))).arrayBuffer()).byteLength));
+        return r;
+      }));
+    }
+    return out;
+  };
+  const clearAndRestore = async (slug, body) => {
+    const before = await dump(slug);
+    const cleared = await owner('POST', `/api/projects/${slug}/data/clear`, { body });
+    assert.equal(cleared.status, 200, JSON.stringify(cleared.data));
+    assert.notDeepEqual(await dump(slug), before, 'the clear deleted something');
+    const restored = await owner('POST', `/api/snapshots/${cleared.data.snapshot.id}/restore`, { body: {} });
+    assert.equal(restored.status, 200, JSON.stringify(restored.data));
+    assert.deepEqual(restored.data.failures, []);
+    assert.deepEqual(await dump(slug), before, 'everything the clear took is back');
+    return { cleared: cleared.data, restored: restored.data };
+  };
+
+  test('a thread on a cascading self-relation', async () => {
+    await make('thread', [{ name: 'comments', fields: [{ name: 'body', type: 'text' }, { name: 'parent', type: 'relation', collection: 'comments', cascadeDelete: true }] }]);
+    await C('thread', 'comments').create({ id: 'top000000000001', body: 'top' });
+    await C('thread', 'comments').create({ id: 'rep000000000001', body: 'r1', parent: 'top000000000001' });
+    await C('thread', 'comments').create({ id: 'rep000000000002', body: 'r2', parent: 'rep000000000001' });
+    await C('thread', 'comments').create({ id: 'other0000000001', body: 'other' });
+    const dry = await owner('POST', '/api/projects/thread/data/clear', { body: { collection: 'comments', ids: ['top000000000001'], dry_run: true } });
+    assert.deepEqual(dry.data.cascade, [{ collection: 'comments', field: 'parent', records: 2, deletes: true }]);
+    await clearAndRestore('thread', { collection: 'comments', ids: ['top000000000001'] });
+  });
+  test('a chain a <- b <- c, cleared by id and emptied whole', async () => {
+    await make('chain', [
+      { name: 'a', fields: [{ name: 't', type: 'text' }] },
+      { name: 'b', fields: [{ name: 'a', type: 'relation', collection: 'a', cascadeDelete: true }] },
+      { name: 'c', fields: [{ name: 'b', type: 'relation', collection: 'b', cascadeDelete: true }] },
+    ]);
+    await C('chain', 'a').create({ id: 'aaaaaaaaaaaaaa1', t: 'x' });
+    await C('chain', 'a').create({ id: 'aaaaaaaaaaaaaa2', t: 'y' });
+    await C('chain', 'b').create({ id: 'bbbbbbbbbbbbbb1', a: 'aaaaaaaaaaaaaa1' });
+    for (const id of ['ccccccccccccc01', 'ccccccccccccc02']) await C('chain', 'c').create({ id, b: 'bbbbbbbbbbbbbb1' });
+    const both = [{ collection: 'b', field: 'a', records: 1, deletes: true }, { collection: 'c', field: 'b', records: 2, deletes: true }];
+    assert.deepEqual((await clearAndRestore('chain', { collection: 'a', ids: ['aaaaaaaaaaaaaa1'] })).cleared.cascade, both);
+    assert.deepEqual((await clearAndRestore('chain', { collections: ['a'] })).cleared.cascade, both);
+  });
+  test('relations holding several ids: matched by `field.id ?=`, so counts and snapshots see them', async () => {
+    await make('multi', [
+      { name: 'tags', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'posts', fields: [{ name: 't', type: 'text' }, { name: 'tags', type: 'relation', collection: 'tags', maxSelect: 5 }] },
+      { name: 'bundles', fields: [{ name: 'items', type: 'relation', collection: 'posts', maxSelect: 10, cascadeDelete: true }] },
+    ]);
+    await C('multi', 'tags').create({ id: 'tag000000000001', n: 'x' });
+    await C('multi', 'tags').create({ id: 'tag000000000002', n: 'y' });
+    await C('multi', 'posts').create({ id: 'posta0000000001', t: 'A', tags: ['tag000000000001', 'tag000000000002'] });
+    await C('multi', 'posts').create({ id: 'postb0000000001', t: 'B', tags: ['tag000000000001'] });
+    await C('multi', 'bundles').create({ id: 'bund00000000001', items: ['posta0000000001'] });
+    await C('multi', 'bundles').create({ id: 'bund00000000002', items: ['posta0000000001', 'postb0000000001'] });
+    const dry = await owner('POST', '/api/projects/multi/data/clear', { body: { collection: 'posts', ids: ['posta0000000001'], dry_run: true } });
+    assert.deepEqual(dry.data.cascade, [{ collection: 'bundles', field: 'items', records: 1, deletes: true }, { collection: 'bundles', field: 'items', records: 1, deletes: false }]);
+    const tag = await owner('POST', '/api/projects/multi/data/clear', { body: { collection: 'tags', filter: 'n = "x"', dry_run: true } });
+    assert.deepEqual(tag.data.cascade, [{ collection: 'posts', field: 'tags', records: 2, deletes: false }]);
+  });
+});

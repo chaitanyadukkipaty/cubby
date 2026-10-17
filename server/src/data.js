@@ -8,13 +8,15 @@ import { projectCollections, readSchema, deleteCollections, collectionIndex } fr
 import { dirSize } from './sites.js';
 import { checkForeignRefs } from './proxy.js';
 import { startSnapshot, newSnapshotId, expiresAt, FILES_CAP_BYTES } from './snapshots.js';
+import { planCascade } from './cascade.js';
 
 const PAGE = 500;
 
-// Every record of `name` matching `filter`, a page at a time (so a big collection never sits in memory whole).
-export async function eachPage(pb, name, filter, fn) {
+// Every record of `name` matching `filter`, a page at a time (so a big collection never sits in memory whole), with
+// only `fields` when given.
+export async function eachPage(pb, name, filter, fn, fields) {
   for (let page = 1; ; page++) {
-    const { items } = await pb.collection(name).getList(page, PAGE, { filter, sort: 'id', skipTotal: true });
+    const { items } = await pb.collection(name).getList(page, PAGE, { filter, sort: 'id', skipTotal: true, ...(fields && { fields }) });
     if (items.length) await fn(items);
     if (items.length < PAGE) return;
   }
@@ -57,8 +59,7 @@ export function formatBytes(n) {
 
 export const authWarning = (name) => `${name} holds user accounts: PocketBase never hands out password hashes, so restored accounts get new random passwords (the restore lists them; the people have to be given theirs).`;
 
-// Relation fields of the app's other collections that point at `targets`: deleting a target record deletes the
-// records pointing at it by a cascading relation, and removes it from the others (PocketBase does both).
+// Relation fields of the app's other collections that point at `targets` (which can't be dropped without them).
 function dependents(cols, targets) {
   const byId = new Map(targets.map((c) => [c.id, c]));
   return cols.filter((c) => !byId.has(c.id)).flatMap((c) => c.fields
@@ -70,10 +71,13 @@ export const MAX_MATCHES = 10_000;
 const ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const CHUNK = 100;
 export const chunks = (list) => Array.from({ length: Math.ceil(list.length / CHUNK) }, (_, i) => list.slice(i * CHUNK, (i + 1) * CHUNK));
-// `id = "a" || id = "b"`, or with `?=` records whose relation `field` holds any of `ids` (single or multiple).
-const anyOf = (pb, field, ids, op = '?=') =>
+const anyOf = (pb, field, ids, op) =>
   pb.filter(ids.map((_, i) => `${field} ${op} {:i${i}}`).join(' || '), Object.fromEntries(ids.map((id, i) => [`i${i}`, id])));
+// `id = "a" || id = "b"`.
 export const byIds = (pb, ids) => anyOf(pb, 'id', ids, '=');
+// Records whose relation `field` holds any of `ids`. `field.id ?=` works whether it holds one id or several; a plain
+// `field ?= id` matches nothing on a relation holding several in PocketBase 0.40.5.
+export const idsIn = (pb, field, ids) => anyOf(pb, `${field}.id`, ids, '?=');
 
 // What a clear request asks for: whole collections (`collections`, emptied or with `drop` dropped), every collection
 // dropped (`wipe`), or records of one `collection`, by `filter` or by `ids`.
@@ -97,8 +101,8 @@ function readRequest(r) {
 // Clears data of the app, after snapshotting what goes. `request` is { collections: [names], drop } or
 // { collection, filter | ids, all_matching }, plus dry_run (report, delete nothing). `project` is { id, slug };
 // `actor` is { id, email, admin } (admin: an admin clearing someone else's app); `reason` is shown to the owner.
-// Records of other collections that point at what's cleared (deleted by cascade, or losing the reference) are
-// snapshotted too. A filter runs as superuser: it passes checkDataFilter first.
+// Records that point at what's cleared (deleted by cascade however many hops away, self-relations included, or
+// losing the reference) are snapshotted too (cascade.js works them out). A filter runs as superuser: it passes checkDataFilter first.
 export async function clearData(slug, request, { pb, dataDir, project, actor, reason = '', now = Date.now, filesCap = FILES_CAP_BYTES, maxMatches = MAX_MATCHES }) {
   const prefix = prefixFor(slug);
   const req = readRequest(request ?? {});
@@ -143,12 +147,9 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     return { name: short(c), type: c.type, records: matched ? matched.length : await count(c.name, ''), files_bytes: files };
   }));
   const matches = summary.reduce((n, c) => n + c.records, 0);
-  const cascade = await Promise.all(refs.map(async (d) => {
-    let records = 0;
-    if (!matched) records = await count(d.col.name, `${d.field} != ""`);
-    else for (const ids of chunks(matched)) records += await count(d.col.name, anyOf(pb, d.field, ids));
-    return { collection: short(d.col), field: d.field, records, deletes: d.deletes };
-  }));
+  // Everything else PocketBase deletes or unlinks along with them, however many hops away.
+  const plan = await planCascade(pb, cols, targets, matched);
+  const cascade = plan.entries.map((e) => ({ collection: short(e.col), field: e.field, records: e.records, deletes: e.deletes }));
   const filesBytes = summary.reduce((n, c) => n + c.files_bytes, 0);
   const withFiles = filesBytes <= filesCap;
   const warnings = [
@@ -182,7 +183,8 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     by: actor, reason, ...result, ...(req.ids && { ids: matched }),
   };
   try {
-    const names = [...summary.map((c) => c.name), ...new Set(refs.map((d) => short(d.col)))];
+    const others = cols.filter((c) => plan.deleted.has(c.id) || plan.unlinked.has(c.id));
+    const names = [...new Set([...summary.map((c) => c.name), ...others.map(short)])];
     const live = (await readSchema(slug, pb.collections)).collections;
     await snap.schema({ collections: names.map((n) => live.find((c) => c.name === n)) });
     for (const c of targets) {
@@ -191,10 +193,10 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
         if (withFiles) await snap.files(short(c), storageDir(dataDir, c.id), items.map((r) => r.id));
       });
     }
-    for (const col of new Set(refs.map((d) => d.col))) {
-      const mine = refs.filter((d) => d.col === col);
-      if (!matched) await eachPage(pb, col.name, mine.map((d) => `${d.field} != ""`).join(' || '), (items) => snap.records(short(col), items));
-      else for (const ids of chunks(matched)) await eachPage(pb, col.name, mine.map((d) => anyOf(pb, d.field, ids)).join(' || '), (items) => snap.records(short(col), items));
+    // What goes by cascade, and what stays but loses links, as it is before the clear.
+    for (const col of others) {
+      const ids = [...(plan.deleted.get(col.id) ?? []), ...(plan.unlinked.get(col.id) ?? [])];
+      for (const part of chunks(ids)) await eachPage(pb, col.name, byIds(pb, part), (items) => snap.records(short(col), items));
     }
     await snap.finish(meta);
   } catch (err) {
