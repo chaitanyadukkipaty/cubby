@@ -246,6 +246,7 @@ async function ensurePlatformCollections() {
       { name: 'app', type: 'text', max: 40 },
       { name: 'action', type: 'text', required: true, max: 40 },
       { name: 'summary', type: 'text', max: 300 },
+      { name: 'meta', type: 'json', maxSize: 2_000 },
       { name: 'at', type: 'date', required: true },
     ],
     indexes: [

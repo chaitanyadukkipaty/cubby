@@ -102,13 +102,16 @@ export const agentView = (k, currentKeyId) => ({
 
 // --- Activity log: one row per mutation, attributed to the agent key that made it ---
 // `actor.agent` is { id, name } for an agent's key, null for the manual token (the dashboard).
-export const activityRow = (actor, { action, app = '', summary = '' }, now = new Date()) => ({
+// `meta` is optional structured detail the dashboard reads instead of parsing `summary` (e.g. { deploy, files }).
+// Keep it small and never put secret values in it: it is returned by the activity APIs as is.
+export const activityRow = (actor, { action, app = '', summary = '', meta = null }, now = new Date()) => ({
   user: actor.id,
   agent: actor.agent?.id ?? '',
   agent_name: actor.agent?.name ?? '',
   app,
   action,
   summary: String(summary).slice(0, 300),
+  meta: meta && Object.keys(meta).length ? meta : null,
   at: now.toISOString(),
 });
 
@@ -215,6 +218,7 @@ export const activityView = (r) => ({
   app: r.app || null,
   action: r.action,
   summary: r.summary,
+  meta: r.meta ?? null,
 });
 
 // Each server has a display name ("Priya's Cubby"), shown to friends and agents.

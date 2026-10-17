@@ -205,5 +205,23 @@ describe('feedEntry()', () => {
       assert.equal(e.job, 'weekly-digest');
     }
     assert.equal(feed.feedEntry(row({ action: 'job.run', summary: 'Ran job "weekly-digest" now (ok)' }), { apps, agents }).kind, 'other');
+  });  // Rows written since activity gained `meta` carry the details; the summary is then only display text.
+  test('a deploy reads its id and file count from meta when it has one', () => {
+    const e = feed.feedEntry(row({ action: 'deploy', summary: 'Shipped something', meta: { deploy: 'd12', files: 1 } }), { apps, agents });
+    assert.deepEqual([e.kind, e.deployId, e.detail, e.rollback], ['deploy', 'd12', '1 file', true]);
+    const noCount = feed.feedEntry(row({ action: 'deploy', summary: 'Deployed d12 (4 files)', meta: { deploy: 'd12' } }), { apps, agents });
+    assert.deepEqual([noCount.deployId, noCount.detail], ['d12', '']);
+  });
+  test('a job run reads its job and status from meta when it has one', () => {
+    const e = feed.feedEntry(row({ action: 'job.run', summary: 'Ran it', meta: { job: 'weekly-digest', status: 'timeout' } }), { apps, agents });
+    assert.deepEqual([e.kind, e.job, e.status], ['failed', 'weekly-digest', 'timeout']);
+    const ok = feed.feedEntry(row({ action: 'job.run', summary: 'Ran job "x" now (error)', meta: { job: 'x', status: 'ok' } }), { apps, agents });
+    assert.equal(ok.kind, 'other', 'meta wins over the summary');
+  });
+  test('older rows (meta null) still fall back to parsing the summary', () => {
+    const d = feed.feedEntry(row({ action: 'deploy', summary: 'Deployed d12 (4 files)', meta: null }), { apps, agents });
+    assert.deepEqual([d.deployId, d.detail], ['d12', '4 files']);
+    const j = feed.feedEntry(row({ action: 'job.run', summary: 'Ran job "weekly-digest" now (error)', meta: null }), { apps, agents });
+    assert.deepEqual([j.kind, j.job], ['failed', 'weekly-digest']);
   });
 });

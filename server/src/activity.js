@@ -10,9 +10,9 @@ const nextAt = () => new Date((lastAt = Math.max(Date.now(), lastAt + 1)));
 
 // Records one action by `actor` (an authenticated user from auth.authenticate, or { id, agent }).
 // Never throws: a failed log must never fail the action it describes.
-export async function recordActivity(actor, { action, app = '', summary = '' }) {
+export async function recordActivity(actor, { action, app = '', summary = '', meta = null }) {
   try {
-    await rows().create(logic.activityRow(actor, { action, app, summary }, nextAt()));
+    await rows().create(logic.activityRow(actor, { action, app, summary, meta }, nextAt()));
   } catch (err) {
     console.error(`activity log failed (${action}):`, err.message);
   }

@@ -15,12 +15,16 @@ describe('activity rows', () => {
   test('a dashboard action has no agent; an agent action carries its key id and name', () => {
     const now = new Date('2026-10-17T09:30:00Z');
     assert.deepEqual(logic.activityRow(alice, { action: 'app.create', app: 'todo', summary: 'Created app "todo"' }, now), {
-      user: 'u1', agent: '', agent_name: '', app: 'todo', action: 'app.create', summary: 'Created app "todo"', at: '2026-10-17T09:30:00.000Z',
+      user: 'u1', agent: '', agent_name: '', app: 'todo', action: 'app.create', summary: 'Created app "todo"', meta: null, at: '2026-10-17T09:30:00.000Z',
     });
     const row = logic.activityRow(agent, { action: 'agent.login' }, now);
     assert.equal(row.agent, 'k9');
     assert.equal(row.agent_name, 'Claude Code · laptop');
     assert.equal(row.app, '', 'actions without an app');
+  });
+  test('structured meta is stored as given; rows without it store null', () => {
+    assert.deepEqual(logic.activityRow(alice, { action: 'deploy', meta: { deploy: 'd1', files: 3 } }).meta, { deploy: 'd1', files: 3 });
+    assert.equal(logic.activityRow(alice, { action: 'deploy', meta: {} }).meta, null, 'empty meta is not stored');
   });
   test('summaries are capped so a row stays small', () => {
     assert.equal(logic.activityRow(alice, { action: 'deploy', summary: 'x'.repeat(1000) }).summary.length, 300);
@@ -28,8 +32,9 @@ describe('activity rows', () => {
   test('the view says how the action was made and who made it', () => {
     const base = { id: 'r1', at: 't', app: 'todo', action: 'deploy', summary: 's', expand: { user: { email: 'a@x.dev' } } };
     assert.deepEqual(logic.activityView({ ...base, agent: 'k9', agent_name: 'Codex · box' }), {
-      id: 'r1', at: 't', user: 'a@x.dev', via: 'agent', agent: { id: 'k9', name: 'Codex · box' }, app: 'todo', action: 'deploy', summary: 's',
+      id: 'r1', at: 't', user: 'a@x.dev', via: 'agent', agent: { id: 'k9', name: 'Codex · box' }, app: 'todo', action: 'deploy', summary: 's', meta: null,
     });
+    assert.deepEqual(logic.activityView({ ...base, meta: { deploy: 'd1', files: 2 } }).meta, { deploy: 'd1', files: 2 });
     const dash = logic.activityView({ ...base, agent: '', agent_name: '', app: '', expand: undefined });
     assert.equal(dash.via, 'dashboard');
     assert.equal(dash.agent, null);
