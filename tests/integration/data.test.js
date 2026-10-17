@@ -478,6 +478,37 @@ describe('whatever a clear deletes, a restore brings back (real PocketBase casca
     assert.ok(!existsSync(join(srv.dataDir, 'snapshots', 'required')) || !readdirSync(join(srv.dataDir, 'snapshots', 'required')).length, 'no snapshot left');
     assert.ok(!(await owner('GET', '/api/activity?app=required')).data.some((a) => a.action === 'data.clear'));
   });
+  test('a dropped collection pointing at one with relations of its own is recreated; the dry run checks the same', async () => {
+    await make('regrow', [
+      { name: 'tags', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'posts', fields: [{ name: 'tags', type: 'relation', collection: 'tags', maxSelect: 5 }] },
+      { name: 'comments', fields: [{ name: 'post', type: 'relation', collection: 'posts' }, { name: 'b', type: 'text' }] },
+    ]);
+    await C('regrow', 'tags').create({ id: 'tag000000000001' });
+    await C('regrow', 'posts').create({ id: 'post00000000001', tags: ['tag000000000001'] });
+    await C('regrow', 'comments').create({ id: 'comm00000000001', post: 'post00000000001', b: 'x' });
+    const before = await dump('regrow');
+    const cleared = await owner('POST', '/api/projects/regrow/data/clear', { body: { collections: ['comments'], drop: true } });
+    const dry = await owner('POST', `/api/snapshots/${cleared.data.snapshot.id}/restore`, { body: { dry_run: true } });
+    assert.deepEqual([dry.status, dry.data.recreated, dry.data.skipped_fields], [200, ['comments'], []]);
+    const r = await owner('POST', `/api/snapshots/${cleared.data.snapshot.id}/restore`, { body: {} });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.deepEqual(await dump('regrow'), before);
+  });
+  test('wipe and restore brings back every collection, with records or not, accounts included', async () => {
+    await make('rewipe', [
+      { name: 'full', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'empty', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'members', type: 'auth', fields: [{ name: 'nick', type: 'text' }] },
+    ]);
+    await C('rewipe', 'full').create({ id: 'full00000000001', n: 'x' });
+    const schemaBefore = (await owner('GET', '/api/projects/rewipe/schema')).data;
+    const before = await dump('rewipe');
+    const r = await clearAndRestore('rewipe', { wipe: true });
+    assert.deepEqual(r.restored.recreated.sort(), ['empty', 'full', 'members']);
+    assert.deepEqual((await owner('GET', '/api/projects/rewipe/schema')).data, schemaBefore);
+    assert.deepEqual(await dump('rewipe'), before);
+  });
   test('a link the clear removed from a record that stays comes back; edits made since stay', async () => {
     await make('relink', [
       { name: 'people', fields: [{ name: 'n', type: 'text' }] },

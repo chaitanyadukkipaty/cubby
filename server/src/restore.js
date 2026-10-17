@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { prefixFor } from './config.js';
 import { HttpError } from './http.js';
-import { applySchema, collectionIndex, projectCollections, readSchema } from './schema.js';
+import { applySchema, collectionIndex, projectCollections, readSchema, validate } from './schema.js';
 import { byIds, chunks, storageDir } from './data.js';
 import { startSnapshot, newSnapshotId, expiresAt } from './snapshots.js';
 
@@ -57,7 +57,8 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
   const slug = project.slug;
   const prefix = prefixFor(slug);
   const saved = new Map(JSON.parse(await readFile(join(dir, 'schema.json'), 'utf8')).collections.map((c) => [c.name, c]));
-  const names = await jsonlNames(join(dir, 'records'));
+  // What comes back: collections with records, and every collection a drop (or wipe) took, records or not.
+  const names = [...new Set([...(meta.mode === 'drop' ? [...saved.keys()] : []), ...await jsonlNames(join(dir, 'records'))])];
   const linkNames = await jsonlNames(join(dir, 'links'));
   const live = new Map((await readSchema(slug, pb.collections)).collections.map((c) => [c.name, c]));
   const order = relationOrder(names, saved);
@@ -84,6 +85,18 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
     });
     return def;
   });
+  // applySchema checks that every relation points at a collection it's given: the recreated ones plus, as they are,
+  // the live ones they point at, and the ones those point at, and so on. The dry run checks the same.
+  const pointedAt = new Set();
+  const visit = (def) => {
+    for (const f of def.fields.filter((x) => x.type === 'relation' && live.has(x.collection) && !pointedAt.has(x.collection))) {
+      pointedAt.add(f.collection);
+      visit(live.get(f.collection));
+    }
+  };
+  recreated.forEach(visit);
+  const toApply = recreated.length ? { collections: [...recreated, ...[...pointedAt].map((n) => live.get(n))] } : null;
+  if (toApply) validate(toApply);
 
   // Which snapshotted ids exist in the app again.
   const existing = new Map();
@@ -147,11 +160,7 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
     result.backup = { id: backup.id, expires: expiresAt(t) };
   }
 
-  if (recreated.length) {
-    // applySchema needs every collection a recreated one points at; those already there are passed as they are.
-    const pointedAt = [...new Set(recreated.flatMap((c) => c.fields.filter((f) => f.type === 'relation').map((f) => f.collection)))].filter((n) => live.has(n));
-    await applySchema(slug, { collections: [...recreated, ...pointedAt.map((n) => live.get(n))] }, pb.collections);
-  }
+  if (toApply) await applySchema(slug, toApply, pb.collections);
   const cols = new Map((await projectCollections(slug, pb.collections)).map((c) => [c.name.slice(prefix.length), c]));
 
   // Creates (or with overwrite updates) one record. One pointing at a record not restored yet goes to `defer` (when

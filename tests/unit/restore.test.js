@@ -95,6 +95,33 @@ describe('schema drift', () => {
     assert.deepEqual(orders.fields.map((f) => [f.name, f.type, f.collection]), [['product', 'relation', 'products'], ['qty', 'number', undefined], ['created', 'autodate', undefined], ['updated', 'autodate', undefined]]);
     assert.deepEqual(ids('shop__orders'), ['o1']);
   });
+  test('a dropped collection pointing at one that points at a third is recreated (and the dry run checks the same)', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'tags', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'posts', fields: [{ name: 'tags', type: 'relation', collection: 'tags', maxSelect: 5 }] },
+      { name: 'comments', fields: [{ name: 'post', type: 'relation', collection: 'posts' }, { name: 'b', type: 'text' }] },
+    ] }, pb.collections);
+    await pb.collection('shop__tags').create({ id: 't1' });
+    await pb.collection('shop__posts').create({ id: 'po1', tags: ['t1'] });
+    await pb.collection('shop__comments').create({ id: 'co1', post: 'po1', b: 'x' });
+    const before = dump();
+    const { snapshot } = await clear({ collections: ['comments'], drop: true });
+    const dry = await restore(snapshot.id, { dry_run: true });
+    assert.deepEqual([dry.recreated, dry.skipped_fields], [['comments'], []]);
+    const r = await restore(snapshot.id);
+    assert.deepEqual(r.recreated, ['comments']);
+    assert.deepEqual(dump(), before);
+  });
+  test('wiping and restoring brings back every collection, also those that had no records (accounts included)', async () => {
+    const { snapshot } = await clear({ wipe: true });
+    const r = await restore(snapshot.id);
+    assert.deepEqual(r.recreated.sort(), ['customers', 'orders', 'products']);
+    await pb.collections.truncate('shop__customers');
+    const empty = await clear({ wipe: true });
+    const again = await restore(empty.snapshot.id);
+    assert.deepEqual(again.recreated.sort(), ['customers', 'orders', 'products'], 'a collection with no records comes back too');
+    assert.deepEqual(again.collections.find((c) => c.name === 'customers'), { name: 'customers', records: 0, existing: 0, restored: 0, replaced: 0, failed: 0 });
+  });
   test('a recreated collection loses relations to collections that are gone too', async () => {
     const { snapshot } = await clear({ collections: ['orders'], drop: true });
     await pb.collections.truncate('shop__products');
