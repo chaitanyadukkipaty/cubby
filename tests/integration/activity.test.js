@@ -32,6 +32,7 @@ describe('activity log', () => {
     assert.equal(row.via, 'agent');
     assert.equal(row.agent.name, 'Claude Code · laptop');
     assert.match(row.summary, new RegExp(`${d.data.id}.*2 files`));
+    assert.deepEqual(row.meta, { deploy: d.data.id, files: 2 }, 'structured detail, so the dashboard need not parse the summary');
   });
   test('dashboard actions (the manual token) are attributed to the user via the dashboard; newest first', async () => {
     assert.equal((await alice('POST', '/api/projects', { body: { slug: 'act-dash' } })).status, 200);
@@ -51,6 +52,7 @@ describe('activity log', () => {
     assert.deepEqual(env.map((x) => x.action), ['env.unset', 'env.set']);
     assert.ok(env.every((x) => x.summary.includes('STRIPE_KEY')));
     assert.ok(!r.text.includes(secret), 'the value never reaches the log');
+    assert.ok(env.every((x) => x.meta === null), 'nor any structured detail');
     assert.ok(!r.text.includes('sk-live'));
   });
   test('rollback, schema push (added/kept) and schema drop are recorded', async () => {
@@ -63,6 +65,8 @@ describe('activity log', () => {
     assert.equal((await alice('DELETE', '/api/projects/act-one/schema/notes.body')).status, 200);
     const rows = (await alice('GET', '/api/activity?app=act-one')).data;
     assert.match(rows.find((r) => r.action === 'rollback').summary, new RegExp(first));
+    assert.deepEqual(rows.find((r) => r.action === 'rollback').meta, { deploy: first });
+    assert.equal(rows.find((r) => r.action === 'schema.drop').meta, null, 'actions without structured detail have none');
     const pushes = rows.filter((r) => r.action === 'schema.push');
     assert.match(pushes[1].summary, /created notes/);
     assert.match(pushes[0].summary, /kept notes\.body/);
@@ -81,6 +85,7 @@ describe('activity log', () => {
     const rows = (await alice('GET', '/api/activity?app=act-one')).data.filter((r) => r.action.startsWith('job.'));
     assert.deepEqual(rows.map((r) => r.action), ['job.resume', 'job.pause', 'job.run']);
     assert.match(rows[2].summary, /tick.*ok/);
+    assert.deepEqual(rows.map((r) => r.meta), [{ job: 'tick' }, { job: 'tick' }, { job: 'tick', status: 'ok' }]);
   });
   test('approving an agent login is recorded under that agent, without an app', async () => {
     await deviceLogin(alice, { tool: 'Codex', machine: 'desk' });

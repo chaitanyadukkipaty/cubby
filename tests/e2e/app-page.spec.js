@@ -14,10 +14,16 @@ test('the Apps list links each app to its page; tabs live in the URL and survive
   await visitor.goto(appUrl(slug)); // one real page view
   await visitor.close();
 
+  const perApp = [];
+  const onRequest = (r) => { if (/\/api\/projects\/[^/]+\/metrics/.test(r.url())) perApp.push(r.url()); };
+  page.on('request', onRequest);
   await dashboard.openAs(user.token, '/apps');
   const row = dashboard.myApps.app(slug);
   await expect(row.status).toHaveText('Deployed just now by CC Claude Code · e2e-mbp');
   await expect(row.sparkline).toBeVisible();
+  await expect(row.sparkline).toHaveAccessibleName(/views per day: (\d+, )*1$/);
+  page.off('request', onRequest);
+  expect(perApp, 'the list draws from GET /api/metrics alone').toEqual([]);
   await expect(row.openLink).toHaveAttribute('href', new RegExp(`//${slug}\\.localhost:`));
 
   await row.link.click();

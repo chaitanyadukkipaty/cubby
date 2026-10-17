@@ -67,3 +67,17 @@ describe('rangeFrom()', () => {
     assert.equal(v.rangeFrom('?range=90d'), '7d');
   });
 });
+
+// Home's "Views · 7 days" and each sparkline on /apps come from the GET /api/metrics?range=7d list rows alone.
+describe('weekViews()', () => {
+  const days = (...views) => views.map((n, i) => ({ start: `2026-10-${String(10 + i).padStart(2, '0')}T00:00:00.000Z`, views: n, visitors: 0 }));
+  test("adds every app's views up by day and keeps the last 7 days", () => {
+    const rows = [{ app: 'a', days: days(9, 1, 2, 3, 4, 5, 6, 7) }, { app: 'b', days: days(9, 0, 0, 0, 0, 0, 1, 1) }];
+    assert.deepEqual(v.weekViews(rows), { total: 30, values: [1, 2, 3, 4, 5, 7, 8] });
+  });
+  test('one app is its own series; no apps or no days is nothing', () => {
+    assert.deepEqual(v.weekViews([{ days: days(2, 3) }]), { total: 5, values: [2, 3] });
+    assert.deepEqual(v.weekViews([]), { total: 0, values: [] });
+    assert.deepEqual(v.weekViews([{ app: 'old-server' }]), { total: 0, values: [] }, 'rows without days (an older server)');
+  });
+});

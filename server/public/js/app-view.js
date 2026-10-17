@@ -1,7 +1,7 @@
 // The app page's view model: the range in the URL, the KPI strip, top paths and chart descriptions. Pure (no DOM,
 // no network), so tests/unit/frontend-app-view.test.js imports it directly; views/app.js draws the page.
 import { fmtCount, fmtPct } from './helpers.js';
-import { bucketLabel } from './charts.js';
+import { bucketLabel, sumSeries } from './charts.js';
 
 export const RANGES = ['24h', '7d', '30d'];
 
@@ -9,6 +9,15 @@ export const RANGES = ['24h', '7d', '30d'];
 export function rangeFrom(search) {
   const range = new URLSearchParams(search).get('range');
   return RANGES.includes(range) ? range : '7d';
+}
+
+/**
+ * Views per UTC day over the last 7 days, added up across GET /api/metrics?range=7d rows (each with `days`), and their
+ * total: Home's "Views · 7 days" card, and with one row an app's sparkline on /apps. One request for every app.
+ */
+export function weekViews(rows) {
+  const values = sumSeries(rows.map((r) => r.days ?? []), 'views').slice(-7).map((d) => d.value);
+  return { total: values.reduce((n, x) => n + x, 0), values };
 }
 
 const RANGE_TEXT = { '24h': 'last 24 hours', '7d': 'last 7 days', '30d': 'last 30 days' };

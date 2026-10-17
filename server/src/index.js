@@ -13,7 +13,7 @@ import { scheduleBackups, createBackupRunner, runMaintenance } from './backups.j
 import { scanStorage, createTtlCache, listBackups, checkBackupDelete, planRetention, deleteBackup } from './storage.js';
 import { listJobs, runNow, jobRuns, setPaused, allJobs, scheduleJobs, recoverRuns, deployJobs } from './jobs.js';
 import { listEnv, setEnv, unsetEnv } from './secrets.js';
-import { createMetrics, pocketbaseStore, countsAsView, isPerson, parseRange, metricsClock, appAccounts, summarizeMetrics } from './metrics.js';
+import { createMetrics, pocketbaseStore, countsAsView, isPerson, parseRange, metricsClock, appAccounts, summarizeMetrics, appMetricsRow } from './metrics.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
@@ -149,21 +149,21 @@ const routes = [
     const deploy = await createDeploy(project, body, url.searchParams.get('message') ?? '', logic.deployClient(req.headers['x-cubby-client']));
     const patch = logic.deployPatch(url.searchParams);
     if (Object.keys(patch).length) await admin.collection('cubby_projects').update(project.id, patch);
-    await recordActivity(user, { action: 'deploy', app: slug, summary: `Deployed ${deploy.id} (${deploy.files} files)` });
+    await recordActivity(user, { action: 'deploy', app: slug, summary: `Deployed ${deploy.id} (${deploy.files} files)`, meta: { deploy: deploy.id, files: deploy.files } });
     return { ...deploy, url: appUrl(slug) };
   }],
   ['POST', '/api/projects/:slug/rollback', 'user', async (req, user, { slug }) => {
     const project = await ownedProject(user, slug);
     const { deploy } = await readJson(req);
     await rollback(project, deploy);
-    await recordActivity(user, { action: 'rollback', app: slug, summary: `Rolled back to ${deploy}` });
+    await recordActivity(user, { action: 'rollback', app: slug, summary: `Rolled back to ${deploy}`, meta: { deploy } });
     return { ok: true, current_deploy: deploy, url: appUrl(slug) };
   }],
 
   ['GET', '/api/projects/:slug/jobs', 'user', async (req, user, { slug }) => listJobs(await ownedProject(user, slug))],
   ['POST', '/api/projects/:slug/jobs/:name/run', 'user', async (req, user, { slug, name }) => {
     const run = await runNow(await ownedProject(user, slug), name);
-    await recordActivity(user, { action: 'job.run', app: slug, summary: `Ran job "${name}" now (${run.status})` });
+    await recordActivity(user, { action: 'job.run', app: slug, summary: `Ran job "${name}" now (${run.status})`, meta: { job: name, status: run.status } });
     return run;
   }],
   ['GET', '/api/projects/:slug/jobs/:name/runs', 'user', async (req, user, { slug, name }, url) => (
@@ -174,7 +174,7 @@ const routes = [
     const { paused } = await readJson(req);
     if (typeof paused !== 'boolean') throw new HttpError(400, 'Body must be { "paused": true | false }');
     const result = await setPaused(project, name, paused);
-    await recordActivity(user, { action: paused ? 'job.pause' : 'job.resume', app: slug, summary: `${paused ? 'Paused' : 'Resumed'} job "${name}"` });
+    await recordActivity(user, { action: paused ? 'job.pause' : 'job.resume', app: slug, summary: `${paused ? 'Paused' : 'Resumed'} job "${name}"`, meta: { job: name } });
     return result;
   }],
 
@@ -208,10 +208,7 @@ const routes = [
     const hours = parseRange(range);
     const list = await admin.collection('cubby_projects').getFullList({ filter: admin.filter('owner = {:u}', { u: user.id }), sort: 'slug' });
     const report = await metrics.report(list.map((p) => p.id), hours);
-    return list.map((p) => {
-      const { from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate } = report[p.id];
-      return { app: p.slug, name: p.name, range, from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate };
-    });
+    return list.map((p) => appMetricsRow(p, range, report[p.id]));
   }],
 
   // Data: what's in an app's collections, and clearing it (after a snapshot). Owners for their apps; admins any app.

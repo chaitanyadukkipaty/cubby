@@ -64,19 +64,33 @@ export function feedEntry(row, { apps = [], agents = [] } = {}) {
   const entry = { id: row.id, at: row.at, actor: actorOf(row, agents), app: appOf(row.app, apps), text: row.summary, kind: 'other', rollback: false };
   if (row.action === 'deploy') {
     entry.kind = 'deploy';
-    const m = row.summary.match(/^Deployed (\S+)(?: \((\d+) files?\))?/);
-    entry.deployId = m?.[1] ?? null;
+    const { deploy, files } = deployDetails(row);
+    entry.deployId = deploy;
     entry.verb = 'deployed';
-    entry.detail = m?.[2] ? `${m[2]} file${m[2] === '1' ? '' : 's'}` : '';
+    entry.detail = files != null ? `${files} file${files === 1 ? '' : 's'}` : '';
     const app = apps.find((a) => a.slug === row.app);
     entry.rollback = Boolean(app && entry.deployId && app.current_deploy === entry.deployId);
   } else if (row.action === 'rollback') {
     Object.assign(entry, { kind: 'rollback', verb: 'rolled back', detail: 'to an earlier deploy' });
   } else if (row.action === 'job.run') {
-    const m = row.summary.match(/^Ran job "([^"]+)" now \((\w+)\)$/);
-    if (m && (m[2] === 'error' || m[2] === 'timeout')) Object.assign(entry, { kind: 'failed', job: m[1], status: m[2] });
+    const { job, status } = jobRunDetails(row);
+    if (job && (status === 'error' || status === 'timeout')) Object.assign(entry, { kind: 'failed', job, status });
   }
   return entry;
+}
+
+// Rows carry structured `meta` since the activity log gained it; older rows only have the summary text
+// ("Deployed <id> (N files)", `Ran job "x" now (status)`), which is parsed as a fallback.
+function deployDetails({ meta, summary }) {
+  if (meta?.deploy) return { deploy: meta.deploy, files: Number.isInteger(meta.files) ? meta.files : null };
+  const m = String(summary ?? '').match(/^Deployed (\S+)(?: \((\d+) files?\))?/);
+  return { deploy: m?.[1] ?? null, files: m?.[2] ? Number(m[2]) : null };
+}
+
+function jobRunDetails({ meta, summary }) {
+  if (meta?.job) return { job: meta.job, status: meta.status ?? null };
+  const m = String(summary ?? '').match(/^Ran job "([^"]+)" now \((\w+)\)$/);
+  return { job: m?.[1] ?? null, status: m?.[2] ?? null };
 }
 
 /** Feed entries for rows (newest first). Only an app's newest deploy in the feed can offer Roll back. */

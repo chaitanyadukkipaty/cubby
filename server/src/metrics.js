@@ -169,6 +169,16 @@ export function summarizeMetrics(projects, report) {
   };
 }
 
+// One app's row of GET /api/metrics: its totals and a compact series by UTC day (views and unique visitors), so the
+// dashboard can draw every app's sparkline from this one list instead of asking each app for its full report.
+export function appMetricsRow(project, range, r) {
+  const { from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate } = r;
+  return {
+    app: project.slug, name: project.name, range, from, to, views, visitors, active_now, peak_active, api_requests, api_errors, api_error_rate,
+    days: r.days.map((d) => ({ start: d.start, views: d.views ?? 0, visitors: d.visitors ?? 0 })),
+  };
+}
+
 // Every app's buckets added up by start, field by field (the apps of one report share their buckets).
 function sumBuckets(seriesList) {
   const byStart = new Map();

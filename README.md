@@ -381,7 +381,7 @@ date. Nothing can be deleted until you click **Preview**, which shows "matches N
 (tick some to delete only those), what goes by cascade, and asks for an extra tick above 10,000 records. Change the
 form and the preview goes stale. Then type the app's name to unlock the button; the result names the snapshot.
 
-<p align="center"><img src="docs/assets/dashboard-app-data.png?v=6d4bd325" width="760" alt="Friend Polls' Data tab: collections with record counts and file sizes (users unticked), Empty, Drop or delete by filter, a preview that says Empties comments, polls and votes: 4,231 records with five sample records, the app name typed to confirm, and two snapshots with Restore and Purge"></p>
+<p align="center"><img src="docs/assets/dashboard-app-data.png?v=0997ebdc" width="760" alt="Friend Polls' Data tab: collections with record counts and file sizes (users unticked), Empty, Drop or delete by filter, a preview that says Empties comments, polls and votes: 4,231 records with five sample records, the app name typed to confirm, and two snapshots with Restore and Purge"></p>
 
 ### Undo a clear
 
