@@ -90,6 +90,27 @@ main { min-width: 0; width: 100%; max-width: 1080px; padding: 22px 28px 64px; }
 .page-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 .page-h h2 { font-size: 18px; font-weight: 650; }
 
+/* ---------- Command palette (⌘K) ---------- */
+kbd { font-family: var(--sans); font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; line-height: 17px; background: var(--card); }
+button.palette-hint { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; color: var(--muted); background: var(--card); text-align: left; }
+button.palette-hint:hover { color: var(--fg); }
+button.palette-hint .label { flex: 1; }
+.palette-backdrop { position: fixed; inset: 0; z-index: 60; background: rgb(10 10 10 / .28); display: flex; justify-content: center; align-items: flex-start; padding: 12vh 16px 16px; }
+:root[data-theme=dark] .palette-backdrop { background: rgb(0 0 0 / .6); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) .palette-backdrop { background: rgb(0 0 0 / .6); } }
+.palette { width: min(560px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: var(--rl); box-shadow: 0 16px 48px rgb(0 0 0 / .18); overflow: hidden; font-size: 13px; }
+.palette-search { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--muted); }
+.palette-search input[type=text] { border: 0; padding: 12px 0; background: none; font-size: 14px; outline: none; }
+.palette-list { max-height: min(360px, 60vh); overflow-y: auto; padding: 6px; }
+.palette .group-h { font-size: 11px; font-weight: 600; color: var(--muted); padding: 8px 8px 4px; }
+.palette .opt { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: var(--r); cursor: pointer; color: var(--fg); }
+.palette .opt svg.i { color: var(--muted); }
+.palette .opt[aria-selected=true] { background: var(--hover); }
+.palette .opt[aria-selected=true] svg.i { color: var(--accent); }
+.palette .opt .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette .opt .hint { color: var(--faint); font-size: 11.5px; }
+.palette-empty { padding: 20px 8px; text-align: center; color: var(--muted); }
+
 @media (max-width: 640px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .side-col { border-right: 0; border-bottom: 1px solid var(--line); }
@@ -101,6 +122,8 @@ main { min-width: 0; width: 100%; max-width: 1080px; padding: 22px 28px 64px; }
   .nav a[aria-current=page] { background: none; color: var(--accent); }
   .foot { margin: 0; border: 0; padding: 0; flex-direction: row; align-items: center; }
   .who { display: none; }
+  button.palette-hint { width: 30px; height: 30px; padding: 0; justify-content: center; flex: none; }
+  button.palette-hint .label, button.palette-hint kbd { display: none; }
   main { padding: 16px 16px 88px; }
   .toast { bottom: 80px; }
 }

@@ -15,22 +15,25 @@ function apply() {
   else delete document.documentElement.dataset.theme;
 }
 
+function draw(btn) {
+  const next = current() === 'dark' ? 'light' : 'dark';
+  btn.setAttribute('aria-label', `Switch to ${next} theme`);
+  btn.title = `Switch to ${next} theme`;
+  btn.replaceChildren(icon(next === 'dark' ? 'moon' : 'sun'));
+}
+
+/** Flips the theme, remembers the choice and updates every theme button on the page (also used by the palette). */
+export function toggleTheme() {
+  saved = toggledTheme(saved, systemDark());
+  try { localStorage.setItem(KEY, saved); } catch {}
+  apply();
+  document.querySelectorAll('button[data-theme-toggle]').forEach(draw);
+}
+
 /** A button that flips the theme and remembers the choice. */
 export function themeButton() {
-  const btn = h('button', { type: 'button', class: 'icon' });
-  const draw = () => {
-    const next = current() === 'dark' ? 'light' : 'dark';
-    btn.setAttribute('aria-label', `Switch to ${next} theme`);
-    btn.title = `Switch to ${next} theme`;
-    btn.replaceChildren(icon(next === 'dark' ? 'moon' : 'sun'));
-  };
-  btn.addEventListener('click', () => {
-    saved = toggledTheme(saved, systemDark());
-    try { localStorage.setItem(KEY, saved); } catch {}
-    apply();
-    draw();
-  });
-  draw();
+  const btn = h('button', { type: 'button', class: 'icon', 'data-theme-toggle': true, onclick: toggleTheme });
+  draw(btn);
   return btn;
 }
 

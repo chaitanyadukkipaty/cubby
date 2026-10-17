@@ -100,7 +100,8 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   keep it free of DOM and Node APIs. A new page goes there, not as a server special case. `/` still answers
   non-browser user agents with plain text first.
 - js/helpers.js is imported directly by unit tests: keep it pure (no imports, no DOM state, no network; `h()` only
-  calls `document.createElement` when used).
+  calls `document.createElement` when used). The same goes for js/palette.js (the ⌘K palette's matching and items;
+  it imports only routes.js and helpers.js); js/command-palette.js is its DOM side.
 
 ## Version skew between servers (the launcher)
 

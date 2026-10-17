@@ -175,3 +175,40 @@ test('every page has its own URL: deep links and reloads land on it, and back/fo
   await page.reload();
   await expect(dashboard.admin.inviteHeading).toBeVisible();
 });
+
+test('the command palette opens with Ctrl+K, finds an app and goes to it, and Esc closes it', async ({ page, context, api, dashboard }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const user = await api.createUser('palette');
+  const slug = await api.createDeployedApp(user.token, 'pal');
+  await dashboard.openAs(user.token);
+  const { palette } = dashboard;
+
+  await dashboard.myApps.copyPromptButton.focus();
+  await palette.openWithKeyboard();
+  await expect(palette.search).toBeFocused();
+  await expect(palette.option('Home')).toBeVisible();
+  await expect(palette.option('Admin')).toHaveCount(0); // not an admin
+  await page.keyboard.press('Escape');
+  await expect(palette.dialog).toHaveCount(0);
+  await expect(dashboard.myApps.copyPromptButton).toBeFocused(); // focus goes back where it was
+
+  await palette.openWithKeyboard();
+  await palette.search.fill(slug);
+  await expect(palette.selected).toContainText(slug);
+  await page.keyboard.press('Tab');
+  await expect(palette.search).toBeFocused(); // focus stays in the dialog
+  await page.keyboard.press('Enter');
+  await expect(palette.dialog).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/apps/${slug}$`));
+  await expect(dashboard.myApps.app(slug).card).toBeVisible();
+
+  // Opened from the sidebar: arrows move the highlight and Enter runs the action.
+  await palette.openButton.click();
+  await palette.search.fill('setup prompt');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowUp');
+  await expect(palette.selected).toHaveText('Copy setup prompt for your agent');
+  await page.keyboard.press('Enter');
+  await expect(dashboard.toast).toHaveText('Prompt copied');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^I'd like you to set up Cubby/);
+});

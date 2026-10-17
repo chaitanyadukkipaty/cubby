@@ -8,7 +8,7 @@
 <link rel="icon" href="assets/logo.svg?v=aa679b5d" type="image/svg+xml">
 <meta property="og:title" content="Cubby: a home for the apps your agents build">
 <meta property="og:description" content="Self-host one server, invite your friends, and let AI coding agents build, deploy and share full-stack apps.">
-<meta property="og:image" content="assets/dashboard-my-apps.png?v=15bb425b">
+<meta property="og:image" content="assets/dashboard-my-apps.png?v=2b0656a2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -300,9 +300,9 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
       <p class="kicker">Admin</p>
       <h2>Invite people</h2>
       <p>Send your friends the server URL and the signup code. On the dashboard's <b>Admin</b> page, <b>Copy invite</b> copies both. They open the URL, sign up with the code, and land on <b>Home</b>, under your server's name.</p>
-      <p>The dashboard has a sidebar (a bottom bar on phones): <b>Home</b> holds the setup prompt for their agent and a list of their apps, <b>Apps</b> has a card per app, <b>Explore</b> shows everyone's apps, and admins also get <b>Admin</b>. Every page has its own link, so a bookmark or a reload lands in the same place. It follows the system's light or dark setting, and the toggle under your email overrides it.</p>
+      <p>The dashboard has a sidebar (a bottom bar on phones): <b>Home</b> holds the setup prompt for their agent and a list of their apps, <b>Apps</b> has a card per app, <b>Explore</b> shows everyone's apps, and admins also get <b>Admin</b>. Every page has its own link, so a bookmark or a reload lands in the same place. It follows the system's light or dark setting, and the toggle under your email overrides it. Press <b>⌘K</b> (<b>Ctrl+K</b>), or click <b>Search</b> in the sidebar, to jump to any page or app, copy the setup prompt or a common command, switch theme or log out, all from the keyboard.</p>
       <div class="two">
-        <figure class="shot"><img src="assets/dashboard-my-apps.png?v=15bb425b" alt="Cubby dashboard Home: a sidebar with Home, Apps, Agents, Explore and Admin, the Copy prompt for agent button and a table of the user's apps" loading="lazy" width="1280" height="820"><figcaption>Home, what a friend sees after signing up.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-my-apps.png?v=2b0656a2" alt="Cubby dashboard Home: a sidebar with Home, Apps, Agents, Explore and Admin, the Copy prompt for agent button and a table of the user's apps" loading="lazy" width="1280" height="820"><figcaption>Home, what a friend sees after signing up.</figcaption></figure>
         <div>
           <p><b>Rotate code</b> invalidates the old code for new signups; existing accounts keep working.</p>
           <p><b>Open signup</b> drops the code requirement entirely. Leave it off for a server on the public internet: bots find open signup forms within days.</p>
@@ -356,7 +356,7 @@ After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to c
         <li>Tests its own rules, then tells you the URL, what it built, and ideas for next steps.</li>
       </ol>
       <p>Everyone on your server can open the app and sees it on the <b>Explore</b> page. Ask for it to be unlisted if you'd rather share only the link.</p>
-      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-gallery.png?v=fdae93fd" alt="The Explore page listing everyone's apps: Team Tasks by Sam, Friend Polls and Book Club by Priya, Recipe Box by Arjun" loading="lazy" width="1280" height="820"><figcaption>Explore: what friends on the server have shipped.</figcaption></figure>
+      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-gallery.png?v=616041f6" alt="The Explore page listing everyone's apps: Team Tasks by Sam, Friend Polls and Book Club by Priya, Recipe Box by Arjun" loading="lazy" width="1280" height="820"><figcaption>Explore: what friends on the server have shipped.</figcaption></figure>
       <div class="note"><b>Changing an app later.</b> The server stores built output, not source code. Keep working in the folder the app was built in, and ask your agent for changes there.</div>
 
       <h3 id="jobs">Scheduled jobs</h3>
@@ -379,7 +379,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
         <li><b>Checked right away.</b> <code>cubby jobs run &lt;job&gt;</code> runs one now and prints its log, so the agent tests each job before telling you it's done. The app's card on the dashboard's <b>Apps</b> page lists its jobs, with <b>Run now</b>, <b>Pause</b> and the last log.</li>
         <li><b>Safe to miss.</b> A run that's due while the previous one is still going is skipped, and runs missed while the server was down aren't caught up later.</li>
       </ul>
-      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-apps.png?v=f9bc8e16" alt="The Apps page: the Friend Polls card with its two scheduled jobs, one that ran OK and one not run yet, each with Run now and Pause buttons" loading="lazy" width="1280" height="820"><figcaption>An app's scheduled jobs on the Apps page.</figcaption></figure>
+      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-apps.png?v=3e327a57" alt="The Apps page: the Friend Polls card with its two scheduled jobs, one that ran OK and one not run yet, each with Run now and Pause buttons" loading="lazy" width="1280" height="820"><figcaption>An app's scheduled jobs on the Apps page.</figcaption></figure>
     </section>
 
     <section id="cli">
@@ -466,7 +466,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           </ul>
           <p>Admins can't deploy into or edit other people's apps.</p>
         </div>
-        <figure class="shot"><img src="assets/dashboard-admin.png?v=1936738f" alt="Admin page with user and app counts, disk usage, the signup code, limits, scheduled jobs, users, apps and an update notice" loading="lazy" width="1280" height="1977"><figcaption>The Admin page.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-admin.png?v=93cf03fc" alt="Admin page with user and app counts, disk usage, the signup code, limits, scheduled jobs, users, apps and an update notice" loading="lazy" width="1280" height="1977"><figcaption>The Admin page.</figcaption></figure>
       </div>
       <h3>On the server</h3>
       <div class="table"><table>

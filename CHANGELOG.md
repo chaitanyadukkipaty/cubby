@@ -18,6 +18,9 @@ All notable changes to Cubby are documented here. The format follows
 - The dashboard lists an app's jobs on its card, with Run now, Pause and the last log. The Admin tab lists every
   app's jobs and has a switch to stop them all and a time limit per run (60 seconds by default).
 - `/api/info` lists optional server features (`features: ["jobs"]`).
+- A command palette in the dashboard: ⌘K (Ctrl+K), or Search in the sidebar, jumps to a page or one of your apps
+  and copies the setup prompt or a common command (`cubby deploy`, `cubby login`), switches theme or logs out.
+  Fuzzy search, fully keyboard-driven.
 
 ### Changed
 
