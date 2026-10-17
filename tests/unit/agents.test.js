@@ -65,7 +65,8 @@ describe('last seen', () => {
     mock.timers.enable({ apis: ['Date'], now: Date.parse('2030-01-01T12:00:00Z') });
     const lastUsed = () => tables.cubby_api_keys.find((k) => k.id === 'laptop').last_used;
     const user = await auth.authenticate(request('hk_laptop'));
-    assert.deepEqual(user, { id: 'ann', email: 'ann@x.dev', is_admin: false, key: 'hk_laptop', keyId: 'laptop' });
+    // `agent` attributes the request in the activity log.
+    assert.deepEqual(user, { id: 'ann', email: 'ann@x.dev', is_admin: false, key: 'hk_laptop', keyId: 'laptop', agent: { id: 'laptop', name: 'laptop' } });
     assert.equal(lastUsed(), '2030-01-01T12:00:00.000Z');
     mock.timers.tick(59_000);
     await auth.authenticate(request('hk_laptop'));
@@ -113,6 +114,19 @@ describe('renameAgent', () => {
     await assert.rejects(auth.renameAgent(as('ann', 'laptop'), 'bens', 'mine'), rejects(404, /No agent/));
     await assert.rejects(auth.renameAgent(as('ann', 'laptop'), 'manual', 'x'), rejects(400, /manual token/));
     assert.equal(tables.cubby_api_keys.find((k) => k.id === 'bens').label, 'bens');
+  });
+});
+
+describe('activity', () => {
+  test('rename and revoke are logged under the agent that asked, naming the agent they changed', async () => {
+    const actor = { id: 'ann', keyId: 'laptop', agent: { id: 'laptop', name: 'laptop' } };
+    await auth.renameAgent(actor, 'desktop', 'Old desktop');
+    await auth.revokeAgent(actor, 'desktop');
+    await assert.rejects(auth.revokeAgent(actor, 'bens'));
+    assert.deepEqual(tables.cubby_activity.map((r) => [r.user, r.agent, r.app, r.action, r.summary]), [
+      ['ann', 'laptop', '', 'agent.rename', 'Renamed agent "desktop" to "Old desktop"'],
+      ['ann', 'laptop', '', 'agent.revoke', 'Revoked agent "Old desktop"'],
+    ]);
   });
 });
 
