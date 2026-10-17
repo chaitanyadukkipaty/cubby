@@ -81,18 +81,21 @@ else's platform and you can't bring your own agent.
 - **One-command deploys.** `cubby deploy` pushes schema changes, builds and publishes. The last 10 deploys are kept for instant rollback.
 - **Scheduled jobs.** Apps can run code on a cron schedule (digests, reminders, cleanups, syncing from an API) with encrypted secrets. Each run is sandboxed and can only reach its own app's data and the public internet.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
-- **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps in a gallery, and manage users, limits and disk from an admin tab.
+- **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps on Explore, and manage users, limits and disk from the Admin page.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
-- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin tab tells you when one is out, and `cubby-server upgrade` installs it after a backup.
+- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin page tells you when one is out, and `cubby-server upgrade` installs it after a backup.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=e4b08ff1" alt="Dashboard with the Copy prompt for agent button and an app's scheduled jobs"><p align="center"><sub>Your dashboard on Priya's Cubby: connect your agent, see your apps and their jobs</sub></p></td>
-<td width="50%"><img src="docs/assets/connect-approve.png?v=fd35d280" alt="Approval page for connecting an AI agent"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=15bb425b" alt="Dashboard Home with a sidebar, the Copy prompt for agent button and a list of the user's apps"><p align="center"><sub>Home on Priya's Cubby: connect your agent, see your apps</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-apps.png?v=f9bc8e16" alt="The Apps page with app cards and an app's scheduled jobs"><p align="center"><sub>Apps: visibility, delete, and each app's scheduled jobs</sub></p></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-gallery.png?v=9cdf21ee" alt="Gallery of everyone's apps"><p align="center"><sub>Everyone's apps</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-admin.png?v=3453ddb1" alt="Admin tab with users, apps, limits, scheduled jobs, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, jobs, users, disk, updates</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-gallery.png?v=fdae93fd" alt="Explore page listing everyone's apps"><p align="center"><sub>Explore: everyone's apps</sub></p></td>
+<td width="50%"><img src="docs/assets/connect-approve.png?v=0360b2c0" alt="Approval page for connecting an AI agent"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
+</tr>
+<tr>
+<td colspan="2" align="center"><img src="docs/assets/dashboard-admin.png?v=1936738f" width="640" alt="Admin page with users, apps, limits, scheduled jobs, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, jobs, users, disk, updates</sub></p></td>
 </tr>
 </table>
 
@@ -134,7 +137,7 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
 install with no prompts. `--http-port <port>` (IP mode) and `--pb-port <port>` (PocketBase admin, loopback only,
 default 8090) pick the host ports; without a terminal, a busy port stops the install with the option to pass.
 
-When a new release is out, the Admin tab says so, with the release notes. On the server:
+When a new release is out, the Admin page says so, with the release notes. On the server:
 
 | Command | Does |
 | --- | --- |
@@ -150,7 +153,7 @@ automatically; see [Releases](CONTRIBUTING.md#releases).
 ## Connect your agent and build
 
 1. Open the server URL and **sign up** with the signup code.
-2. Copy the setup prompt from your dashboard and paste it into your agent (Claude Code, Codex, Cursor or OpenCode),
+2. Copy the setup prompt from your dashboard's Home page and paste it into your agent (Claude Code, Codex, Cursor or OpenCode),
    once per server. It has your server's name and URL filled in:
    ```text
    I'd like you to set up Cubby: Priya's Cubby at https://your-server.com, a self-hosted server where you build and host web apps for me.
@@ -265,7 +268,7 @@ npm run dev       # http://localhost:8080 · apps at http://<app>.localhost:8080
 ```
 
 ```
-server/    control API, app hosting, database proxy, dashboard (public/)
+server/    control API, app hosting, database proxy, dashboard (public/: an HTML shell, a stylesheet and ES modules)
 cli/       the cubby CLI, the app template (template/) and the agent skill (skill/)
 docker/    container entrypoint and the cubby-server management script
 docs/      this project's documentation site (GitHub Pages)

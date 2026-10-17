@@ -72,7 +72,7 @@ docker run --rm -p 8088:80 --env-file .env -e BASE_DOMAIN=localhost:8088 -e PUBL
 | Path | What lives there |
 | --- | --- |
 | `server/src/` | Control API, app hosting, PocketBase proxy and tenant isolation, schema translation, device login, backups, scheduled jobs and app secrets |
-| `server/public/` | The dashboard (single HTML file) and the skill installer script |
+| `server/public/` | The dashboard (an HTML shell, `app.css` and ES modules in `js/`, served as-is with hashed URLs; no build step) and the skill installer script |
 | `cli/src/` | The `cubby` CLI |
 | `cli/template/` | The app template every `cubby init` copies (Vite + React + Tailwind + PocketBase) |
 | `cli/skill/cubby/` | The agent skill (`SKILL.md`) |
@@ -241,7 +241,7 @@ a dedicated deploy key; don't create, move or delete `v*` tags by hand.
 A server built from a release tag reports `X.Y.Z`; any other build (a branch, a commit, local development) reports
 `X.Y.Z-dev+<commit>`. Different code never shows the same version, which the CLI launcher relies on. Admins install a
 release by default (`install.sh --version X.Y.Z` or `--ref <branch|tag|commit>` to choose), and move with
-`sudo cubby-server upgrade` (`--version` to pin or roll back, `--ref` to follow a branch). The Admin tab shows when a
+`sudo cubby-server upgrade` (`--version` to pin or roll back, `--ref` to follow a branch). The Admin page shows when a
 newer release is out.
 
 ## Using AI coding agents

@@ -235,6 +235,29 @@ describe('public pages and files', () => {
     assert.ok(r.text.includes(`Docs:  ${srv.url}/docs.md`));
     assert.match((await anon('GET', '/connect', { headers: { 'user-agent': 'curl/8.7.1' } })).headers.get('content-type'), /text\/html/, '/connect is only ever opened in a browser');
   });
+  test('every dashboard page is the same shell, so deep links reload; its stylesheet and modules are cached forever', async () => {
+    const shell = await anon('GET', '/', { headers: { 'user-agent': BROWSER_UA } });
+    for (const p of ['/apps', '/apps/', '/apps/some-app', '/agents', '/explore', '/admin']) {
+      const r = await anon('GET', p, { headers: { 'user-agent': 'curl/8.7.1' } });
+      assert.equal(r.status, 200, p);
+      assert.match(r.headers.get('content-type'), /^text\/html/, p);
+      assert.equal(r.text, shell.text, p);
+    }
+    const assets = [...shell.text.matchAll(/(?:href|src)="(\/static\/[0-9a-f]+\/[^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(assets.map((a) => a.split('/').slice(3).join('/')).sort(), ['app.css', 'js/main.js']);
+    for (const a of assets) {
+      const r = await anon('GET', a);
+      assert.equal(r.status, 200, a);
+      assert.match(r.headers.get('content-type'), a.endsWith('.css') ? /^text\/css/ : /^text\/javascript/);
+      assert.match(r.headers.get('cache-control'), /immutable/);
+    }
+    const main = assets.find((a) => a.endsWith('main.js'));
+    const sibling = main.replace(/main\.js$/, 'helpers.js');
+    assert.equal((await anon('GET', sibling)).status, 200, 'modules import each other by relative URL under the same prefix');
+    assert.equal((await anon('GET', main.replace(/\/static\/[0-9a-f]+\//, '/static/000000000000/'))).status, 404, 'an old prefix is gone');
+    for (const p of ['/apps/Bad_Slug', '/apps/a/b', '/static/x', '/index.html', '/app.css']) assert.equal((await anon('GET', p)).status, 404, p);
+    assert.equal((await anon('POST', '/apps')).status, 404, 'pages are GET only');
+  });
   test('dashboard, connect page, docs, skill, CLI tarball', async () => {
     for (const p of ['/', '/connect']) {
       const r = await anon('GET', p, { headers: { 'user-agent': BROWSER_UA } });

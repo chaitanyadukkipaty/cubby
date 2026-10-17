@@ -326,7 +326,7 @@ export async function listJobs(project, now = new Date()) {
 
 export async function runNow(project, name) {
   const job = await findJob(project, name);
-  if ((await getSettings()).jobs_off) throw new HttpError(403, 'Jobs are turned off on this server (Admin tab)');
+  if ((await getSettings()).jobs_off) throw new HttpError(403, 'Jobs are turned off on this server (Admin page)');
   return enqueue({ project, job, deploy: project.current_deploy, trigger: 'manual' });
 }
 
@@ -349,7 +349,7 @@ export async function setPaused(project, name, paused) {
   return { name, paused: Boolean(paused) };
 }
 
-// Every app's jobs, for the Admin tab.
+// Every app's jobs, for the Admin page.
 export async function allJobs(now = new Date()) {
   const projects = await admin.collection('cubby_projects').getFullList({ filter: 'current_deploy != ""', sort: 'slug', expand: 'owner' });
   const out = [];

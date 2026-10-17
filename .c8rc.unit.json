@@ -3,8 +3,8 @@
   "reporter": ["text-summary", "json-summary"],
   "report-dir": "coverage/unit",
   "check-coverage": true,
-  "lines": 85.9,
-  "statements": 85.9,
-  "functions": 87.6,
+  "lines": 86.1,
+  "statements": 86.1,
+  "functions": 87.8,
   "branches": 97.8
 }

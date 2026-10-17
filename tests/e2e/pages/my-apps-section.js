@@ -1,4 +1,4 @@
-// "My apps" tab: the connect-your-agent card, the token, and the user's own apps.
+// Home (the connect-your-agent card and the token) and /apps (the user's own apps as cards).
 export class MyAppsSection {
   constructor(page) {
     this.page = page;

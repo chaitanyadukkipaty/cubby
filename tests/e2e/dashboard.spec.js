@@ -21,7 +21,7 @@ test('a new user signs up with the signup code and lands on their dashboard', as
   await expect(dashboard.myApps.setupPrompt).toContainText('npx skills add chaitanyadukkipaty/cubby --skill cubby -g');
   await expect(dashboard.myApps.setupPrompt).toContainText(`curl -fsSL ${baseURL}/skill.sh | sh`);
   await expect(dashboard.myApps.emptyState).toBeVisible();
-  await expect(dashboard.adminTab).toHaveCount(0);
+  await expect(dashboard.adminLink).toHaveCount(0);
 
   await page.reload();
   await expect(dashboard.account(email)).toBeVisible();
@@ -84,6 +84,7 @@ test('a deployed app shows in My apps and the gallery; its owner can unlist and 
   await expect(friendView.gallery.app(slug).openLink).toHaveAttribute('href', new RegExp(`//${slug}\\.localhost:`));
 
   await dashboard.openAs(owner.token);
+  await dashboard.openMyApps();
   const app = dashboard.myApps.app(slug);
   await expect(app.status).toHaveText(/^Deployed just now$/);
   await expect(app.showInGallery).toBeChecked();
@@ -114,6 +115,7 @@ test("an app's scheduled jobs: run one now, read its log, pause and resume it", 
     'weekly-digest': { schedule: '0 9 * * 1', code: "export default async ({ log }) => log('sent 3 digests');" },
   });
   await dashboard.openAs(owner.token);
+  await dashboard.openMyApps();
   const app = dashboard.myApps.app(slug);
   await app.jobsToggle.click();
   const job = app.job('weekly-digest');
@@ -131,4 +133,45 @@ test("an app's scheduled jobs: run one now, read its log, pause and resume it", 
   await expect(job.state).toHaveText('paused');
   await job.resumeButton.click();
   await expect(job.state).toHaveText('ok');
+});
+
+test('every page has its own URL: deep links and reloads land on it, and back/forward work', async ({ page, api, authPage, dashboard }) => {
+  const user = await api.createUser('deeplink');
+  const slug = await api.createDeployedApp(user.token, 'deep');
+
+  // Signed out, a deep link shows the sign-in card and lands on the page after logging in.
+  await page.goto(`/apps/${slug}`);
+  await authPage.logIn(user);
+  await expect(dashboard.myApps.app(slug).card).toBeVisible();
+  await expect(dashboard.currentPage).toHaveText('Apps');
+
+  await page.reload();
+  await expect(dashboard.myApps.app(slug).status).toHaveText(/^Deployed /);
+  await expect(dashboard.myApps.app(slug).showInGallery).toBeChecked();
+
+  await page.getByRole('link', { name: '← Apps' }).click();
+  await expect(page).toHaveURL(/\/apps$/);
+  await dashboard.openGallery();
+  await expect(dashboard.pageHeading).toHaveText('Explore');
+  await page.goBack();
+  await expect(page).toHaveURL(/\/apps$/);
+  await expect(dashboard.pageHeading).toHaveText('Apps');
+  await page.goForward();
+  await expect(dashboard.currentPage).toHaveText('Explore');
+
+  await dashboard.agentsLink.click();
+  await expect(dashboard.pageHeading).toHaveText('Agents');
+  await page.reload();
+  await expect(dashboard.pageHeading).toHaveText('Agents');
+
+  await dashboard.openAs(user.token, '/apps/not-mine');
+  await expect(page.getByText("You don't have an app called not-mine.")).toBeVisible();
+  await dashboard.openAs(user.token, '/admin');
+  await expect(page).toHaveURL(/\/$/, { timeout: 5_000 }); // not an admin: back to Home
+  await expect(dashboard.myApps.connectHeading).toBeVisible();
+
+  await dashboard.openAs(await api.adminToken(), '/admin');
+  await expect(dashboard.admin.inviteHeading).toBeVisible();
+  await page.reload();
+  await expect(dashboard.admin.inviteHeading).toBeVisible();
 });

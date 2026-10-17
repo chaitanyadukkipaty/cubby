@@ -22,6 +22,13 @@ All notable changes to Cubby are documented here. The format follows
 ### Changed
 
 - `cubby rollback` restores the jobs a deploy shipped, not just the frontend.
+- The dashboard has a sidebar (a bottom bar on phones) and its own page per link: Home (`/`, the setup prompt and
+  your apps), Apps (`/apps`, and `/apps/<app>` for one app), Agents (`/agents`, a placeholder for now), Explore
+  (`/explore`, everyone's apps, formerly the gallery tab) and Admin (`/admin`). Links can be bookmarked and survive a
+  reload; signing in from a deep link lands on that page. A crisp light theme and a near-black dark theme follow the
+  system, and a toggle under your email overrides it (remembered in the browser).
+- The dashboard is now an HTML shell, a stylesheet and ES modules served with hashed URLs (still no build step and
+  no dependencies), instead of one HTML file.
 
 ## [0.1.4] - 2026-10-17
 

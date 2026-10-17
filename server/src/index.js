@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { fileURLToPath } from 'node:url';
 import { readFile, statfs } from 'node:fs/promises';
 import { config, SLUG_RE, prefixFor } from './config.js';
 import { HttpError, sendJson, readJson, readBody, rateLimiter } from './http.js';
@@ -14,6 +15,8 @@ import { listEnv, setEnv, unsetEnv } from './secrets.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
+import { loadDashboard } from './dashboard.js';
+import { matchRoute } from '../public/js/routes.js';
 import { commandsMarkdown } from '../../cli/src/commands.js';
 import { createUpdateChecker, fetchLatestRelease, scheduleUpdateChecks, updateView } from './updates.js';
 
@@ -258,7 +261,7 @@ async function tlsCheck(req, res, url) {
   res.end();
 }
 
-const dashboard = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+const dashboard = await loadDashboard(fileURLToPath(new URL('../public/', import.meta.url)));
 const skillInstaller = await readFile(new URL('../public/skill.sh', import.meta.url), 'utf8');
 const agentsGuide = await readFile(new URL('../../cli/template/AGENTS.md', import.meta.url), 'utf8');
 
@@ -301,9 +304,15 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache', vary: 'User-Agent' });
       return res.end(logic.agentLanding({ publicUrl: config.publicUrl, name: logic.serverName(await getSettings()) }));
     }
-    if ((url.pathname === '/' || url.pathname === '/connect') && req.method === 'GET') {
+    // Every dashboard page (/, /apps/:slug, /admin, …) is the same shell; the browser's router draws the page.
+    if (matchRoute(url.pathname) && req.method === 'GET') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', vary: 'User-Agent' });
-      return res.end(dashboard.replaceAll('{{PUBLIC_URL}}', config.publicUrl).replaceAll('{{VERSION}}', config.version));
+      return res.end(dashboard.page({ publicUrl: config.publicUrl, version: config.version }));
+    }
+    const asset = req.method === 'GET' && dashboard.asset(url.pathname);
+    if (asset) {
+      res.writeHead(200, { 'content-type': asset.type, 'content-length': asset.body.length, 'cache-control': 'public, max-age=31536000, immutable' });
+      return res.end(asset.body);
     }
     sendPage(res, 404, 'Not found');
   } catch (err) {
