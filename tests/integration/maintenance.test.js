@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
+import * as tar from 'tar';
 import { startServer, ROOT, SIGNUP_CODE } from '../helpers/server.js';
 import { api, signup, deployTo } from '../helpers/integration.js';
 
@@ -23,6 +24,8 @@ before(async () => {
   const t = await signup(srv.url, 'owner@test.dev');
   await api(srv.url, t)('POST', '/api/projects', { body: { slug: 'kept-app' } });
   await deployTo(api(srv.url, t), 'kept-app', { 'index.html': 'hi' });
+  // Creates the key that decrypts app secrets, which has to be backed up with the data.
+  await api(srv.url, t)('PUT', '/api/projects/kept-app/env/API_KEY', { body: { value: 'x' } });
 });
 after(() => srv?.stop());
 
@@ -49,6 +52,10 @@ describe('admin tasks', () => {
     const keys = (await pb.backups.getFullList()).map((b) => b.key).filter((k) => k.startsWith('cubby-')).sort();
     assert.deepEqual(keys, ['cubby-2000-01-02.zip', `cubby-${today}.zip`], 'keeps the newest 2, one per day');
     assert.deepEqual(readdirSync(siteBackups).sort(), ['sites-2000-01-02.tar.gz', `sites-${today}.tar.gz`]);
+    const entries = [];
+    await tar.t({ file: join(siteBackups, `sites-${today}.tar.gz`), onReadEntry: (e) => entries.push(e.path) });
+    assert.ok(entries.some((p) => p.startsWith('sites/kept-app/')), 'deployed sites');
+    assert.ok(entries.includes('secrets/env.key'), 'the secrets key');
     assert.ok(existsSync(join(srv.dataDir, 'pb_data', 'backups', `cubby-${today}.zip`)));
   });
   test('reset-password lets the user log in with the new password', async () => {

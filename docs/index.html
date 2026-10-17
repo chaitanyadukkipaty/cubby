@@ -8,7 +8,7 @@
 <link rel="icon" href="assets/logo.svg?v=aa679b5d" type="image/svg+xml">
 <meta property="og:title" content="Cubby: a home for the apps your agents build">
 <meta property="og:description" content="Self-host one server, invite your friends, and let AI coding agents build, deploy and share full-stack apps.">
-<meta property="og:image" content="assets/dashboard-my-apps.png?v=7efca832">
+<meta property="og:image" content="assets/dashboard-my-apps.png?v=e4b08ff1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -231,7 +231,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
       <p class="kicker">Architecture</p>
       <h2>How it works</h2>
       <p>Everything runs in one Docker container: Caddy in front for HTTPS, the Cubby server, and a shared <a href="https://pocketbase.io">PocketBase</a> database. Each app gets its own subdomain and its own walled-off slice of the database.</p>
-      <div class="arch" role="img" aria-label="Diagram: browsers and agents reach Caddy, which forwards to the Cubby server. The server serves the dashboard and control API, hosts each app's static files, and proxies each app's database calls to a shared PocketBase, allowing only that app's collections.">
+      <div class="arch" role="img" aria-label="Diagram: browsers and agents reach Caddy, which forwards to the Cubby server. The server serves the dashboard and control API, hosts each app's static files, and proxies each app's database calls to a shared PocketBase, allowing only that app's collections. It also runs each app's scheduled jobs.">
         <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg">
           <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="ar"/></marker></defs>
           <rect class="box" x="10" y="40" width="150" height="58" rx="10"/><text x="85" y="66" text-anchor="middle">Coding agent</text><text class="sm" x="85" y="84" text-anchor="middle">cubby CLI + skill</text>
@@ -241,7 +241,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
           <rect class="box" x="390" y="62" width="200" height="46" rx="8"/><text x="490" y="82" text-anchor="middle">Dashboard + API</text><text class="sm" x="490" y="98" text-anchor="middle">your-server.com</text>
           <rect class="box" x="390" y="120" width="200" height="46" rx="8"/><text x="490" y="140" text-anchor="middle">App hosting</text><text class="sm" x="490" y="156" text-anchor="middle">&lt;app&gt;.your-server.com</text>
           <rect class="box" x="390" y="178" width="200" height="46" rx="8"/><text x="490" y="198" text-anchor="middle">Database proxy</text><text class="sm" x="490" y="214" text-anchor="middle">&lt;app&gt;/pb/* → own data only</text>
-          <text class="sm" x="490" y="252" text-anchor="middle">deploys · backups · logins</text>
+          <text class="sm" x="490" y="252" text-anchor="middle">scheduled jobs · deploys · backups</text>
           <rect class="box" x="660" y="160" width="190" height="82" rx="10"/><text x="755" y="188" text-anchor="middle">PocketBase</text><text class="sm" x="755" y="206" text-anchor="middle">polls__votes, tasks__…</text><text class="sm" x="755" y="222" text-anchor="middle">one prefix per app</text>
           <path class="ln" d="M160 69 C185 69 185 130 203 135" marker-end="url(#a)"/>
           <path class="ln" d="M160 219 C185 219 185 160 203 155" marker-end="url(#a)"/>
@@ -253,7 +253,7 @@ footer { border-top: 1px solid var(--line); padding-inline: 16px; padding-block:
       <div class="grid">
         <div class="card"><h4>One subdomain per app</h4><p>Each app is its own website, so apps can never read each other's logins in the browser.</p></div>
         <div class="card"><h4>One database, walled off</h4><p>App <code>polls</code> owns collections named <code>polls__*</code>. The proxy refuses anything else.</p></div>
-        <div class="card"><h4>Static frontends</h4><p>Apps are Vite + React + Tailwind builds. Security lives in database rules, not server code.</p></div>
+        <div class="card"><h4>Static frontends, scheduled jobs</h4><p>Apps are Vite + React + Tailwind builds; security lives in database rules. Code that runs on a schedule goes in sandboxed jobs.</p></div>
       </div>
     </section>
 
@@ -301,7 +301,7 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
       <h2>Invite people</h2>
       <p>Send your friends the server URL and the signup code. In the dashboard's <b>Admin</b> tab, <b>Copy invite</b> copies both. They open the URL, sign up with the code, and land on their dashboard, headed with your server's name.</p>
       <div class="two">
-        <figure class="shot"><img src="assets/dashboard-my-apps.png?v=7efca832" alt="Cubby dashboard showing the Copy prompt for agent button and the user's Friend Polls app" loading="lazy" width="1280" height="1040"><figcaption>What a friend sees after signing up.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-my-apps.png?v=e4b08ff1" alt="Cubby dashboard showing the Copy prompt for agent button and the user's Friend Polls app with its scheduled jobs" loading="lazy" width="1280" height="1341"><figcaption>What a friend sees after signing up.</figcaption></figure>
         <div>
           <p><b>Rotate code</b> invalidates the old code for new signups; existing accounts keep working.</p>
           <p><b>Open signup</b> drops the code requirement entirely. Leave it off for a server on the public internet: bots find open signup forms within days.</p>
@@ -357,6 +357,28 @@ After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to c
       <p>Everyone on your server can open the app and sees it in <b>Everyone's apps</b>. Ask for it to be unlisted if you'd rather share only the link.</p>
       <figure class="shot" style="max-width:760px"><img src="assets/dashboard-gallery.png?v=9cdf21ee" alt="The Everyone's apps gallery listing Team Tasks by Sam and Friend Polls by Priya" loading="lazy" width="1280" height="820"><figcaption>Everyone's apps: what friends on the server have shipped.</figcaption></figure>
       <div class="note"><b>Changing an app later.</b> The server stores built output, not source code. Keep working in the folder the app was built in, and ask your agent for changes there.</div>
+
+      <h3 id="jobs">Scheduled jobs</h3>
+      <p>Some things should happen without anyone opening the app: closing polls when they expire, a weekly digest, a reminder before a deadline, pulling prices from an API every hour. Ask for it the same way:</p>
+      <p class="prompt">Close polls automatically when they expire, and email everyone a digest of new polls every Monday.</p>
+      <p>The agent writes one file per job in the app's <code>cubby/jobs/</code> folder, with a schedule in cron syntax (always UTC):</p>
+      <div class="code"><pre><span class="c">// cubby/jobs/close-expired-polls.ts</span>
+export const schedule = '*/15 * * * *';           <span class="c">// every 15 minutes</span>
+
+export default async ({ pb, env, log, fetch }) =&gt; {
+  const now = new Date().toISOString().replace('T', ' ');
+  const expired = await pb.collection('polls').getFullList({ filter: pb.filter('closed = false &amp;&amp; closes_at &lt; {:now}', { now }) });
+  for (const poll of expired) await pb.collection('polls').update(poll.id, { closed: true });
+  log(`closed ${expired.length} polls`);
+};</pre></div>
+      <ul>
+        <li><b>Shipped with the app.</b> <code>cubby deploy</code> bundles the jobs with the frontend, and <code>cubby rollback</code> brings back the jobs of that deploy.</li>
+        <li><b>Its own data, past the rules.</b> A job's <code>pb</code> acts as admin, but only for that app's collections. Other apps and the server's own data are out of reach.</li>
+        <li><b>Secrets stay secret.</b> API keys are set with <code>cubby env set NAME=value</code>, stored encrypted, never shown again, and given only to the app's jobs as <code>env.NAME</code>.</li>
+        <li><b>Checked right away.</b> <code>cubby jobs run &lt;job&gt;</code> runs one now and prints its log, so the agent tests each job before telling you it's done. The app's card on your dashboard lists its jobs, with <b>Run now</b>, <b>Pause</b> and the last log.</li>
+        <li><b>Safe to miss.</b> A run that's due while the previous one is still going is skipped, and runs missed while the server was down aren't caught up later.</li>
+      </ul>
+      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-my-apps.png?v=e4b08ff1" alt="My apps: the Friend Polls card with its two scheduled jobs, one that ran OK and one not run yet, each with Run now and Pause buttons" loading="lazy" width="1280" height="1341"><figcaption>An app's scheduled jobs on its owner's dashboard.</figcaption></figure>
     </section>
 
     <section id="cli">
@@ -375,9 +397,14 @@ After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to c
           <tr><td><code>cubby version</code></td><td>Show which CLI version runs for the current server, and the server's version.</td></tr>
           <tr><td><code>cubby help [&lt;command&gt;] [--json]</code></td><td>Every command and flag the targeted server supports. Agents use <code>--json</code>.</td></tr>
           <tr><td><code>cubby init &lt;app&gt;</code></td><td>Create an app: a folder from the template plus the app on the server.</td></tr>
-          <tr><td><code>cubby deploy -m "…"</code></td><td>Push the schema if it changed, build, and publish. <code>--unlisted</code> / <code>--listed</code> control the gallery.</td></tr>
+          <tr><td><code>cubby deploy -m "…"</code></td><td>Push the schema if it changed, build (with the jobs in <code>cubby/jobs/</code>), and publish. <code>--unlisted</code> / <code>--listed</code> control the gallery.</td></tr>
           <tr><td><code>cubby deploys</code></td><td>List the last 10 deploys of this app.</td></tr>
-          <tr><td><code>cubby rollback &lt;id&gt;</code></td><td>Serve an earlier deploy again, instantly. Data is not rolled back.</td></tr>
+          <tr><td><code>cubby rollback &lt;id&gt;</code></td><td>Serve an earlier deploy again, instantly, with the jobs it shipped. Data and secrets are not rolled back.</td></tr>
+          <tr><td><code>cubby jobs</code></td><td>List the app's scheduled jobs with their schedule, next run and last run.</td></tr>
+          <tr><td><code>cubby jobs run &lt;job&gt;</code></td><td>Run a job now and print its log. Exits with 1 if it failed.</td></tr>
+          <tr><td><code>cubby jobs logs &lt;job&gt; [--limit n] [--run &lt;id&gt;]</code></td><td>Show past runs and their output (the last 100 per job are kept).</td></tr>
+          <tr><td><code>cubby jobs pause | resume &lt;job&gt;</code></td><td>Stop or restart a job's schedule. Stays that way across deploys.</td></tr>
+          <tr><td><code>cubby env list | set NAME=value | unset NAME --yes</code></td><td>Secrets for jobs. <code>set NAME --from-stdin</code> keeps the value out of shell history.</td></tr>
           <tr><td><code>cubby schema push | pull</code></td><td>Apply or download the data model. Push never deletes anything.</td></tr>
           <tr><td><code>cubby schema drop &lt;c&gt;[.&lt;f&gt;] --yes</code></td><td>Delete a collection or field and its data.</td></tr>
           <tr><td><code>cubby projects</code> · <code>info</code> · <code>link &lt;app&gt;</code></td><td>List your apps, show the current one, or attach this folder to an existing app.</td></tr>
@@ -434,10 +461,11 @@ After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to c
             <li>Set apps per user and the maximum deploy size</li>
             <li>Disable a user (their apps stay online) or delete them with their apps</li>
             <li>Delete any app, for example to free disk space</li>
+            <li>See every app's scheduled jobs and how their last run went, set the time limit per run (60 seconds by default), or stop all jobs at once</li>
           </ul>
           <p>Admins can't deploy into or edit other people's apps.</p>
         </div>
-        <figure class="shot"><img src="assets/dashboard-admin.png?v=e8871123" alt="Admin tab with user and app counts, disk usage, the signup code, limits, users, apps and an update notice" loading="lazy" width="1280" height="1917"><figcaption>The Admin tab.</figcaption></figure>
+        <figure class="shot"><img src="assets/dashboard-admin.png?v=3453ddb1" alt="Admin tab with user and app counts, disk usage, the signup code, limits, scheduled jobs, users, apps and an update notice" loading="lazy" width="1280" height="2351"><figcaption>The Admin tab.</figcaption></figure>
       </div>
       <h3>On the server</h3>
       <div class="table"><table>
@@ -457,7 +485,7 @@ After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to c
       </table></div>
       <p><b>Updates.</b> Once a day the server asks GitHub for the latest Cubby release. When there's a newer one, the Admin tab shows <b>Update available</b> with a link to the release notes and the command to run. Turn the check off in the Admin tab, or set <code>CUBBY_UPDATE_CHECK=0</code> in <code>/opt/cubby/cubby.env</code> to disable it completely.</p>
       <p><b>Versions.</b> A server built from a release shows its version, like <code>0.1.1</code>. Anything else shows the commit too, like <code>0.1.1-dev+b2cb75c</code>, so you always know which code is running.</p>
-      <p><b>Backups</b> run every night at 03:00: a full database backup plus all deployed sites. The last 7 are kept. Restoring rolls back every app on the server, so it's for real accidents.</p>
+      <p><b>Backups</b> run every night at 03:00: a full database backup plus all deployed sites with their jobs, and the key that decrypts app secrets. The last 7 are kept. Restoring rolls back every app on the server, so it's for real accidents.</p>
       <p>The PocketBase admin UI is only reachable from the server itself: <code>ssh -L 8090:127.0.0.1:8090 you@server</code>, then open <code>http://localhost:8090/_/</code>. If 8090 was taken at install, the installer printed the port it used instead (<code>CUBBY_PB_PORT</code> in <code>/opt/cubby/cubby.env</code>).</p>
     </section>
 
@@ -469,21 +497,23 @@ After installing, read ~/.agents/skills/cubby/SKILL.md and follow its Setup to c
         <li><b>Apps are isolated.</b> Each app's database calls go through a proxy that only allows that app's collections and file storage. It rejects logins issued by other apps and blocks the database admin UI and settings.</li>
         <li><b>Only owners change apps.</b> Deploying, changing the schema and deleting all require the owner's token. Admins can delete apps but can't edit them.</li>
         <li><b>Agents never see passwords.</b> They log in through a link you approve in the browser.</li>
-        <li><b>Deploys are inert files.</b> Uploads are unpacked as plain files only (no symlinks), into folders that can't be escaped.</li>
+        <li><b>Deploys are inert files.</b> Uploads are unpacked as plain files only (no symlinks), into folders that can't be escaped. Job code is moved out of the site, so it's never served.</li>
+        <li><b>Jobs are sandboxed.</b> Each run is a separate Node.js process with the permission model on: it can't read the server's files, start processes or see its environment, and it can only connect to public internet addresses, never to the database or anything else on the server's network. Its database client reaches only its own app's records, checked by the same code as the proxy. Runs have a time limit and a 128 MB memory cap, and at most two run at once. This stops accidents and snooping between apps; like the rest of Cubby, it assumes people with accounts aren't attackers.</li>
+        <li><b>Secrets are encrypted</b> with a server key that's kept outside the database (and backed up with it). The database admin UI shows only ciphertext, and values are never shown again after they're set.</li>
         <li><b>Tokens</b> are stored so the dashboard can show yours again. <b>Regenerate</b> revokes the old one immediately.</li>
         <li><b>Use a domain.</b> On an IP-only server, traffic is unencrypted.</li>
-        <li><b>One outbound request.</b> The daily release check to GitHub is the only request a server makes on its own, and it sends nothing about your server or users. Admins can turn it off.</li>
+        <li><b>One outbound request of its own.</b> The daily release check to GitHub is the only request Cubby itself makes, and it sends nothing about your server or users. Admins can turn it off. Apps' scheduled jobs make the requests their owners write.</li>
       </ul>
     </section>
 
     <section id="faq">
       <p class="kicker">Answers</p>
       <h2>FAQ and limits</h2>
-      <details class="faq"><summary>Can apps have server-side code?</summary><p>Not yet. Apps are static frontends; all data access goes through database rules. That covers most group tools: polls, trackers, lists, boards, small games.</p></details>
+      <details class="faq"><summary>Can apps have server-side code?</summary><p>On a schedule, yes: <a href="#jobs">scheduled jobs</a> run code every few minutes, hours or days, with their own app's data and secrets. Code that runs per request (API endpoints, hooks) isn't supported; browsers talk to the database directly, under its rules. That covers most group tools: polls, trackers, lists, boards, small games.</p></details>
       <details class="faq"><summary>Can people outside the server use an app?</summary><p>Yes. Apps are public at their URLs, and each app has its own sign-up. Only the dashboard and gallery need a Cubby account.</p></details>
       <details class="faq"><summary>How big can it get?</summary><p>All apps share one SQLite database, which comfortably serves a group of friends or a small team. One very busy app slows the others. There's no per-app data quota yet; the Admin tab shows disk use so you can clean up.</p></details>
       <details class="faq"><summary>Which agents work?</summary><p>Any agent that supports skills (Claude Code, Codex, Cursor, OpenCode). Others can still use Cubby by reading <code>&lt;server&gt;/docs.md</code> and running the CLI.</p></details>
-      <details class="faq"><summary>What's not supported yet?</summary><p>Server-side code, cron jobs, custom domains per app, single sign-on across apps, and app emails (verification, password reset).</p></details>
+      <details class="faq"><summary>What's not supported yet?</summary><p>Server code that runs per request (API endpoints, hooks), custom domains per app, single sign-on across apps, and app emails (verification, password reset). Jobs can send email through a provider's API with your own key.</p></details>
       <details class="faq"><summary>Can I use several Cubby servers?</summary><p>Yes. Paste each server's setup prompt into your agent once; the first one becomes the default for new apps; your agent then picks a server by its name, and asks if it isn't sure. <code>cubby servers</code> lists them and <code>cubby use</code> sets the default. Servers on different Cubby versions work side by side: the CLI always matches the server it's talking to (in an app folder, the server in <code>cubby.json</code>), downloading that server's version of the CLI once. Agents find out what a server supports with <code>cubby help --json</code>. Servers older than Cubby 0.1.1 aren't supported; the CLI tells you to ask the admin to run <code>sudo cubby-server upgrade</code>.</p></details>
       <details class="faq"><summary>A server moved to a new address. How do I move my app?</summary><p>Each app's <code>cubby.json</code> remembers its server's address. Log in to the new address, then run <code>cubby link &lt;app&gt; --server &lt;new-url&gt;</code> in the app's folder.</p></details>
       <details class="faq"><summary>Which version am I on, and how do I update?</summary><p>The Admin tab shows the version at the bottom and tells you when a newer release is out. On the server, <code>sudo cubby-server version</code> shows the details and <code>sudo cubby-server upgrade</code> updates (it backs up first). Normal releases go 0.1.1 → 0.1.2; only a major change moves to 0.2.0.</p></details>

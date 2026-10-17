@@ -143,6 +143,24 @@ describe('server names', () => {
   test('connectHeading without a name says "this server"', () => assert.equal(f.connectHeading(''), 'Connect your agent to this server?'));
 });
 
+describe('jobState', () => {
+  const ctx = vm.createContext({ Node, document: { createElement: (t) => new FakeElement(t) }, URLSearchParams, Date, String, Object });
+  vm.runInContext(block, ctx);
+  const jobState = vm.runInContext('jobState', ctx);
+  const st = (j) => ({ ...jobState(j) });
+  test('paused and never-run jobs are muted', () => {
+    assert.deepEqual(st({ paused: true, last_run: { status: 'error' } }), { kind: 'muted', text: 'paused' });
+    assert.deepEqual(st({ paused: false, last_run: null }), { kind: 'muted', text: 'not run yet' });
+  });
+  test('the last run decides otherwise', () => {
+    assert.deepEqual(st({ last_run: { status: 'ok' } }), { kind: 'ok', text: 'ok' });
+    assert.deepEqual(st({ last_run: { status: 'error' } }), { kind: 'danger', text: 'error' });
+    assert.deepEqual(st({ last_run: { status: 'timeout' } }), { kind: 'danger', text: 'timeout' });
+    assert.deepEqual(st({ last_run: { status: 'skipped' } }), { kind: 'muted', text: 'skipped' });
+    assert.deepEqual(st({ last_run: { status: 'running' } }), { kind: 'muted', text: 'running' });
+  });
+});
+
 describe('updateNotice', () => {
   const ctx = vm.createContext({ Node, document: { createElement: (t) => new FakeElement(t) }, URLSearchParams, Date, String, Object });
   vm.runInContext(block, ctx);

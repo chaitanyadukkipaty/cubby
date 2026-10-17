@@ -5,6 +5,24 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Scheduled jobs. An app can run code on a cron schedule (UTC): one file per job in `cubby/jobs/`, bundled with its
+  npm dependencies by `cubby deploy` and rolled back with the deploy. Each run is a sandboxed Node.js process (no
+  access to the server's files, environment, processes or local network) whose database client reaches only that
+  app's records, as admin. `cubby jobs` lists jobs; `cubby jobs run <job>` runs one now and prints its log;
+  `cubby jobs logs` and `cubby jobs pause|resume` do what they say. A job never overlaps itself, and missed runs are
+  skipped.
+- App secrets for jobs: `cubby env set NAME=value` (or `--from-stdin`), `cubby env list`, `cubby env unset NAME --yes`.
+  Values are encrypted with a server key in `DATA_DIR/secrets`, which nightly backups now include.
+- The dashboard lists an app's jobs on its card, with Run now, Pause and the last log. The Admin tab lists every
+  app's jobs and has a switch to stop them all and a time limit per run (60 seconds by default).
+- `/api/info` lists optional server features (`features: ["jobs"]`).
+
+### Changed
+
+- `cubby rollback` restores the jobs a deploy shipped, not just the frontend.
+
 ## [0.1.4] - 2026-10-17
 
 ### Added

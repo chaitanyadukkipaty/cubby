@@ -1,5 +1,5 @@
 // "Update available" notice for admins. At most once a day the server asks GitHub for the latest Cubby release;
-// this is the only outbound request a server makes. Everything that does I/O comes in through arguments so the
+// this is the only outbound request Cubby itself makes (apps' jobs make their own). Everything that does I/O comes in through arguments so the
 // logic is unit-tested without network.
 import { isUpdateAvailable } from './version.js';
 

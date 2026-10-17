@@ -72,6 +72,64 @@ describe('formatters', () => {
   });
 });
 
+describe('jobs and env helpers', () => {
+  test('jobEntries: one job per top-level file; _helpers and .d.ts are not jobs', () => {
+    assert.deepEqual(lib.jobEntries(['weekly-digest.ts', 'ping.mjs', '_shared.ts', 'types.d.ts', 'README.md', 'b.js', 'c.mts']),
+      { 'b': 'b.js', 'c': 'c.mts', ping: 'ping.mjs', 'weekly-digest': 'weekly-digest.ts' });
+    assert.deepEqual(lib.jobEntries([]), {});
+  });
+  test('jobEntries rejects bad names and two files for one job', () => {
+    try {
+      lib.jobEntries(['Daily.ts', 'two--dashes.ts', 'a.ts', 'a.js', `${'x'.repeat(41)}.ts`]);
+      assert.fail('should throw');
+    } catch (err) {
+      assert.equal(err.message, 'Invalid jobs');
+      assert.equal(err.details.length, 4);
+      assert.match(err.details.join('\n'), /cubby\/jobs\/Daily\.ts: job file names/);
+      assert.match(err.details.join('\n'), /cubby\/jobs\/a\.ts: another file is already job "a"/);
+    }
+  });
+  test('jobSchedule reads `export const schedule` with any quote style', () => {
+    assert.equal(lib.jobSchedule("import x from 'y';\nexport const schedule = '0 9 * * 1';\n", 'f'), '0 9 * * 1');
+    assert.equal(lib.jobSchedule('export const schedule="*/5 * * * *"', 'f'), '*/5 * * * *');
+    assert.equal(lib.jobSchedule('export  const  schedule = ` 0 0 * * * `;', 'f'), '0 0 * * *');
+    assert.throws(() => lib.jobSchedule('const schedule = "x"', 'cubby/jobs/a.ts'), /cubby\/jobs\/a\.ts: add `export const schedule/);
+  });
+  test('jobsBuildScript bundles every entry as ESM with its dependencies', () => {
+    const s = lib.jobsBuildScript({ a: '/app/cubby/jobs/a.ts' }, '/app/dist/__cubby_jobs');
+    assert.match(s, /import \{ build \} from 'vite'/);
+    assert.match(s, /noExternal: true/);
+    assert.match(s, /"a":"\/app\/cubby\/jobs\/a\.ts"/);
+    assert.match(s, /outDir: "\/app\/dist\/__cubby_jobs"/);
+    assert.match(s, /entryFileNames: '\[name\]\.mjs'/);
+  });
+  test('formatJobs', () => {
+    const text = lib.formatJobs([
+      { name: 'digest', schedule: '0 9 * * 1', paused: false, next_run: '2026-10-19T09:00:00.000Z', last_run: { status: 'ok', started: 'S', duration_ms: 1500 } },
+      { name: 'ping', schedule: '* * * * *', paused: true, next_run: null, last_run: { status: 'error', started: 'T', duration_ms: 20 } },
+      { name: 'never', schedule: '0 0 30 2 *', paused: false, next_run: null, last_run: null },
+      { name: 'odd', schedule: '* * * * *', paused: false, next_run: null, last_run: { status: 'skipped', started: 'U', duration_ms: null } },
+    ]);
+    assert.match(text, /digest\s+0 9 \* \* 1\s+next: 2026-10-19T09:00:00.000Z  last: ok S \(1\.5s\)/);
+    assert.match(text, /ping\s+\* \* \* \* \*\s+paused  last: error T \(20ms\)/);
+    assert.match(text, /never.*next: never  never run/);
+    assert.match(text, /odd.*last: skipped U \(\)/);
+    assert.match(lib.formatJobs([]), /No jobs\. Add one in cubby\/jobs/);
+  });
+  test('formatRun and formatEnv', () => {
+    assert.equal(lib.formatRun({ job: 'a', id: 'r1', status: 'ok', trigger: 'manual', started: 'S', duration_ms: 5, log: 'hi\n' }), 'a r1  ok  manual  S  5ms\nhi');
+    assert.match(lib.formatRun({ job: 'a', id: 'r1', status: 'skipped', trigger: 'cron', started: 'S', duration_ms: 0, log: '' }), /\(no output\)$/);
+    assert.match(lib.formatRun({ job: 'a', id: 'r1', status: 'ok', trigger: 'cron', started: 'S', duration_ms: 0 }), /\(no output\)$/);
+    assert.match(lib.formatEnv([{ key: 'API_KEY', updated: 'U' }]), /^API_KEY\s+set U$/);
+    assert.match(lib.formatEnv([]), /No secrets/);
+  });
+  test('parseEnvAssignment splits at the first =', () => {
+    assert.deepEqual(lib.parseEnvAssignment('API_KEY=a=b'), { key: 'API_KEY', value: 'a=b' });
+    assert.deepEqual(lib.parseEnvAssignment('EMPTY='), { key: 'EMPTY', value: '' });
+    for (const bad of ['NOVALUE', '=x', undefined]) assert.throws(() => lib.parseEnvAssignment(bad), /Usage: cubby env set/, String(bad));
+  });
+});
+
 describe('waitForApproval', () => {
   const clock = () => { let t = 0; return { now: () => t, sleep: async (ms) => { t += ms; } }; };
   test('returns the token once approved, polling at the interval', async () => {

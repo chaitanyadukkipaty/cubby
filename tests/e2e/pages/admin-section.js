@@ -15,6 +15,11 @@ export class AdminSection {
     this.releaseNotesLink = this.updates.getByRole('link', { name: /Release notes/ });
     this.copyUpgradeButton = this.updates.getByRole('button', { name: 'Copy command' });
     this.updateCheck = page.getByLabel(/Check for new Cubby releases/);
+    this.jobsHeading = page.getByRole('heading', { name: /^Scheduled jobs \(\d+\)$/ });
+    this.runJobs = page.getByLabel(/Run scheduled jobs/);
+    this.jobTimeout = page.getByLabel('Time limit per run (seconds)');
+    this.saveJobTimeoutButton = page.getByRole('button', { name: 'Save', exact: true });
+    this.jobRow = (app, job) => page.getByRole('row').filter({ hasText: app }).filter({ hasText: job });
   }
 
   async renameServer(name) {

@@ -97,6 +97,8 @@ async function ensurePlatformCollections() {
       { name: 'last_deployed', type: 'date' },
       { name: 'unlisted', type: 'bool' },
       { name: 'schema_hash', type: 'text' },
+      // Names of jobs paused by the owner; kept across deploys and rollbacks.
+      { name: 'jobs_paused', type: 'json' },
       ...autodates,
     ],
     indexes: ['CREATE UNIQUE INDEX idx_cubby_projects_slug ON cubby_projects (slug)'],
@@ -145,7 +147,43 @@ async function ensurePlatformCollections() {
       { name: 'max_deploy_mb', type: 'number', onlyInt: true },
       // Stored inverted so settings rows created before this field existed (false) keep the check on.
       { name: 'update_check_off', type: 'bool' },
+      // Same for the jobs kill switch. A job_timeout_s of 0 (rows from before jobs) means the default.
+      { name: 'jobs_off', type: 'bool' },
+      { name: 'job_timeout_s', type: 'number', onlyInt: true },
       ...autodates,
     ],
+  });
+
+  // Scheduled job runs (jobs.js), pruned to the last 100 per job.
+  await upsertCollection({
+    name: 'cubby_job_runs',
+    type: 'base',
+    ...LOCKED,
+    fields: [
+      { name: 'project', type: 'relation', collectionId: projects.id, maxSelect: 1, required: true, cascadeDelete: true },
+      { name: 'job', type: 'text', required: true, max: 40 },
+      { name: 'deploy', type: 'text' },
+      { name: 'trigger', type: 'text', max: 20 },
+      { name: 'status', type: 'text', max: 20 },
+      { name: 'started', type: 'date' },
+      { name: 'duration_ms', type: 'number', onlyInt: true },
+      { name: 'log', type: 'text', max: 70_000 },
+      ...autodates,
+    ],
+    indexes: ['CREATE INDEX idx_cubby_job_runs_job ON cubby_job_runs (project, job, started)'],
+  });
+
+  // App secrets for jobs (secrets.js), encrypted with the server key.
+  await upsertCollection({
+    name: 'cubby_app_env',
+    type: 'base',
+    ...LOCKED,
+    fields: [
+      { name: 'project', type: 'relation', collectionId: projects.id, maxSelect: 1, required: true, cascadeDelete: true },
+      { name: 'key', type: 'text', required: true, max: 64 },
+      { name: 'value', type: 'text', max: 20_000 },
+      ...autodates,
+    ],
+    indexes: ['CREATE UNIQUE INDEX idx_cubby_app_env_key ON cubby_app_env (project, `key`)'],
   });
 }

@@ -17,7 +17,7 @@ export const config = {
   // /cli.tgz with) another version, so version-skew handling can be tested with two servers from one checkout.
   version: computeVersion({ pkgVersion, override: env('CUBBY_VERSION_OVERRIDE'), commit: build.commit, tag: build.tag }),
   commit: build.commit,
-  // Daily check for a newer GitHub release: the only outbound request a server makes. CUBBY_UPDATE_CHECK=0 turns
+  // Daily check for a newer GitHub release: the only outbound request Cubby itself makes. CUBBY_UPDATE_CHECK=0 turns
   // it off entirely; admins can also turn it off in the Admin tab.
   updates: {
     enabled: env('CUBBY_UPDATE_CHECK', '1') !== '0',

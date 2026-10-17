@@ -115,3 +115,36 @@ test('users and apps: disable and re-enable a user, delete their app, then delet
   await expect(row.row).toHaveCount(0);
   expect(await api.meStatus(user.token)).toBe(401);
 });
+
+test("jobs: every app's jobs are listed; the kill switch stops runs and the time limit is validated", async ({ page, api, dashboard }) => {
+  const { admin } = dashboard;
+  const owner = await api.createUser('jobowner');
+  const slug = await api.createAppWithJobs(owner.token, 'adm-jobs', { nightly: { schedule: '0 2 * * *', code: 'export default async () => {};' } });
+  await page.reload();
+  await dashboard.openAdmin();
+
+  await expect(admin.jobsHeading).toBeVisible();
+  const row = admin.jobRow(slug, 'nightly');
+  await expect(row).toContainText(owner.email);
+  await expect(row).toContainText('0 2 * * *');
+  await expect(row).toContainText('not run yet');
+
+  await admin.runJobs.uncheck();
+  await expect(dashboard.toast).toHaveText('All jobs stopped');
+  expect((await api.settings()).jobs).toBe(false);
+  const refused = await api.as(owner.token)('POST', `/api/projects/${slug}/jobs/nightly/run`);
+  expect(refused.status).toBe(403);
+  await admin.runJobs.check();
+  await expect(dashboard.toast).toHaveText('Jobs will run on schedule');
+  expect((await api.settings()).jobs).toBe(true);
+
+  await admin.jobTimeout.fill('1000');
+  await admin.saveJobTimeoutButton.click();
+  expect(await admin.jobTimeout.evaluate((el) => el.checkValidity())).toBe(false); // the browser refuses it (max 290)
+  expect((await api.settings()).job_timeout_s).toBe(60);
+  await admin.jobTimeout.fill('90');
+  await admin.saveJobTimeoutButton.click();
+  await expect(dashboard.toast).toHaveText('Time limit saved');
+  expect((await api.settings()).job_timeout_s).toBe(90);
+  await api.updateSettings({ job_timeout_s: 60 });
+});

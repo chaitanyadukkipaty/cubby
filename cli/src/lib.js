@@ -163,3 +163,61 @@ export function skillStatus(home) {
   const links = skillLinks(home).map(({ agent, state }) => ({ agent, state }));
   return { installed, version, path: skillHome, links };
 }
+
+// --- Scheduled jobs --------------------------------------------------------------------------------
+// One job per file in cubby/jobs/ (name = file name). Files starting with _ are shared helpers, not jobs.
+export const JOB_NAME_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+const JOB_EXT_RE = /\.(ts|mts|js|mjs)$/;
+
+export function jobEntries(files) {
+  const entries = {};
+  const errors = [];
+  for (const f of [...files].sort()) {
+    if (!JOB_EXT_RE.test(f) || f.startsWith('_') || f.endsWith('.d.ts')) continue;
+    const name = f.replace(JOB_EXT_RE, '');
+    if (!JOB_NAME_RE.test(name) || name.length > 40) errors.push(`cubby/jobs/${f}: job file names use lowercase letters, digits and single hyphens (max 40)`);
+    else if (entries[name]) errors.push(`cubby/jobs/${f}: another file is already job "${name}"`);
+    else entries[name] = f;
+  }
+  if (errors.length) throw new CliError('Invalid jobs', errors);
+  return entries;
+}
+
+// Read from the source, so the server knows each schedule without running any code.
+export function jobSchedule(source, file) {
+  const m = source.match(/^export\s+const\s+schedule\s*=\s*(['"`])([^'"`\n]+)\1/m);
+  if (!m) throw new CliError(`${file}: add \`export const schedule = '0 9 * * *'\` (5-field cron, UTC)`);
+  return m[2].trim();
+}
+
+// Bundles each job (with its npm dependencies) into one ESM file, using the app's own Vite.
+// Run with `node --input-type=module -e` in the app folder, so `vite` resolves from its node_modules.
+export const jobsBuildScript = (entries, outDir) => `
+import { build } from 'vite';
+await build({
+  configFile: false, logLevel: 'warn', publicDir: false,
+  ssr: { noExternal: true, target: 'node' },
+  build: {
+    ssr: true, outDir: ${JSON.stringify(outDir)}, emptyOutDir: true, target: 'node20', minify: false, copyPublicDir: false,
+    rollupOptions: { input: ${JSON.stringify(entries)}, output: { format: 'es', entryFileNames: '[name].mjs', chunkFileNames: 'chunks/[name]-[hash].mjs' } },
+  },
+});`;
+
+const duration = (ms) => (ms == null ? '' : ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`);
+
+export const formatJobs = (list) =>
+  list.map((j) => {
+    const last = j.last_run ? `last: ${j.last_run.status} ${j.last_run.started} (${duration(j.last_run.duration_ms)})` : 'never run';
+    return `${j.name.padEnd(24)} ${j.schedule.padEnd(16)} ${j.paused ? 'paused' : `next: ${j.next_run ?? 'never'}`}  ${last}`;
+  }).join('\n') || 'No jobs. Add one in cubby/jobs/<name>.ts and deploy.';
+
+export const formatRun = (r) => `${r.job} ${r.id}  ${r.status}  ${r.trigger}  ${r.started}  ${duration(r.duration_ms)}\n${r.log?.trimEnd() || '(no output)'}`;
+
+export const formatEnv = (list) => list.map((e) => `${e.key.padEnd(32)} set ${e.updated}`).join('\n') || 'No secrets. Add one with: cubby env set NAME=value';
+
+// `cubby env set NAME=value`
+export function parseEnvAssignment(text) {
+  const i = String(text ?? '').indexOf('=');
+  if (i < 1) throw new CliError('Usage: cubby env set NAME=value, or cubby env set NAME --from-stdin');
+  return { key: text.slice(0, i), value: text.slice(i + 1) };
+}

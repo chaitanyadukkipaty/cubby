@@ -12,9 +12,10 @@ import { api, signup } from '../helpers/integration.js';
 const CLI = join(ROOT, 'cli/src/launcher.js');
 let srv, home, work, token;
 
-function cubby(args, { cwd = work, env = {}, home: h = home } = {}) {
+function cubby(args, { cwd = work, env = {}, home: h = home, input } = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [CLI, ...args], { cwd, env: { ...process.env, HOME: h, CUBBY_TOKEN: '', CUBBY_SERVER: '', CUBBY_CLIENT: '', ...env } });
+    child.stdin.end(input ?? '');
     let stdout = '', stderr = '';
     child.stdout.on('data', (d) => (stdout += d));
     child.stderr.on('data', (d) => (stderr += d));
@@ -304,5 +305,89 @@ describe('more commands', () => {
     } finally {
       fake.close();
     }
+  });
+});
+
+describe('jobs and secrets', () => {
+  const d = () => join(work, 'job-app');
+  const inApp = (args, opts = {}) => cubby(args, { cwd: d(), ...opts });
+  const job = (name, code) => writeFileSync(join(d(), 'cubby/jobs', name), code);
+
+  before(async () => {
+    ok(await cubby(['init', 'job-app', '--no-install', '--dir', d()]));
+    rmSync(join(d(), 'cubby/schema.json'));
+    writeFileSync(join(d(), 'package.json'), JSON.stringify({ name: 'job-app', type: 'module', scripts: {
+      build: `node -e "require('fs').mkdirSync('dist',{recursive:true});require('fs').writeFileSync('dist/index.html','built')"`,
+    } }));
+    // A stand-in for the app's Vite: "bundles" each job by copying it, so this test needs no npm install.
+    mkdirSync(join(d(), 'node_modules/vite'), { recursive: true });
+    writeFileSync(join(d(), 'node_modules/vite/package.json'), JSON.stringify({ name: 'vite', type: 'module', main: 'index.js' }));
+    writeFileSync(join(d(), 'node_modules/vite/index.js'), `import { mkdirSync, copyFileSync } from 'node:fs';
+export async function build({ build: { outDir, rollupOptions: { input } } }) {
+  mkdirSync(outDir, { recursive: true });
+  for (const [name, file] of Object.entries(input)) copyFileSync(file, outDir + '/' + name + '.mjs');
+}`);
+    mkdirSync(join(d(), 'cubby/jobs'), { recursive: true }); // the template ships cubby/jobs/_context.ts
+  });
+
+  test('secrets: set (inline or from stdin), list names, unset with --yes', async () => {
+    assert.match(ok(await inApp(['env', 'set', 'TOKEN=abc=123'])).stdout, /Set TOKEN\. Jobs read it as env\.TOKEN/);
+    assert.equal(ok(await inApp(['env', 'set', 'OTHER', '--from-stdin', '--json'], { input: 'from stdin\n' })).json.key, 'OTHER');
+    assert.deepEqual(ok(await inApp(['env', '--json'])).json.map((e) => e.key), ['OTHER', 'TOKEN']);
+    assert.match(ok(await inApp(['env', 'list'])).stdout, /^OTHER\s+set /);
+    const guard = await inApp(['env', 'unset', 'OTHER']);
+    assert.equal(guard.code, 1);
+    assert.match(guard.stderr, /Re-run with --yes/);
+    assert.match(ok(await inApp(['env', 'unset', 'OTHER', '--yes'])).stdout, /Removed OTHER/);
+    for (const args of [['env', 'set', 'NOVALUE'], ['env', 'unset'], ['env', 'frob']]) assert.match((await inApp(args)).stderr, /Usage: cubby env/, args.join(' '));
+    assert.match((await inApp(['env', 'set', 'lower=x'])).stderr, /capital letters/);
+  });
+  test('a folder with only helpers ships no jobs', async () => {
+    job('_shared.js', 'export const x = 1;');
+    const r = ok(await inApp(['deploy', '--json']));
+    assert.deepEqual(r.json.jobs, []);
+  });
+  test('deploy bundles cubby/jobs; jobs lists, runs (exit 1 on failure), shows logs, pauses and resumes', async () => {
+    job('hello.js', "export const schedule = '*/30 * * * *';\nexport default async ({ log, env }) => log('hi', env.TOKEN);\n");
+    job('boom.js', 'export const schedule = "0 0 * * *";\nexport default async () => { throw new Error("kaboom"); };\n');
+    assert.match(ok(await inApp(['deploy'])).stdout, /jobs: boom, hello \(see `cubby jobs`\)/);
+
+    assert.match(ok(await inApp(['jobs'])).stdout, /hello\s+\*\/30 \* \* \* \*\s+next: \S+\s+never run/);
+    assert.match(ok(await inApp(['jobs', 'logs', 'hello'])).stdout, /No runs of hello yet/);
+    const run = ok(await inApp(['jobs', 'run', 'hello']));
+    assert.match(run.stdout, /^hello \w+  ok  manual .*\nhi abc=123$/m);
+    const failed = await inApp(['jobs', 'run', 'boom', '--json']);
+    assert.equal(failed.code, 1);
+    assert.equal(failed.json.status, 'error');
+    assert.match(failed.json.log, /kaboom/);
+
+    ok(await inApp(['jobs', 'run', 'hello']));
+    const logs = ok(await inApp(['jobs', 'logs', 'hello', '--limit', '5', '--json'])).json;
+    assert.equal(logs.length, 2);
+    assert.equal(ok(await inApp(['jobs', 'logs', 'hello', '--run', logs[1].id, '--json'])).json[0].id, logs[1].id);
+    assert.match(ok(await inApp(['jobs', 'logs', 'hello'])).stdout, /hi abc=123/);
+    assert.match(ok(await inApp(['jobs', 'logs', 'boom', '--limit', '1'])).stdout, /kaboom/);
+
+    assert.match(ok(await inApp(['jobs', 'pause', 'hello'])).stdout, /hello paused/);
+    assert.equal(ok(await inApp(['jobs', 'list', '--json'])).json.find((j) => j.name === 'hello').paused, true);
+    assert.match(ok(await inApp(['jobs', 'resume', 'hello'])).stdout, /hello resumed/);
+    assert.match((await inApp(['jobs', 'frob'])).stderr, /Usage: cubby jobs \[run\|logs/);
+    assert.match((await inApp(['jobs', 'run'])).stderr, /Usage: cubby jobs run <job>/);
+    assert.match((await inApp(['jobs', 'run', 'nope'])).stderr, /No job "nope"/);
+  });
+  test('unknown runs, and jobs that are wrong are caught before upload', async () => {
+    assert.match((await inApp(['jobs', 'logs', 'hello', '--run', 'x'])).stderr, /Run x not found/);
+    job('Bad_Name.js', 'export default async () => {};');
+    const badName = await inApp(['deploy']);
+    assert.equal(badName.code, 1);
+    assert.match(badName.stderr, /Invalid jobs\n  - cubby\/jobs\/Bad_Name\.js/);
+    rmSync(join(d(), 'cubby/jobs/Bad_Name.js'));
+    job('nosched.js', 'export default async () => {};');
+    assert.match((await inApp(['deploy'])).stderr, /cubby\/jobs\/nosched\.js: add `export const schedule/);
+    rmSync(join(d(), 'cubby/jobs/nosched.js'));
+    job('bad-cron.js', "export const schedule = 'whenever';\nexport default async () => {};");
+    const badCron = await inApp(['deploy']);
+    assert.equal(badCron.code, 1);
+    assert.match(badCron.stderr, /Job "bad-cron": schedule needs 5 fields/);
   });
 });

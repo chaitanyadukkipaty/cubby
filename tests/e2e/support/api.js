@@ -1,7 +1,8 @@
 // Test-data setup through the control API, so specs only drive the UI they're actually testing.
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import * as tar from 'tar';
 import { client, ADMIN } from '../../helpers/server.js';
 
@@ -69,11 +70,15 @@ export class Api {
     return ok(r, 'create app');
   }
 
-  /** Deploys a one-page site to an existing app. */
-  async deploy(token, slug, html = '<!doctype html><title>e2e</title><h1>Hello from e2e</h1>', { unlisted } = {}) {
+  /** Deploys a one-page site to an existing app (plus any `files`, e.g. bundled jobs). */
+  async deploy(token, slug, html = '<!doctype html><title>e2e</title><h1>Hello from e2e</h1>', { unlisted, files = {} } = {}) {
     const dir = mkdtempSync(join(tmpdir(), 'cubby-e2e-dist-'));
     try {
       writeFileSync(join(dir, 'index.html'), html);
+      for (const [path, content] of Object.entries(files)) {
+        mkdirSync(dirname(join(dir, path)), { recursive: true });
+        writeFileSync(join(dir, path), content);
+      }
       const chunks = [];
       for await (const c of tar.c({ gzip: true, cwd: dir, portable: true }, ['.'])) chunks.push(c);
       const q = unlisted === undefined ? '' : `?unlisted=${unlisted ? 1 : 0}`;
@@ -91,6 +96,16 @@ export class Api {
     const slug = uid(prefix);
     await this.createApp(token, slug, opts);
     await this.deploy(token, slug, undefined, opts);
+    return slug;
+  }
+
+  /** Deploys an app whose deploy carries jobs, as `cubby deploy` bundles them: { name: { schedule, code } }. */
+  async createAppWithJobs(token, prefix, jobs) {
+    const slug = uid(prefix);
+    await this.createApp(token, slug);
+    const files = { '__cubby_jobs/jobs.json': JSON.stringify({ format: 1, jobs: Object.entries(jobs).map(([name, j]) => ({ name, schedule: j.schedule })) }) };
+    for (const [name, j] of Object.entries(jobs)) files[`__cubby_jobs/${name}.mjs`] = j.code;
+    await this.deploy(token, slug, undefined, { files });
     return slug;
   }
 

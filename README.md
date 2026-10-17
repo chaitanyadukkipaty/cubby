@@ -53,6 +53,13 @@ sequenceDiagram
     Agent-->>You: "Here's your app, and what to add next"
 ```
 
+A week later you ask for more, and it doesn't have to happen in anyone's browser:
+
+> Close polls automatically when they expire, and email everyone a digest of new polls every Monday.
+
+The agent stores the email service's API key as a secret, writes two **scheduled jobs** next to the app, deploys,
+runs each one once to check it works, and tells you when they'll run next.
+
 ## Why Cubby
 
 Coding agents can write a whole web app from a sentence. **Hosting it is the hard part**: it needs a database,
@@ -72,6 +79,7 @@ else's platform and you can't bring your own agent.
 - **Agent-native.** A skill teaches Claude Code, Codex, Cursor and OpenCode to set up, build and deploy by themselves. They log in through a browser approval, so nobody pastes passwords or tokens into a chat.
 - **Real backend for every app.** Collections, user accounts, file uploads and live updates from a shared [PocketBase](https://pocketbase.io). Each app is walled off by collection prefix, and its security comes from database rules.
 - **One-command deploys.** `cubby deploy` pushes schema changes, builds and publishes. The last 10 deploys are kept for instant rollback.
+- **Scheduled jobs.** Apps can run code on a cron schedule (digests, reminders, cleanups, syncing from an API) with encrypted secrets. Each run is sandboxed and can only reach its own app's data and the public internet.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps in a gallery, and manage users, limits and disk from an admin tab.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
@@ -79,12 +87,12 @@ else's platform and you can't bring your own agent.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=7efca832" alt="Dashboard with the Copy prompt for agent button"><p align="center"><sub>Your dashboard on Priya's Cubby: connect your agent, see your apps</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-my-apps.png?v=e4b08ff1" alt="Dashboard with the Copy prompt for agent button and an app's scheduled jobs"><p align="center"><sub>Your dashboard on Priya's Cubby: connect your agent, see your apps and their jobs</sub></p></td>
 <td width="50%"><img src="docs/assets/connect-approve.png?v=fd35d280" alt="Approval page for connecting an AI agent"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/assets/dashboard-gallery.png?v=9cdf21ee" alt="Gallery of everyone's apps"><p align="center"><sub>Everyone's apps</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-admin.png?v=e8871123" alt="Admin tab with users, apps, limits, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, users, disk, updates</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-admin.png?v=3453ddb1" alt="Admin tab with users, apps, limits, scheduled jobs, invite code and an update notice"><p align="center"><sub>Admin: server name, invites, limits, jobs, users, disk, updates</sub></p></td>
 </tr>
 </table>
 
@@ -167,7 +175,9 @@ automatically; see [Releases](CONTRIBUTING.md#releases).
 | `cubby logout [--server <name>] [--all]` | Forget one server (the current one by default) or all of them |
 | `cubby init <app>` | Create an app from the template |
 | `cubby deploy -m "…"` | Push schema if changed, build, publish (`--unlisted` hides it from the gallery) |
-| `cubby deploys` / `cubby rollback <id>` | List deploys, restore one instantly |
+| `cubby deploys` / `cubby rollback <id>` | List deploys, restore one instantly (with the jobs it shipped) |
+| `cubby jobs [run \| logs \| pause \| resume <job>]` | List scheduled jobs with their next and last run; run one now and print its log |
+| `cubby env list \| set NAME=value \| unset NAME --yes` | Secrets for jobs (`--from-stdin` keeps a value out of shell history) |
 | `cubby schema push \| pull \| drop` | Manage the data model (push never deletes) |
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
@@ -224,14 +234,21 @@ flowchart LR
       D[Dashboard + API]
       H["App hosting<br/>&lt;app&gt;.your-server.com"]
       P["Database proxy<br/>&lt;app&gt;/pb/* → own data only"]
+      J["Job runner<br/>cron · sandboxed · own data only"]
     end
     P --> DB[(Shared PocketBase<br/>one prefix per app)]
+    J --> DB
+    J --> I((Internet))
     D --> DB
 ```
 
 - Every app gets its own **subdomain**, so apps can't read each other's logins in the browser.
 - App `polls` owns collections named `polls__*`. The proxy only lets the app reach those, and rejects logins issued by other apps.
 - Apps are static **Vite + React + Tailwind** frontends; security lives in each collection's API rules.
+- **Scheduled jobs** live in the app's `cubby/jobs/`, one file per job with a cron schedule (UTC). `cubby deploy`
+  bundles them with the frontend. Each run is a separate Node.js process with no access to the server's files,
+  environment or local network: its database client reaches only that app's collections (as admin, past the rules),
+  checked by the same code as the proxy. Runs have a time limit, a memory cap and logs (`cubby jobs logs`).
 - One Docker container runs Caddy, the Cubby server (Node.js) and PocketBase, with a single data volume.
 - Each server serves its own CLI (`/cli.tgz`), agent docs (`/docs.md`) and skill installer (`/skill.sh`), so agents
   always follow the rules of the server they're deploying to.
@@ -286,4 +303,7 @@ Cubby is early (v0.1.0, with server names and multi-server support in the [next 
 for groups who trust each other, not as a hostile multi-tenant cloud.
 
 - All apps share one SQLite database, which suits a group of friends or a small team.
-- Not yet supported: server-side code, cron jobs, custom domains per app, single sign-on across apps, app emails.
+- Jobs are for groups who trust each other too: the sandbox stops accidents and snooping between apps, not a
+  determined attacker with an account. At most two run at once per server.
+- Not yet supported: server code that runs per request (API endpoints, hooks), custom domains per app, single sign-on
+  across apps, app emails.
