@@ -80,7 +80,7 @@ async function overviewTab(a, body) {
       ? h('section', { class: 'chart note' }, h('div', { class: 'chart-h' }, h('h4', {}, 'Unique visitors'), h('b', { class: 'num' }, fmtCount(m.visitors))),
         h('p', { class: 'muted small' }, 'Visitors are counted per day, so the chart shows for 7 and 30 days. ', h('a', { href: `${appPath(a.slug)}?range=7d` }, 'Show 7 days')))
       : timeChart({ ...common, id: 'c-visitors', title: 'Unique visitors', sub: 'per day', total: fmtCount(m.visitors), field: 'visitors', summary: chartSummary('Unique visitors', buckets, 'visitors', range) }),
-    timeChart({ ...common, id: 'c-active', title: 'Active visitors', sub: `now ${fmtCount(m.active_now)} · peak`, total: fmtCount(m.peak_active), field: 'peak', summary: chartSummary('Peak active visitors', buckets, 'peak', range, { total: false }) }),
+    timeChart({ ...common, id: 'c-active', title: 'Peak active visitors', sub: `now ${fmtCount(m.active_now)}`, total: fmtCount(m.peak_active), field: 'peak', summary: chartSummary('Peak active visitors', buckets, 'peak', range, { total: false }) }),
     timeChart({ ...common, id: 'c-errors', kind: 'bar', title: 'API errors', sub: 'server errors from /pb', total: fmtCount(m.api_errors), field: 'errors', summary: chartSummary('API errors', buckets, 'errors', range) }),
   ];
   const pathsSection = paths ? [h('h3', {}, 'Top paths'), paths.length

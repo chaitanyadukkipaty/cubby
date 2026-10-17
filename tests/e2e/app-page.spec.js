@@ -26,7 +26,7 @@ test('the Apps list links each app to its page; tabs live in the URL and survive
   await expect(app.currentTab).toHaveText('Overview');
   await expect(app.kpi('Views')).toContainText('1');
   await expect(app.kpi('Active now')).toContainText('1');
-  for (const name of ['Views', 'Unique visitors', 'Active visitors', 'API errors']) await expect(app.chart(name)).toBeVisible();
+  for (const name of ['Views', 'Unique visitors', 'Peak active visitors', 'API errors']) await expect(app.chart(name)).toBeVisible();
   await expect(app.chart('Views').getByRole('img')).toHaveAccessibleName(/^Views: 1 in total, most on /);
   await expect(app.chart('Views').locator('.dmark')).toHaveText('v1'); // the deploy runs through the charts
 
