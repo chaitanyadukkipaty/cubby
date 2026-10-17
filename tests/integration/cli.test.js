@@ -5,8 +5,8 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startServer, ROOT, SIGNUP_CODE } from '../helpers/server.js';
-import { api, signup } from '../helpers/integration.js';
+import { startServer, ROOT, SIGNUP_CODE, ADMIN } from '../helpers/server.js';
+import { api, signup, adminToken } from '../helpers/integration.js';
 
 // The real entry point: the launcher (same version as the server here, so it runs the bundled CLI in-process).
 const CLI = join(ROOT, 'cli/src/launcher.js');
@@ -389,5 +389,52 @@ export async function build({ build: { outDir, rollupOptions: { input } } }) {
     const badCron = await inApp(['deploy']);
     assert.equal(badCron.code, 1);
     assert.match(badCron.stderr, /Job "bad-cron": schedule needs 5 fields/);
+  });
+});
+
+describe('admin commands', () => {
+  const asUser = (args) => cubby([...args, '--server', srv.url], { env: { CUBBY_TOKEN: token } });
+  test('a non-admin gets a clear error', async () => {
+    const r = await asUser(['admin', 'storage']);
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, /needs an admin account/);
+    const j = await asUser(['admin', 'backups', '--json']);
+    assert.equal(j.code, 1);
+    assert.match(j.json.error, /needs an admin account/);
+  });
+  test('an admin sees storage and creates a backup, which waits for the pair', async () => {
+    const asAdmin = async (args) => cubby([...args, '--server', srv.url], { env: { CUBBY_TOKEN: await adminToken(srv.url, ADMIN) } });
+    const s = ok(await asAdmin(['admin', 'storage', '--json'])).json;
+    assert.ok(s.breakdown.database_bytes > 0);
+    assert.match(ok(await asAdmin(['admin', 'storage'])).stdout, /Database\s+\S+/);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const c = ok(await asAdmin(['admin', 'backups', 'create', '--json'])).json;
+    assert.equal(c.status, 'done');
+    assert.equal(c.backup.date, today);
+    assert.equal(c.backup.complete, true);
+    const list = ok(await asAdmin(['admin', 'backups', '--json'])).json;
+    assert.deepEqual(list.backups.map((b) => b.date), [today]);
+    assert.match(ok(await asAdmin(['admin', 'backups'])).stdout, new RegExp(`${today}\\s+database`));
+
+    const noYes = await asAdmin(['admin', 'backups', 'delete', today]);
+    assert.equal(noYes.code, 1);
+    assert.match(noYes.stderr, /Re-run with --yes/);
+    const only = await asAdmin(['admin', 'backups', 'delete', today, '--yes']);
+    assert.equal(only.code, 1);
+    assert.match(only.stderr, /only backup[\s\S]*--leave-none/);
+    const gone = ok(await asAdmin(['admin', 'backups', 'delete', today, '--yes', '--leave-none']));
+    assert.match(gone.stdout, new RegExp(`Deleted the backup from ${today}`));
+    assert.match(gone.stderr, /warning: That was the only backup/);
+    assert.deepEqual(ok(await asAdmin(['admin', 'backups', '--json'])).json.backups, []);
+
+    const bg = ok(await asAdmin(['admin', 'backups', 'create', '--no-wait', '--json'])).json;
+    assert.equal(bg.status, 'started');
+    assert.equal(bg.date, today);
+    for (const bad of [['admin'], ['admin', 'backups', 'frob'], ['admin', 'backups', 'delete', '--yes']]) {
+      const r = await asAdmin(bad);
+      assert.equal(r.code, 1, bad.join(' '));
+      assert.match(r.stderr, /Usage: cubby admin/);
+    }
   });
 });

@@ -1,6 +1,33 @@
 import { test, describe, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { backupDue, scheduleBackups } from '../../server/src/backups.js';
+import { backupDue, scheduleBackups, createBackupRunner } from '../../server/src/backups.js';
+
+describe('createBackupRunner', () => {
+  test('shows the backup as running, refuses a second one meanwhile, and records how it ended', async () => {
+    let finish;
+    const runner = createBackupRunner({ run: () => new Promise((r) => (finish = r)), now: () => new Date('2026-10-17T09:00:00Z') });
+    assert.deepEqual(runner.state(), { running: null, last: null });
+    const started = runner.start();
+    assert.deepEqual(runner.state().running, { date: '2026-10-17', started_at: '2026-10-17T09:00:00.000Z' });
+    assert.throws(() => runner.start(), (e) => e.status === 409 && /already running/.test(e.message));
+    await new Promise((r) => setImmediate(r));
+    finish();
+    await started.promise;
+    assert.equal(runner.state().running, null);
+    assert.deepEqual(runner.state().last, { date: '2026-10-17', started_at: '2026-10-17T09:00:00.000Z', finished_at: '2026-10-17T09:00:00.000Z', ok: true, error: null });
+  });
+  test('a failed backup is recorded with its error, and the next one can start', async () => {
+    let fail = true;
+    const runner = createBackupRunner({ run: async () => { if (fail) throw new Error('disk full'); } });
+    await assert.rejects(runner.start().promise, /disk full/);
+    assert.equal(runner.state().running, null);
+    assert.equal(runner.state().last.ok, false);
+    assert.equal(runner.state().last.error, 'disk full');
+    fail = false;
+    await runner.start().promise;
+    assert.equal(runner.state().last.ok, true);
+  });
+});
 
 const at = (iso) => new Date(iso);
 

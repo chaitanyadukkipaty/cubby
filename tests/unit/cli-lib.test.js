@@ -255,3 +255,54 @@ describe('agent skill install/remove/status', () => {
     assert.throws(() => lib.installSkill({ ...opts(), src: join(home, 'nope') }), (e) => e instanceof lib.CliError && /Skill files missing/.test(e.message));
   });
 });
+
+describe('admin output', () => {
+  test('formatBytes uses binary units with one decimal above bytes', () => {
+    assert.equal(lib.formatBytes(0), '0 B');
+    assert.equal(lib.formatBytes(1023), '1023 B');
+    assert.equal(lib.formatBytes(1536), '1.5 KB');
+    assert.equal(lib.formatBytes(5 * 1024 ** 3), '5.0 GB');
+    assert.equal(lib.formatBytes(null), '-');
+  });
+  test('formatStorage shows each category, the disk, and apps biggest first', () => {
+    const text = lib.formatStorage({
+      computed_at: '2026-10-17T09:00:00.000Z',
+      disk: { total_bytes: 10 * 1024 ** 3, free_bytes: 4 * 1024 ** 3 },
+      data_bytes: 3 * 1024 ** 2,
+      breakdown: { database_bytes: 1024 ** 2, uploads_bytes: 0, sites_current_bytes: 512 * 1024, sites_older_bytes: 512 * 1024, backups_bytes: 1024 ** 2, other_bytes: 0 },
+      apps: [{ slug: 'blog', owner: 'a@x.dev', total_bytes: 2048, current_deploy_bytes: 1024, older_deploys_bytes: 1024, uploads_bytes: 0 }],
+    });
+    assert.match(text, /Database\s+1\.0 MB/);
+    assert.match(text, /Current deploys\s+512\.0 KB/);
+    assert.match(text, /Older deploys \(rollback\)\s+512\.0 KB/);
+    assert.match(text, /Backups\s+1\.0 MB/);
+    assert.match(text, /Total\s+3\.0 MB/);
+    assert.match(text, /Disk: 4\.0 GB free of 10\.0 GB/);
+    assert.match(text, /blog\s+2\.0 KB\s+current 1\.0 KB · older 1\.0 KB · uploads 0 B\s+a@x\.dev/);
+    assert.match(text, /as of 2026-10-17T09:00:00\.000Z/);
+  });
+  test('formatStorage says when there are no apps, and leaves out a missing owner', () => {
+    const base = { computed_at: 'now', disk: { total_bytes: 1, free_bytes: 1 }, data_bytes: 0, breakdown: {} };
+    assert.match(lib.formatStorage({ ...base, apps: [] }), /No apps yet$/);
+    const line = lib.formatStorage({ ...base, apps: [{ slug: 'orphan', owner: null, total_bytes: 0, current_deploy_bytes: 0, older_deploys_bytes: 0, uploads_bytes: 0 }] }).split('\n').at(-1);
+    assert.match(line, /uploads 0 B$/);
+  });
+  test('formatBackups lists pairs by date, flags half pairs, and shows a running or failed backup', () => {
+    const text = lib.formatBackups({
+      keep: 7,
+      running: { date: '2026-10-17', started_at: '2026-10-17T09:00:00.000Z' },
+      last: { date: '2026-10-16', ok: false, error: 'disk full' },
+      backups: [
+        { date: '2026-10-16', db_bytes: 2048, sites_bytes: 1024, total_bytes: 3072, complete: true },
+        { date: '2026-10-15', db_bytes: 2048, sites_bytes: null, total_bytes: 2048, complete: false },
+      ],
+    });
+    assert.match(text, /2026-10-16\s+database 2\.0 KB\s+sites 1\.0 KB\s+total 3\.0 KB/);
+    assert.match(text, /2026-10-15\s+database 2\.0 KB\s+sites -\s+total 2\.0 KB\s+\(incomplete\)/);
+    assert.match(text, /A backup is running \(started 2026-10-17T09:00:00\.000Z\)/);
+    assert.match(text, /The last backup failed: disk full/);
+    assert.match(text, /sudo cubby-server restore <date>/);
+    assert.match(lib.formatBackups({ keep: 7, running: null, last: null, backups: [] }), /^No backups yet/);
+    assert.doesNotMatch(lib.formatBackups({ keep: 7, running: null, last: { ok: true, error: null }, backups: [] }), /failed|running/);
+  });
+});

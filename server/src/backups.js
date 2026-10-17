@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import * as tar from 'tar';
 import { admin } from './pb.js';
 import { config } from './config.js';
+import { HttpError } from './http.js';
 
 const backupDir = join(config.dataDir, 'backups');
 
@@ -16,6 +17,8 @@ export async function runBackup() {
   if ((await admin.backups.getFullList()).some((b) => b.key === name)) await admin.backups.delete(name);
   await admin.backups.create(name);
   await mkdir(backupDir, { recursive: true });
+  // A fresh server has no sites yet; tar refuses an empty list (synchronously), and a pair should always be whole.
+  await mkdir(join(config.dataDir, 'sites'), { recursive: true });
   const dirs = ['sites', 'secrets'].filter((d) => existsSync(join(config.dataDir, d)));
   await tar.c({ gzip: true, cwd: config.dataDir, file: join(backupDir, `sites-${stamp}.tar.gz`) }, dirs).catch(() => {});
 
@@ -24,6 +27,27 @@ export async function runBackup() {
   const siteBackups = (await readdir(backupDir)).filter((f) => f.startsWith('sites-')).sort().reverse();
   for (const f of siteBackups.slice(config.backups.keep)) await rm(join(backupDir, f), { force: true });
   console.log(`backup ${stamp} done`);
+}
+
+// Runs backups one at a time in the background ("Back up now" and the nightly run share it), so the backup list
+// can show one in progress. In memory, like the rest of Cubby's state: it assumes one server process.
+export function createBackupRunner({ run = runBackup, now = () => new Date() } = {}) {
+  let running = null;
+  let last = null;
+  return {
+    state: () => ({ running, last }),
+    start() {
+      if (running) throw new HttpError(409, `A backup is already running (started ${running.started_at})`);
+      const at = now().toISOString();
+      const mine = (running = { date: at.slice(0, 10), started_at: at });
+      const end = (error) => {
+        last = { ...mine, finished_at: now().toISOString(), ok: !error, error: error?.message ?? null };
+        running = null;
+      };
+      const promise = Promise.resolve().then(run).then(() => end(), (err) => { end(err); throw err; });
+      return { ...mine, promise };
+    },
+  };
 }
 
 // Returns today's date stamp if a nightly backup should run now, otherwise null.

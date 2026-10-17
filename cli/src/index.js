@@ -11,6 +11,7 @@ import {
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
   jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
+  formatStorage, formatBackups, formatBytes,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -26,7 +27,7 @@ const { values: flags, positionals } = parseArgs({
     token: { type: 'string' }, code: { type: 'string' }, client: { type: 'string' }, 'no-skill': { type: 'boolean' }, wait: { type: 'boolean' }, 'no-wait': { type: 'boolean' },
     'no-install': { type: 'boolean' }, 'no-build': { type: 'boolean' }, unlisted: { type: 'boolean' }, listed: { type: 'boolean' },
     yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
-    run: { type: 'string' }, limit: { type: 'string' }, 'from-stdin': { type: 'boolean' },
+    run: { type: 'string' }, limit: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
   },
 });
 
@@ -76,7 +77,7 @@ async function api(method, path, { body, raw, contentType, auth = true } = {}) {
   }
   warnVersion(res.headers.get('x-cubby-version'));
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new CliError(data.error || `HTTP ${res.status}`, data.details);
+  if (!res.ok) throw Object.assign(new CliError(data.error || `HTTP ${res.status}`, data.details), { status: res.status });
   return data;
 }
 
@@ -401,7 +402,45 @@ const commands = {
     }
     throw new CliError('Usage: cubby env list | set NAME=value | set NAME --from-stdin | unset NAME --yes');
   },
+
+  // Server administration: needs an admin account on the target server.
+  async admin(sub, action, arg) {
+    const call = (method, path) => api(method, path).catch(async (err) => {
+      if (err.status === 403) throw new CliError(`\`cubby admin\` needs an admin account. You're logged in to ${await where()} as a regular user.`);
+      throw err;
+    });
+    if (sub === 'storage') {
+      const s = await call('GET', '/api/admin/storage');
+      return out(formatStorage(s), s);
+    }
+    if (sub === 'backups' && (!action || action === 'list')) {
+      const r = await call('GET', '/api/admin/backups');
+      return out(formatBackups(r), r);
+    }
+    if (sub === 'backups' && action === 'create') {
+      const started = await call('POST', '/api/admin/backups');
+      if (flags['no-wait']) return out(`Backup ${started.date} started. Check on it with: cubby admin backups`, { status: 'started', ...started });
+      if (!flags.json) console.error(`Backing up (started ${started.started_at})…`);
+      let r;
+      do {
+        await new Promise((res) => setTimeout(res, 500));
+        r = await call('GET', '/api/admin/backups');
+      } while (r.running?.started_at === started.started_at);
+      if (r.last?.started_at === started.started_at && !r.last.ok) throw new CliError(`The backup failed: ${r.last.error}`);
+      const backup = r.backups.find((b) => b.date === started.date);
+      return out(`Backed up ${backup.date}: database ${formatBytes(backup.db_bytes)}, sites ${formatBytes(backup.sites_bytes)}`, { status: 'done', backup, run: r.last });
+    }
+    if (sub === 'backups' && action === 'delete' && arg) {
+      if (!flags.yes) throw new CliError(`This permanently deletes the backup from ${arg} (its database and sites files). Re-run with --yes.`);
+      const r = await call('DELETE', `/api/admin/backups/${encodeURIComponent(arg)}${flags['leave-none'] ? '?leave_none=1' : ''}`);
+      if (r.warning && !flags.json) console.error(`warning: ${r.warning}`);
+      return out(`Deleted the backup from ${arg} (${r.files.join(', ')})`, r);
+    }
+    throw new CliError(ADMIN_USAGE);
+  },
 };
+
+const ADMIN_USAGE = 'Usage: cubby admin storage | backups [create [--no-wait] | delete <YYYY-MM-DD> --yes [--leave-none]]';
 
 const [cmd, ...rest] = positionals;
 if (!cmd || flags.help || !commands[cmd]) {

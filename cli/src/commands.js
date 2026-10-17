@@ -26,6 +26,8 @@ export const COMMANDS = [
   // Scheduled jobs
   { name: 'jobs', usage: 'cubby jobs [run | logs | pause | resume <job>] [--limit <n>] [--run <id>]', summary: 'Scheduled jobs from cubby/jobs/: list them with next and last run; run one now and print its log (exits 1 if it fails); show past logs; pause or resume.', flags: ['--limit', '--run'] },
   { name: 'env', usage: 'cubby env list | set <NAME>=<value> | set <NAME> --from-stdin | unset <NAME> --yes', summary: 'Secrets for jobs, read as env.NAME. Values are encrypted and never shown again.', flags: ['--from-stdin', '--yes'] },
+  // Server admins only
+  { name: 'admin', usage: 'cubby admin storage | backups [create [--no-wait] | delete <YYYY-MM-DD> --yes [--leave-none]]', summary: 'Admins only. storage: where the disk goes, per category and per app. backups: list them by date; create one now (waits unless --no-wait); delete one (both files; the only backup also needs --leave-none). Restore stays `sudo cubby-server restore <date>`.', flags: ['--no-wait', '--yes', '--leave-none'] },
 ];
 
 // Accepted by every command.

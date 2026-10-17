@@ -75,7 +75,7 @@ describe('parseLaunchArgs', () => {
 
 describe('command classes', () => {
   test('everything that talks to a server is version-matched, including login, whoami and help', () => {
-    for (const c of ['login', 'signup', 'whoami', 'help', 'init', 'link', 'projects', 'info', 'delete', 'schema', 'deploy', 'deploys', 'rollback', 'jobs', 'env']) assert.ok(L.SERVER_COMMANDS.has(c), c);
+    for (const c of ['login', 'signup', 'whoami', 'help', 'init', 'link', 'projects', 'info', 'delete', 'schema', 'deploy', 'deploys', 'rollback', 'jobs', 'env', 'admin']) assert.ok(L.SERVER_COMMANDS.has(c), c);
   });
   test('purely local commands are never version-matched', () => {
     for (const c of ['servers', 'use', 'logout', 'skill', 'version']) {
