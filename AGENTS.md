@@ -67,6 +67,9 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 - Device-login codes, rate-limit counters and the settings row (`getSettings` cache) are per-process. Cubby assumes one
   server process; anything multi-process needs shared storage first. Settings edited directly in PocketBase aren't seen
   until restart; go through `updateSettings`.
+- App metrics (server/src/metrics.js) count in memory and add to `cubby_metrics` buckets on each flush (every 60s,
+  before each metrics read, and on SIGTERM via `onShutdown`). Flushes must stay serialized, or two can create the
+  same bucket. The visitor salt lives only in memory and rotates per UTC day; never persist it or store raw IPs.
 - `/cli.tgz` is packed once at boot from `cli/` (src, template, skill) and stamped with the version the server
   reports (`config.version`), not `cli/package.json`'s. CLI, template or skill edits need a server restart to be served.
 

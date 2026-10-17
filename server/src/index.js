@@ -1,8 +1,8 @@
 import http from 'node:http';
 import { readFile, statfs } from 'node:fs/promises';
 import { config, SLUG_RE, prefixFor } from './config.js';
-import { HttpError, sendJson, readJson, readBody, rateLimiter } from './http.js';
-import { admin, startPocketBase } from './pb.js';
+import { HttpError, sendJson, readJson, readBody, rateLimiter, clientIp } from './http.js';
+import { admin, startPocketBase, onShutdown } from './pb.js';
 import { signup, login, authenticate, tokenFor, regenerateToken } from './auth.js';
 import { applySchema, readSchema, dropFromSchema, projectCollections, deleteCollections } from './schema.js';
 import { createDeploy, listDeploys, rollback, removeSite, serveSite, sendPage, appDiskUsage, dirSize } from './sites.js';
@@ -12,6 +12,7 @@ import { scheduleBackups, createBackupRunner, runBackup } from './backups.js';
 import { scanStorage, createTtlCache, listBackups, checkBackupDelete, deleteBackup } from './storage.js';
 import { listJobs, runNow, jobRuns, setPaused, allJobs, scheduleJobs, recoverRuns, deployJobs } from './jobs.js';
 import { listEnv, setEnv, unsetEnv } from './secrets.js';
+import { createMetrics, pocketbaseStore, countsAsView, parseRange } from './metrics.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
@@ -50,6 +51,17 @@ async function removeProject(project) {
 
 function requireAdmin(user) {
   if (!user.is_admin) throw new HttpError(403, 'Admins only');
+}
+
+// Page views and visitors per app: counted in memory, flushed to cubby_metrics every minute.
+const metrics = createMetrics({ store: pocketbaseStore(admin) });
+
+// Owners see their apps' metrics; admins see any app's.
+async function metricsProject(user, slug) {
+  if (!user.is_admin) return ownedProject(user, slug);
+  const project = await findProject(slug);
+  if (!project) throw new HttpError(404, `App "${slug}" not found`);
+  return project;
 }
 
 const authLimit = rateLimiter(10, 60_000);
@@ -139,6 +151,23 @@ const routes = [
   ['GET', '/api/projects/:slug/env', 'user', async (req, user, { slug }) => listEnv(await ownedProject(user, slug))],
   ['PUT', '/api/projects/:slug/env/:key', 'user', async (req, user, { slug, key }) => setEnv(await ownedProject(user, slug), key, (await readJson(req, 64 * 1024)).value)],
   ['DELETE', '/api/projects/:slug/env/:key', 'user', async (req, user, { slug, key }) => unsetEnv(await ownedProject(user, slug), key)],
+
+  ['GET', '/api/projects/:slug/metrics', 'user', async (req, user, { slug }, url) => {
+    const range = url.searchParams.get('range') || '24h';
+    const hours = parseRange(range);
+    const project = await metricsProject(user, slug);
+    return { app: project.slug, range, ...(await metrics.report([project.id], hours))[project.id] };
+  }],
+  ['GET', '/api/metrics', 'user', async (req, user, params, url) => {
+    const range = url.searchParams.get('range') || '24h';
+    const hours = parseRange(range);
+    const list = await admin.collection('cubby_projects').getFullList({ filter: admin.filter('owner = {:u}', { u: user.id }), sort: 'slug' });
+    const report = await metrics.report(list.map((p) => p.id), hours);
+    return list.map((p) => {
+      const { from, to, views, visitors } = report[p.id];
+      return { app: p.slug, name: p.name, range, from, to, views, visitors };
+    });
+  }],
 
   ['GET', '/api/gallery', 'user', async () => {
     const list = await admin.collection('cubby_projects').getFullList({ filter: 'unlisted = false && current_deploy != ""', sort: '-last_deployed', expand: 'owner' });
@@ -284,7 +313,8 @@ async function handleApp(req, res, slug, url) {
     return res.end(`window.__CUBBY__=${JSON.stringify(cfg)};`);
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') return sendPage(res, 405, 'Method not allowed');
-  return serveSite(req, res, project, url.pathname);
+  const page = await serveSite(req, res, project, url.pathname);
+  if (page && countsAsView(req)) metrics.record(project.id, { ip: clientIp(req), ua: req.headers['user-agent'] });
 }
 
 // Caddy asks before issuing an on-demand certificate; only the root domain and real apps qualify.
@@ -358,6 +388,8 @@ await buildCliTarball();
 scheduleBackups({ run: async () => backups.start().promise });
 await recoverRuns();
 scheduleJobs();
+metrics.start();
+onShutdown(() => metrics.flush());
 scheduleUpdateChecks({ checker: updates, isEnabled: updatesOn });
 server.listen(config.port, () => {
   console.log(`cubby ${config.version} on ${config.publicUrl}`);

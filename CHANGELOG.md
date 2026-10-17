@@ -25,6 +25,12 @@ All notable changes to Cubby are documented here. The format follows
   files of the pair, warns when it was the newest, and refuses the only backup without `--leave-none`. Restore stays
   `sudo cubby-server restore <date>`. Non-admins get a clear error. API: `GET /api/admin/storage`,
   `GET|POST /api/admin/backups`, `DELETE /api/admin/backups/<date>[?leave_none=1]`.
+- Page views and unique visitors per app, counted by the server as it serves an app's pages: no script in the app,
+  no cookies. Assets, `/pb` calls, HEAD requests, prefetches and obvious bots don't count. A visitor is a hash of IP
+  address and browser with a salt that lives only in memory and changes every UTC day; IPs are never stored. Counts
+  are flushed to the database every minute (and on shutdown) in hourly and daily buckets. `cubby metrics <app>`
+  shows one app, `cubby metrics` all of yours, `--range` up to 90d (default 24h). Owners see their apps; admins see
+  any. `/api/info` lists `metrics` in `features`.
 
 ### Changed
 

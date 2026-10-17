@@ -9,6 +9,10 @@ export const admin = new PocketBase(config.pb.url);
 admin.autoCancellation(false);
 
 let child;
+const shutdownHooks = [];
+
+// Work to finish on SIGINT/SIGTERM before PocketBase stops (only when this process runs PocketBase).
+export const onShutdown = (fn) => { shutdownHooks.push(fn); };
 
 export async function startPocketBase() {
   if (config.pb.spawn) {
@@ -21,7 +25,14 @@ export async function startPocketBase() {
       console.error(`PocketBase exited with code ${code}`);
       process.exit(1);
     });
-    for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { child.kill(); process.exit(0); });
+    for (const sig of ['SIGINT', 'SIGTERM']) {
+      process.on(sig, async () => {
+        // Hooks (the metrics flush) still need PocketBase, so they run first, for a few seconds at most.
+        await Promise.race([Promise.allSettled(shutdownHooks.map((fn) => fn())), new Promise((r) => setTimeout(r, 3000))]);
+        child.kill();
+        process.exit(0);
+      });
+    }
   }
   await connectAdmin();
   await ensurePlatformCollections();
@@ -171,6 +182,23 @@ async function ensurePlatformCollections() {
       ...autodates,
     ],
     indexes: ['CREATE INDEX idx_cubby_job_runs_job ON cubby_job_runs (project, job, started)'],
+  });
+
+  // App metrics (metrics.js): per-app counts in hourly and UTC-daily buckets ("hour" / "day"), added to on every
+  // flush. Never holds IPs. Later counters (API requests, errors, peaks) are new number fields on the same buckets.
+  await upsertCollection({
+    name: 'cubby_metrics',
+    type: 'base',
+    ...LOCKED,
+    fields: [
+      { name: 'project', type: 'relation', collectionId: projects.id, maxSelect: 1, required: true, cascadeDelete: true },
+      { name: 'period', type: 'text', required: true, max: 10 },
+      { name: 'start', type: 'date', required: true },
+      { name: 'views', type: 'number', onlyInt: true },
+      { name: 'visitors', type: 'number', onlyInt: true },
+      ...autodates,
+    ],
+    indexes: ['CREATE UNIQUE INDEX idx_cubby_metrics_bucket ON cubby_metrics (project, period, start)'],
   });
 
   // App secrets for jobs (secrets.js), encrypted with the server key.

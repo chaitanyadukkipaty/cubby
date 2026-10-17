@@ -11,7 +11,7 @@ import {
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
   jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
-  formatStorage, formatBackups, formatBytes,
+  formatStorage, formatBackups, formatBytes, formatMetrics, formatMetricsList,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -27,7 +27,7 @@ const { values: flags, positionals } = parseArgs({
     token: { type: 'string' }, code: { type: 'string' }, client: { type: 'string' }, 'no-skill': { type: 'boolean' }, wait: { type: 'boolean' }, 'no-wait': { type: 'boolean' },
     'no-install': { type: 'boolean' }, 'no-build': { type: 'boolean' }, unlisted: { type: 'boolean' }, listed: { type: 'boolean' },
     yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
-    run: { type: 'string' }, limit: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
+    run: { type: 'string' }, limit: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' }, range: { type: 'string' },
   },
 });
 
@@ -354,6 +354,16 @@ const commands = {
     if (!id) throw new CliError('Usage: cubby rollback <deploy-id>');
     const r = await api('POST', `/api/projects/${requireProject()}/rollback`, { body: { deploy: id } });
     out(`Now serving ${id} at ${r.url}`, r);
+  },
+
+  async metrics(slug) {
+    const query = flags.range ? `?${new URLSearchParams({ range: flags.range })}` : '';
+    if (!slug) {
+      const list = await api('GET', `/api/metrics${query}`);
+      return out(formatMetricsList(list), list);
+    }
+    const r = await api('GET', `/api/projects/${encodeURIComponent(slug)}/metrics${query}`);
+    out(formatMetrics(r), r);
   },
 
   async jobs(sub, name) {

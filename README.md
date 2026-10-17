@@ -60,6 +60,13 @@ A week later you ask for more, and it doesn't have to happen in anyone's browser
 The agent stores the email service's API key as a secret, writes two **scheduled jobs** next to the app, deploys,
 runs each one once to check it works, and tells you when they'll run next.
 
+And when you wonder whether anyone uses it:
+
+> How many people used the polls app this week?
+
+The agent runs `cubby metrics friend-polls --range 7d` and tells you the page views and unique visitors per day.
+Cubby counts them itself as it serves the app, so there's no tracking script, cookie banner or analytics account.
+
 ## Why Cubby
 
 Coding agents can write a whole web app from a sentence. **Hosting it is the hard part**: it needs a database,
@@ -80,6 +87,7 @@ else's platform and you can't bring your own agent.
 - **Real backend for every app.** Collections, user accounts, file uploads and live updates from a shared [PocketBase](https://pocketbase.io). Each app is walled off by collection prefix, and its security comes from database rules.
 - **One-command deploys.** `cubby deploy` pushes schema changes, builds and publishes. The last 10 deploys are kept for instant rollback.
 - **Scheduled jobs.** Apps can run code on a cron schedule (digests, reminders, cleanups, syncing from an API) with encrypted secrets. Each run is sandboxed and can only reach its own app's data and the public internet.
+- **Built-in metrics.** Page views and unique visitors per app, counted on the server as pages are served: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps in a gallery, and manage users, limits and disk from an admin tab.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
@@ -196,6 +204,7 @@ account" error.
 | `cubby deploys` / `cubby rollback <id>` | List deploys, restore one instantly (with the jobs it shipped) |
 | `cubby jobs [run \| logs \| pause \| resume <job>]` | List scheduled jobs with their next and last run; run one now and print its log |
 | `cubby env list \| set NAME=value \| unset NAME --yes` | Secrets for jobs (`--from-stdin` keeps a value out of shell history) |
+| `cubby metrics [<app>] [--range 7d]` | Page views and unique visitors of one app, or all of yours (last 24h by default) |
 | `cubby schema push \| pull \| drop` | Manage the data model (push never deletes) |
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
@@ -252,7 +261,7 @@ flowchart LR
     C --> S
     subgraph S[Cubby server]
       D[Dashboard + API]
-      H["App hosting<br/>&lt;app&gt;.your-server.com"]
+      H["App hosting<br/>&lt;app&gt;.your-server.com<br/>counts views"]
       P["Database proxy<br/>&lt;app&gt;/pb/* → own data only"]
       J["Job runner<br/>cron · sandboxed · own data only"]
     end
@@ -269,6 +278,12 @@ flowchart LR
   bundles them with the frontend. Each run is a separate Node.js process with no access to the server's files,
   environment or local network: its database client reaches only that app's collections (as admin, past the rules),
   checked by the same code as the proxy. Runs have a time limit, a memory cap and logs (`cubby jobs logs`).
+- **Metrics** are counted as the server hands out an app's pages: each HTML page load by a browser is a view
+  (assets, `/pb` calls and obvious bots don't count). A visitor is a hash of the IP address and browser with a salt
+  that only lives in memory and changes every day (UTC), so the same person counts once a day and can't be followed
+  across days; the IP itself is never stored. Counts are kept in memory and written to the database every minute in
+  hourly and daily buckets: a crash loses at most that minute, and a restart may count some of that day's
+  visitors twice. Only the app's owner (and admins) can see them.
 - One Docker container runs Caddy, the Cubby server (Node.js) and PocketBase, with a single data volume.
 - Each server serves its own CLI (`/cli.tgz`), agent docs (`/docs.md`) and skill installer (`/skill.sh`), so agents
   always follow the rules of the server they're deploying to.
