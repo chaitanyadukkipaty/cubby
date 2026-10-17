@@ -156,10 +156,13 @@ const ERROR_RATE = 0.05;
 
 /**
  * What's broken across the user's apps, each with a fix-it prompt: scheduled jobs whose last run failed (paused ones
- * aside) and apps with many API errors. `jobs` carry their `app`; `metrics` are GET /api/metrics rows.
+ * aside) and apps with many API errors. `jobs` carry their `app`; `metrics` are GET /api/metrics rows. First, apps
+ * (GET /api/projects) whose data an admin cleared: those link to the Data tab (to restore) instead of a prompt.
  */
-export function needsAttention({ jobs = [], metrics = [] } = {}) {
-  const items = [];
+export function needsAttention({ apps = [], jobs = [], metrics = [] } = {}) {
+  const items = apps.filter((a) => a.admin_clear).map((a) => ({
+    app: a.slug, kind: 'admin_clear', text: `had data cleared by an admin (${a.admin_clear.by}): ${a.admin_clear.reason}`, prompt: null, href: appPath(a.slug, 'data'),
+  }));
   for (const j of jobs) {
     const status = j.last_run?.status;
     if (j.paused || (status !== 'error' && status !== 'timeout')) continue;

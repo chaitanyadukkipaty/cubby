@@ -1,16 +1,18 @@
 // /admin[/<tab>]: the whole server. Overview (server-wide numbers, views chart, busiest apps and agents, disk),
-// Users, Apps (old deploys, delete), Agents (seen across every user), Jobs, Settings (name, invites,
+// Users, Apps (old deploys, clear data, delete), Agents (seen across every user), Jobs, Settings (name, invites,
 // limits, backup retention) and Storage (disk bar, per-app sizes, backups, snapshots). The tab is in the path so a
-// reload keeps it. Words and numbers come from js/admin-view.js (pure, unit-tested).
+// reload keeps it; /admin/apps/<slug> is an admin clearing data of any app. Words and numbers come from
+// js/admin-view.js (pure, unit-tested).
 import { h, ago, fmtBytes, fmtCount, displayName, inviteText, jobState, updateNotice, versionLabel } from '../helpers.js';
 import { activeAgents, backupDelete, diskBar, overviewKpis, purgeRule, restoreCommand, retentionText } from '../admin-view.js';
 import { chartBuckets, timeTicks } from '../charts.js';
 import { chartSummary } from '../app-view.js';
 import { monogram } from '../feed.js';
-import { ADMIN_TABS, adminPath } from '../routes.js';
+import { ADMIN_TABS, adminPath, appPath } from '../routes.js';
 import { state, api, rerender, SERVER } from '../session.js';
 import { agentBadge, toast, copy, copyChip, pageHeader } from '../ui.js';
 import { timeChart } from './chart-ui.js';
+import { renderData } from './data.js';
 
 const TAB_LABELS = { overview: 'Overview', users: 'Users', apps: 'Apps', agents: 'Agents', jobs: 'Jobs', settings: 'Settings', storage: 'Storage' };
 const ACTIVITY_LIMIT = 500;
@@ -126,8 +128,9 @@ function deploysPanel(a, cell) {
   api('GET', `/api/admin/apps/${a.slug}/deploys`).then(draw, (ex) => toast(ex.message));
 }
 
-async function appsTab(body) {
+async function appsTab(body, { slug }) {
   const apps = await api('GET', '/api/admin/apps');
+  if (slug) return appData(body, apps.find((a) => a.slug === slug), slug);
   if (!apps.length) return body.replaceChildren(h('div', { class: 'empty' }, 'No apps yet.'));
   body.replaceChildren(h('div', { class: 'card table-wrap' }, h('table', { 'aria-label': 'All apps' },
     h('thead', {}, h('tr', {}, h('th', {}, 'App'), h('th', { class: 'hide-sm' }, 'Owner'), h('th', { class: 'r' }, 'Disk'), h('th', { class: 'hide-sm' }, 'Last deploy'), h('th', {}, h('span', { class: 'sr-only' }, 'Actions')))),
@@ -145,6 +148,7 @@ async function appsTab(body) {
           h('div', { class: 'muted tiny show-sm' }, a.owner)),
         h('td', { class: 'muted hide-sm' }, a.owner), h('td', { class: 'r num' }, fmtBytes(a.disk_bytes)), h('td', { class: 'muted hide-sm' }, ago(a.last_deployed)),
         h('td', { class: 'actions' }, h('div', { class: 'row nowrap' }, toggle,
+          h('a', { class: 'btn sm', href: adminPath('apps', a.slug) }, 'Clear data'),
           h('button', { type: 'button', class: 'sm danger', onclick: async () => {
             if (prompt(`Delete ${a.slug} (owned by ${a.owner}), its data and deploys? Type the app name to confirm:`) !== a.slug) return;
             await api('DELETE', `/api/admin/apps/${a.slug}`);
@@ -152,6 +156,19 @@ async function appsTab(body) {
             rerender();
           } }, 'Delete')))), detailRow];
     })))));
+}
+
+async function appData(body, a, slug) {
+  const back = h('a', { class: 'back', href: adminPath('apps') }, '← All apps');
+  if (!a) return body.replaceChildren(back, h('div', { class: 'empty' }, `There's no app called ${slug}.`));
+  const mine = a.owner === state.me.email;
+  const panel = h('div');
+  body.replaceChildren(back,
+    h('div', { class: 'page-h' }, h('h2', { class: 'mono' }, a.slug), h('span', { class: 'muted' }, `owned by ${a.owner}`),
+      mine ? h('a', { class: 'page-actions', href: appPath(a.slug, 'data') }, 'Open your Data tab') : null),
+    mine ? null : h('p', { class: 'muted small' }, `This app isn't yours: clearing its data needs a reason. ${a.owner} sees it on their app and in their activity, with the snapshot to restore.`),
+    panel);
+  await renderData(panel, { slug: a.slug, needsReason: !mine });
 }
 
 // ---------- Agents ----------
@@ -383,5 +400,5 @@ export async function renderAdmin(el, route) {
   el.querySelector('.app-tabs [aria-current=page]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   const overview = await api('GET', '/api/admin/overview');
   header.append(h('span', { class: 'muted' }, overview.server.public_url));
-  await TABS[tab](body, { overview });
+  await TABS[tab](body, { overview, slug: route?.slug });
 }

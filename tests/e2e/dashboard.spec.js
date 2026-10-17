@@ -112,7 +112,7 @@ test('every page has its own URL: deep links and reloads land on it, and back/fo
 
   await dashboard.openAs(user.token, '/apps/not-mine');
   await expect(page.getByText("You don't have an app called not-mine.")).toBeVisible();
-  for (const path of ['/admin', '/admin/storage']) {
+  for (const path of ['/admin', '/admin/storage', '/admin/apps/not-mine']) {
     await dashboard.openAs(user.token, path);
     await expect(page).toHaveURL(/\/$/, { timeout: 5_000 }); // not an admin: back to Home
     await expect(dashboard.pageHeading).toHaveText('Home');

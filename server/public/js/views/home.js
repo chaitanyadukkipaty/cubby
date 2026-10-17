@@ -57,10 +57,11 @@ async function loadSummary(apps, activeCard, viewsCard, attention) {
   viewsCard.replaceChildren(h('div', { class: 'side-card-h' }, h('h3', {}, 'Views · 7 days'), h('b', { class: 'big' }, fmtCount(views))),
     sparkSvg(days.map((d) => d.value), { w: 240, h: 40, label: `Views per day, last 7 days: ${days.map((d) => d.value).join(', ')}` }));
 
-  const items = needsAttention({ jobs: jobs.flat(), metrics: now });
+  const items = needsAttention({ apps, jobs: jobs.flat(), metrics: now });
   attention.replaceChildren(...items.map((i) => h('div', { class: 'attention', role: 'group', 'aria-label': `${name(i.app)}: ${i.text}` },
     icon('alert'), h('span', { class: 'grow' }, h('a', { href: appPath(i.app) }, name(i.app)), ` ${i.text}`),
-    h('button', { type: 'button', class: 'sm', onclick: () => copy(i.prompt, 'Fix-it prompt copied') }, icon('copy'), 'Copy fix-it prompt'))));
+    i.prompt ? h('button', { type: 'button', class: 'sm', onclick: () => copy(i.prompt, 'Fix-it prompt copied') }, icon('copy'), 'Copy fix-it prompt')
+      : h('a', { class: 'btn', href: i.href }, 'Review'))));
 }
 
 export async function renderHome(el) {

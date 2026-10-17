@@ -42,7 +42,7 @@ test("an app's page fits a phone: the tabs scroll sideways inside their bar, the
     const dashboard = new DashboardPage(page);
     await dashboard.openAs(user.token, `/apps/${slug}`);
     await expect(dashboard.app.chart('Views')).toBeVisible();
-    for (const path of [`/apps/${slug}`, `/apps/${slug}/deploys`, `/apps/${slug}/env`, '/apps', '/']) {
+    for (const path of [`/apps/${slug}`, `/apps/${slug}/deploys`, `/apps/${slug}/env`, `/apps/${slug}/data`, '/apps', '/']) {
       await page.goto(path);
       await page.waitForLoadState('networkidle');
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${path} overflows at 390px (${colorScheme})`).toBe(true);

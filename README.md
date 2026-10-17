@@ -103,11 +103,10 @@ else's platform and you can't bring your own agent.
 - **Know who did what.** Every change (deploys, rollbacks, schema, secrets, jobs, logins, admin actions on users, apps and backups) is logged
   for 30 days with the agent that made it, or "dashboard". `cubby activity` shows yours; admins can see everyone's.
 - **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), the top pages, API requests and errors next to each deploy, and accounts and signups per app, for up to a year, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them; each app's page in the dashboard charts them on one time axis with a line for every deploy; admins see every app with `--all`.
-- **Clear test data, safely.** Empty or drop collections without deleting the app (`cubby data clear`), always after a snapshot kept for 7 days.
-- **Clear test data, safely.** Empty or drop collections, or delete records by filter, without deleting the app (`cubby data clear`), always after a snapshot kept for 7 days that `cubby data restore` brings back.
+- **Clear test data, safely.** Empty or drop collections, or delete records by filter, without deleting the app, from your agent (`cubby data clear`) or the app's **Data** tab, which shows exactly what would go before it lets you delete. A snapshot is always kept for 7 days, and `cubby data restore` (or **Restore** on the tab) brings it back.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code and browse everyone's apps on Explore. The **Admin** page has tabs, each with its own link: **Overview** (server-wide views charted over 7 days, the busiest apps, the most active agents across every user, the disk at a glance and updates), **Users**, **Apps** (with each app's older deploys), **Agents**, **Jobs**, **Settings** (name, invites, limits, how many backups to keep) and **Storage**.
-- **A dashboard that follows your agents.** Home is a timeline of what your agents did, one line each, grouped by day: a deploy you don't like is one **Roll back** away, and a failed job comes with a fix-it prompt to paste into your agent. Next to it: who's on your apps right now, views over the last 7 days, your agents, and ready-made prompts for what to ask next. **Agents** lists every agent you connected, with the apps it touched; rename or revoke one there, or open it to see everything it did. Each app has its own page with tabs (Overview charts, Activity, Deploys with rollback, Jobs, Env and Settings), and every tab has its own link.
+- **A dashboard that follows your agents.** Home is a timeline of what your agents did, one line each, grouped by day: a deploy you don't like is one **Roll back** away, and a failed job comes with a fix-it prompt to paste into your agent. Next to it: who's on your apps right now, views over the last 7 days, your agents, and ready-made prompts for what to ask next. **Agents** lists every agent you connected, with the apps it touched; rename or revoke one there, or open it to see everything it did. Each app has its own page with tabs (Overview charts, Activity, Deploys with rollback, Jobs, Env, Data and Settings), and every tab has its own link.
 - **Quick to get around.** Press ⌘K (Ctrl+K) anywhere in the dashboard to jump to a page or one of your apps, copy the setup prompt or a common command, switch theme or log out.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
 - **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin page tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins see where the disk goes on the Admin page's **Storage** tab (a bar of database, uploads, live and old deploys, backups, snapshots and free space; every app's size; backups to take, delete or copy the restore command for), and their agent can do the same with `cubby admin storage`, `cubby admin backups` and `cubby admin deploys`.
@@ -115,7 +114,7 @@ else's platform and you can't bring your own agent.
 <table>
 <tr>
 <td width="50%"><img src="docs/assets/dashboard-home.png?v=48d949ff" alt="Dashboard Home: prompt suggestions for your agent, a failed job with a Copy fix-it prompt button, and a timeline of agent activity with Roll back on deploys, next to active visitors, 7-day views and your agents"><p align="center"><sub>Home on Priya's Cubby: what your agents did, and what to ask next</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-app-overview.png?v=0495eb58" alt="Friend Polls' Overview tab: a KPI strip, then views, unique visitors, active visitors and API errors charted on one time axis with dashed deploy lines, and the top paths"><p align="center"><sub>An app's Overview: every chart shares one time axis, with deploys drawn through</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-app-overview.png?v=aaef244c" alt="Friend Polls' Overview tab: a KPI strip, then views, unique visitors, active visitors and API errors charted on one time axis with dashed deploy lines, and the top paths"><p align="center"><sub>An app's Overview: every chart shares one time axis, with deploys drawn through</sub></p></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/assets/dashboard-agents.png?v=a8074a2c" alt="The Agents page: Claude Code and Codex with their machine, the apps each touched, last seen, and Rename and Revoke buttons, above the token for scripts and CI"><p align="center"><sub>Agents: rename, revoke, or connect another</sub></p></td>
@@ -127,7 +126,7 @@ else's platform and you can't bring your own agent.
 </tr>
 <tr>
 <td width="50%"><img src="docs/assets/dashboard-apps.png?v=69b4f308" alt="The Apps page: one row per app with active visitors, views over 7 days with a sparkline, and who deployed it last"><p align="center"><sub>Apps: who's on each app, 7-day views, and which agent deployed it</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-app-deploys.png?v=b758402a" alt="An app's Deploys tab listing four deploys with their message, agent, size and age, the live one marked, and Roll back to this on the others"><p align="center"><sub>Deploys: roll back to any kept deploy</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-app-deploys.png?v=94c02f2e" alt="An app's Deploys tab listing four deploys with their message, agent, size and age, the live one marked, and Roll back to this on the others"><p align="center"><sub>Deploys: roll back to any kept deploy</sub></p></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/assets/dashboard-admin-overview.png?v=b31fd97f" alt="Admin Overview: users, views, visitors, active now, API error rate and free disk across the server, a 7-day views chart of every app, the top apps by views, the most active agents across users, the disk bar and an update notice"><p align="center"><sub>Admin Overview: the whole server at a glance</sub></p></td>
@@ -375,6 +374,15 @@ cubby data clear friend-polls --collections polls,votes --yes
   server.
 - Only the app's owner (and admins) can clear it, `--yes` is required, and each clear is in `cubby activity`.
 
+**In the dashboard**, the app's **Data** tab does the same. It lists the collections with their records and uploaded
+files, all ticked except the app's user accounts (ticking those shows the new-passwords warning). Choose **Empty**,
+**Drop**, or **Delete records of one collection** by a filter: type one, click an example, or pick a "created before"
+date. Nothing can be deleted until you click **Preview**, which shows "matches N of M", up to five of the records
+(tick some to delete only those), what goes by cascade, and asks for an extra tick above 10,000 records. Change the
+form and the preview goes stale. Then type the app's name to unlock the button; the result names the snapshot.
+
+<p align="center"><img src="docs/assets/dashboard-app-data.png?v=6d4bd325" width="760" alt="Friend Polls' Data tab: collections with record counts and file sizes (users unticked), Empty, Drop or delete by filter, a preview that says Empties comments, polls and votes: 4,231 records with five sample records, the app name typed to confirm, and two snapshots with Restore and Purge"></p>
+
 ### Undo a clear
 
 Cleared the wrong thing? Within 7 days, ask *"bring back the polls I cleared this morning"*:
@@ -393,6 +401,9 @@ cubby data restore 20261017T101500-a1b2c3
   after saving the versions it replaces in a new snapshot.
 - A **dropped** collection is recreated from the snapshot's schema, rules included. Fields removed since are skipped;
   a field whose type changed refuses the restore until it's dropped or renamed. `--dry-run` reports all of it.
+- On the **Data** tab, **Restore** on a snapshot runs the dry run first and shows what comes back, what exists
+  again (skipped, or replaced with **Overwrite**) and any schema drift; a field whose type changed blocks it. Restored
+  accounts' new passwords are shown once.
 - What can't come back the same: PocketBase sets `created`/`updated` itself and renames uploaded files (their URLs
   change), and it never hands out password hashes, not even to the server (we checked against the bundled
   PocketBase: superusers can't read them, and writing one back just sets it as a new password). So **restored
@@ -403,10 +414,11 @@ cubby data restore 20261017T101500-a1b2c3
 
 Admins can clear data in any app (spam, a runaway job, a reset), but never silently:
 
-- An admin clearing someone else's app must give `--reason "…"`. The owner gets it in their own `cubby activity`
-  ("Admin (priya@…) emptied polls — 1,204 records · snapshot … until 2026-10-24. Reason: spam flood"), and the app
-  carries an `admin_clear` flag (shown by `cubby info`, for the dashboard's banner) until the owner dismisses it
-  (`DELETE /api/projects/<app>/admin-clear`).
+- An admin clearing someone else's app must give `--reason "…"` (in the dashboard: **Admin → Apps → Clear data**,
+  the same Data panel with a required reason). The owner gets it in their own `cubby activity`
+  ("Admin (priya@…) emptied polls — 1,204 records · snapshot … until 2026-10-24. Reason: spam flood"), at the top of
+  their Home, and as a banner on the app's page, with a link to its snapshots, until they click **Dismiss** (the app's
+  `admin_clear` flag, also shown by `cubby info`).
 - `cubby data clear <app> --wipe --yes` wipes the database: every collection is dropped (after one snapshot) and
   the schema hash is cleared, so the app's next `cubby deploy` pushes `schema.json` again and starts empty.
 - Owners can restore any snapshot of their app, including an admin's, but can't purge an admin's

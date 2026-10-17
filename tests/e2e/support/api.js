@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import * as tar from 'tar';
-import { client, ADMIN } from '../../helpers/server.js';
+import { client, hostRequest, ADMIN } from '../../helpers/server.js';
 
 export const serverUrl = () => {
   if (!process.env.CUBBY_E2E_URL) throw new Error('CUBBY_E2E_URL not set: run through playwright.config.js');
@@ -136,5 +136,25 @@ export class Api {
 
   async deploys(token, slug) {
     return ok(await this.as(token)('GET', `/api/projects/${slug}/deploys`), 'list deploys');
+  }
+
+  /** Applies a schema.json to an app, as `cubby schema push` does. */
+  async pushSchema(token, slug, schema) {
+    return ok(await this.as(token)('PUT', `/api/projects/${slug}/schema`, { body: { ...schema, hash: uid('h') } }), 'push schema');
+  }
+
+  /** Creates records through the app's own /pb proxy (on <slug>.localhost), as its visitors would. */
+  async addRecords(slug, collection, records) {
+    const port = Number(process.env.CUBBY_E2E_PORT);
+    const name = `${slug.replaceAll('-', '_')}__${collection}`;
+    for (const body of records) {
+      const r = await hostRequest(port, `${slug}.localhost:${port}`, 'POST', `/pb/api/collections/${name}/records`, { body, headers: { 'content-type': 'application/json' } });
+      if (r.status !== 200) throw new Error(`add record failed (${r.status}): ${r.text}`);
+    }
+  }
+
+  async dataCounts(token, slug) {
+    const list = await ok(await this.as(token)('GET', `/api/projects/${slug}/data`), 'list data');
+    return Object.fromEntries(list.map((c) => [c.name, c.records]));
   }
 }

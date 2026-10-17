@@ -1,6 +1,6 @@
 // /apps: the signed-in user's apps, one row each with who's on it now, a 7-day views sparkline and who deployed it
-// last. /apps/:slug[/<tab>]: one app, with Overview (charts), Activity, Deploys, Jobs, Env and Settings tabs; the tab
-// is in the path so a reload or a shared link keeps it.
+// last. /apps/:slug[/<tab>]: one app, with Overview (charts), Activity, Deploys, Jobs, Env, Data and Settings tabs;
+// the tab is in the path so a reload or a shared link keeps it.
 import { h, ago, fmtBytes, fmtCount, jobState } from '../helpers.js';
 import { emptyPrompt, lastDeployers, monogram } from '../feed.js';
 import { chartBuckets, deployMarkers, timeTicks } from '../charts.js';
@@ -11,6 +11,7 @@ import { navigate } from '../router.js';
 import { agentBadge, askAgent, copy, icon, pageHeader, toast } from '../ui.js';
 import { timeline } from './feed-ui.js';
 import { sparkSvg, timeChart } from './chart-ui.js';
+import { adminClearBanner, renderData } from './data.js';
 
 export const noAppsYet = () => h('div', { class: 'empty' }, 'No apps yet. Run ', h('code', {}, 'cubby init my-app'), ' to create one.');
 
@@ -54,7 +55,7 @@ export async function renderApps(el) {
 
 // ---------- /apps/:slug ----------
 
-const TAB_LABELS = { overview: 'Overview', activity: 'Activity', deploys: 'Deploys', jobs: 'Jobs', env: 'Env', settings: 'Settings' };
+const TAB_LABELS = { overview: 'Overview', activity: 'Activity', deploys: 'Deploys', jobs: 'Jobs', env: 'Env', data: 'Data', settings: 'Settings' };
 
 function tabsNav(a, tab, counts) {
   return h('nav', { class: 'app-tabs', 'aria-label': 'App sections' }, APP_TABS.map((t) => h('a', { href: appPath(a.slug, t), 'aria-current': t === tab ? 'page' : false },
@@ -228,7 +229,9 @@ function settingsTab(a, body) {
       h('div', { class: 'row' }, confirmInput, del)));
 }
 
-const TABS = { overview: overviewTab, activity: activityTab, deploys: deploysTab, jobs: jobsTab, env: envTab, settings: settingsTab };
+const dataTab = (a, body) => renderData(body, { slug: a.slug });
+
+const TABS = { overview: overviewTab, activity: activityTab, deploys: deploysTab, jobs: jobsTab, env: envTab, data: dataTab, settings: settingsTab };
 
 export async function renderApp(el, { slug, tab = 'overview' }) {
   const back = h('a', { class: 'back', href: '/apps' }, '← Apps');
@@ -247,6 +250,7 @@ export async function renderApp(el, { slug, tab = 'overview' }) {
       h('span', { class: 'mono' }, a.url.replace(/^https?:\/\//, '')),
       h('button', { type: 'button', class: 'icon tiny-btn', 'aria-label': 'Copy app URL', title: 'Copy app URL', onclick: () => copy(a.url, 'URL copied') }, icon('copy')),
       a.current_deploy ? [' · Deployed ', ago(a.last_deployed), ...byLine(by)] : ' · Not deployed yet'),
+    adminClearBanner(a, { onDismiss: rerender }) ?? '',
     tabsNav(a, tab, { jobs: a.jobs || null }),
     body);
   // On phones the tab bar scrolls sideways: keep the current tab in view.

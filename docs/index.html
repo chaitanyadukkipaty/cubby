@@ -404,7 +404,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
         <li><b>Checked right away.</b> <code>cubby jobs run &lt;job&gt;</code> runs one now and prints its log, so the agent tests each job before telling you it's done. The <b>Jobs</b> tab of the app's page on the dashboard lists its jobs, with <b>Run now</b>, <b>Pause</b> and the last log, and the <b>Env</b> tab sets and removes secrets by name (values are never shown).</li>
         <li><b>Safe to miss.</b> A run that's due while the previous one is still going is skipped, and runs missed while the server was down aren't caught up later.</li>
       </ul>
-      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-app-jobs.png?v=15d70d42" alt="Friend Polls' Jobs tab: two scheduled jobs that ran OK, each with its schedule, last and next run, and Run now and Pause buttons" loading="lazy" width="1280" height="820"><figcaption>An app's scheduled jobs, on its Jobs tab.</figcaption></figure>
+      <figure class="shot" style="max-width:760px"><img src="assets/dashboard-app-jobs.png?v=1e57790f" alt="Friend Polls' Jobs tab: two scheduled jobs that ran OK, each with its schedule, last and next run, and Run now and Pause buttons" loading="lazy" width="1280" height="820"><figcaption>An app's scheduled jobs, on its Jobs tab.</figcaption></figure>
 
       <h3 id="metrics">Visitors, activity and API health</h3>
       <p>Once friends are using an app, you'll want to know if they actually are. Ask:</p>
@@ -432,7 +432,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
         <li><b>A year of history, kept small.</b> Hourly numbers are kept 30 days; the nightly maintenance then folds them into their day, and days are kept a year. Ranges up to <code>30d</code> are reported by the hour; longer ones (up to <code>1y</code>) by the day.</li>
         <li><b>Yours to see.</b> Only the app's owner (and the server's admins) can see an app's numbers. <code>cubby metrics</code> without an app lists all of yours; <code>--range</code> takes <code>1h</code>, <code>24h</code>, <code>7d</code>, <code>30d</code>, <code>1y</code> or any hours or days in between, and <code>--json</code> adds views, peaks, API requests and errors per hour, views, visitors, API requests and errors per day, and signups per day. Admins get every app summed, with the busiest apps, from <code>cubby metrics --all</code>.</li>
       </ul>
-      <figure class="shot"><img src="assets/dashboard-app-overview.png?v=0495eb58" alt="Friend Polls' Overview tab: a KPI strip, then views, unique visitors, active visitors and API errors charted on one time axis with dashed deploy lines, and the top paths" loading="lazy" width="1280" height="1450"><figcaption>An app's Overview: deploys v3 and v4 drawn through every chart.</figcaption></figure>
+      <figure class="shot"><img src="assets/dashboard-app-overview.png?v=aaef244c" alt="Friend Polls' Overview tab: a KPI strip, then views, unique visitors, active visitors and API errors charted on one time axis with dashed deploy lines, and the top paths" loading="lazy" width="1280" height="1450"><figcaption>An app's Overview: deploys v3 and v4 drawn through every chart.</figcaption></figure>
       <p>Its other tabs: <b>Activity</b> (that app's timeline), <b>Deploys</b> (every kept deploy with <b>Roll back to this</b>), <b>Jobs</b>, <b>Env</b> and <b>Settings</b> (show in the gallery, and delete after typing the app's name). The tab is part of the link, like <code>/apps/friend-polls/deploys</code>, so a reload keeps it, and on a phone the tabs scroll sideways. A tab with nothing in it yet suggests what to ask your agent, with a copy button.</p>
     </section>
 
@@ -457,6 +457,19 @@ Snapshot 20261017T101500-a1b2c3 keeps them until 2026-10-24.</span></pre></div>
         <li><b>Accounts only when named.</b> The app's users collection is only cleared when you list it, and the result warns that restored accounts get new passwords: PocketBase never hands out password hashes, even to the server.</li>
         <li><b>Owners only.</b> Only the app's owner (and admins) can clear its data, the CLI needs <code>--yes</code>, and every clear is in <code>cubby activity</code>.</li>
       </ul>
+      <h3 id="data-tab">In the dashboard</h3>
+      <div class="two">
+        <div>
+          <p>The app's <b>Data</b> tab does the same, with the same guards:</p>
+          <ul>
+            <li>The collections with their records and uploaded files, all ticked except the app's user accounts (ticking those shows the new-passwords warning).</li>
+            <li><b>Empty</b>, <b>Drop</b>, or <b>Delete records of one collection</b> by a filter: type one, click an example, or pick a "created before" date.</li>
+            <li><b>Preview</b> is required: "matches N of M", up to five of the records (tick some to delete only those), what goes by cascade, and an extra tick above 10,000 records. Changing the form makes the preview stale.</li>
+            <li>Type the app's name to unlock the button. The result names the snapshot, which is listed below with <b>Restore</b> (dry run first, with any schema drift and an <b>Overwrite</b> option) and <b>Purge</b>.</li>
+          </ul>
+        </div>
+        <figure class="shot"><img src="assets/dashboard-app-data.png?v=6d4bd325" alt="Friend Polls' Data tab: collections with record counts and file sizes (users unticked), Empty, Drop or delete by filter, a preview that says Empties comments, polls and votes: 4,231 records with five sample records, the app name typed to confirm, and two snapshots with Restore and Purge" loading="lazy" width="1280" height="1347"><figcaption>An app's Data tab, after Preview.</figcaption></figure>
+      </div>
       <h3 id="restore">Undo a clear</h3>
       <p>Cleared the wrong thing? Within 7 days, ask your agent to bring it back:</p>
       <div class="code"><pre>cubby data snapshots friend-polls
@@ -468,7 +481,7 @@ cubby data restore 20261017T101500-a1b2c3
       <ul>
         <li><b>Same ids, nothing doubled.</b> Records come back with their original ids, so links still work. Ids that exist again are skipped, so restoring twice is harmless; <code>--overwrite --yes</code> replaces them, after saving the current versions in a new snapshot.</li>
         <li><b>Schema changes since.</b> A dropped collection is recreated from the snapshot, rules included. Fields removed since are skipped; a field whose type changed stops the restore until it's dropped or renamed. <code>--dry-run</code> shows all of it first.</li>
-        <li><b>Admins too, never silently.</b> An admin can clear any app's data, but must give <code>--reason</code>. The owner sees it in their own activity ("Admin (priya@…) emptied polls — 1,204 records · snapshot … Reason: spam flood") and as a flag on the app until they dismiss it. Owners can restore an admin's snapshot but not purge it. <code>--wipe</code> drops every collection, and the app's next <code>cubby deploy</code> recreates them from <code>schema.json</code>.</li>
+        <li><b>Admins too, never silently.</b> An admin can clear any app's data (<b>Admin → Apps → Clear data</b>, or the CLI), but must give a reason (<code>--reason</code>). The owner sees it in their own activity ("Admin (priya@…) emptied polls — 1,204 records · snapshot … Reason: spam flood"), at the top of their Home, and as a banner on the app's page that links to its snapshots, until they dismiss it. Owners can restore an admin's snapshot but not purge it. <code>--wipe</code> drops every collection, and the app's next <code>cubby deploy</code> recreates them from <code>schema.json</code>.</li>
         <li><b>What comes back different.</b> PocketBase sets <code>created</code> and <code>updated</code> itself and renames uploaded files, and it never hands out password hashes, not even to the server. So restored accounts get new random passwords, listed by the restore for you to hand out.</li>
       </ul>
     </section>
@@ -565,7 +578,7 @@ cubby data restore 20261017T101500-a1b2c3
           <ul>
             <li><b>Overview</b>: users, views, visitors, who's on any app now, the API error rate and free disk; every app's views charted over 7 days; the busiest apps and the most active agents across every user; the disk at a glance; updates</li>
             <li><b>Users</b>: disable someone (their apps stay online) or delete them with their apps</li>
-            <li><b>Apps</b>: every app with its owner and size; list and delete an app's older deploys; delete an app</li>
+            <li><b>Apps</b>: every app with its owner and size; list and delete an app's older deploys; clear an app's data (with a reason the owner sees); delete an app</li>
             <li><b>Agents</b>: every agent that changed something in the last 30 days, whoever it belongs to, with how much it did and where (owners rename and revoke their own)</li>
             <li><b>Jobs</b>: every app's scheduled jobs and how their last run went, the time limit per run (60 seconds by default), and a switch that stops them all</li>
             <li><b>Settings</b>: the server's name (shown on the dashboard, the sign-in page and when people connect an agent), the signup code or open signup, apps per user, the maximum deploy size, and how many nightly backups to keep</li>
