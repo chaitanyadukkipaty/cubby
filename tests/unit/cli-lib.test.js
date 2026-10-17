@@ -8,6 +8,22 @@ import * as lib from '../../cli/src/lib.js';
 const SKILL_SRC = new URL('../../cli/skill/cubby/', import.meta.url).pathname;
 const TEMPLATE = new URL('../../cli/template/', import.meta.url).pathname;
 
+describe('agent login hint', () => {
+  test('detectTool names the agent from its environment, else Terminal', () => {
+    assert.equal(lib.detectTool({ CLAUDECODE: '1' }), 'Claude Code');
+    assert.equal(lib.detectTool({ CODEX_SANDBOX: 'seatbelt' }), 'Codex');
+    assert.equal(lib.detectTool({ CURSOR_TRACE_ID: 'x' }), 'Cursor');
+    assert.equal(lib.detectTool({ CLAUDECODE: '1', CURSOR_TRACE_ID: 'x' }), 'Claude Code', 'an agent running inside an editor wins');
+    assert.equal(lib.detectTool({ CLAUDECODE: '' }), 'Terminal');
+    assert.equal(lib.detectTool({}), 'Terminal');
+  });
+  test('loginHint sends the tool (--client / CUBBY_CLIENT win over detection) and the short hostname', () => {
+    assert.deepEqual(lib.loginHint({ env: { CLAUDECODE: '1' }, hostname: 'chaitanya-mbp.local' }), { tool: 'Claude Code', machine: 'chaitanya-mbp' });
+    assert.deepEqual(lib.loginHint({ client: 'my-bot', env: { CLAUDECODE: '1' }, hostname: 'box' }), { tool: 'my-bot', machine: 'box' });
+    assert.deepEqual(lib.loginHint({ env: { CUBBY_CLIENT: 'ci' }, hostname: 'runner.LOCAL' }), { tool: 'ci', machine: 'runner' });
+  });
+});
+
 describe('normalizeServerArg', () => {
   test('keeps explicit schemes', () => { assert.equal(lib.normalizeServerArg('http://1-2-3-4.sslip.io'), 'http://1-2-3-4.sslip.io'); assert.equal(lib.normalizeServerArg('https://a.b'), 'https://a.b'); });
   test('defaults bare hosts to https', () => assert.equal(lib.normalizeServerArg('cubby.example.com'), 'https://cubby.example.com'));
@@ -59,6 +75,20 @@ describe('formatters', () => {
     ]);
     assert.equal(t, '* d2  t2  3 files  [claude-code] two\n  d1  t1  1 files  one');
     assert.equal(lib.formatDeploys([]), 'No deploys');
+  });
+  test('formatAgents lists name, tool, machine and created date, and marks this agent', () => {
+    const t = lib.formatAgents([
+      { name: 'Manual token', tool: null, machine: null, created: '2026-10-01 10:00:00.000Z', current: false },
+      { name: 'Claude Code · mbp', tool: 'Claude Code', machine: 'mbp', created: '2026-10-17 09:00:00.000Z', current: true },
+    ]);
+    const w = 'Claude Code · mbp'.length + 2;
+    assert.equal(t, [
+      `  ${'NAME'.padEnd(w)}${'TOOL'.padEnd(13)}${'MACHINE'.padEnd(9)}CREATED`,
+      `  ${'Manual token'.padEnd(w)}${'-'.padEnd(13)}${'-'.padEnd(9)}2026-10-01`,
+      `* ${'Claude Code · mbp'.padEnd(w)}${'Claude Code'.padEnd(13)}${'mbp'.padEnd(9)}2026-10-17`,
+      '* = this agent',
+    ].join('\n'));
+    assert.equal(lib.formatAgents([]), 'No agents yet. Connect one with `cubby login <server-url>`.');
   });
   test('formatProjects flags undeployed apps', () => {
     assert.equal(lib.formatProjects([{ slug: 'a', url: 'u1', current_deploy: 'd' }, { slug: 'b', url: 'u2' }]),

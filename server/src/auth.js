@@ -1,28 +1,41 @@
-// Platform accounts and tokens. Each user has exactly one token, shown on the dashboard.
+// Platform accounts and tokens. Each user has one manual token (shown on the dashboard, used by the dashboard
+// itself and by `cubby login --token`), plus one key per agent they approved with `cubby login` (an "agent").
 import { createHash, randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { admin } from './pb.js';
 import { config } from './config.js';
 import { HttpError } from './http.js';
 import { getSettings } from './settings.js';
-import { checkSignup } from './logic.js';
+import { checkSignup, agentName, agentView } from './logic.js';
 
 const hash = (key) => createHash('sha256').update(key).digest('hex');
 const userView = (u) => ({ id: u.id, email: u.email, is_admin: Boolean(u.is_admin) });
 
-async function currentKey(userId) {
-  const list = await admin.collection('cubby_api_keys').getList(1, 1, { filter: admin.filter('owner = {:u}', { u: userId }), sort: '-created' });
+// The manual token: any key that isn't an agent's (keys from before agents have an empty kind).
+async function manualKey(userId) {
+  const list = await admin.collection('cubby_api_keys').getList(1, 1, { filter: admin.filter('owner = {:u} && kind != "agent"', { u: userId }), sort: '-created' });
   return list.items[0] ?? null;
 }
 
-async function issueKey(userId) {
+async function issueKey(userId, fields = { label: 'default' }) {
   const key = `hk_${randomBytes(24).toString('base64url')}`;
-  await admin.collection('cubby_api_keys').create({ owner: userId, label: 'default', key, key_hash: hash(key) });
+  // `scopes` is reserved for limiting a key later; empty means full access.
+  await admin.collection('cubby_api_keys').create({ owner: userId, ...fields, scopes: [], key, key_hash: hash(key) });
   return key;
 }
 
-export async function tokenFor(userId) {
-  return (await currentKey(userId))?.key ?? (await issueKey(userId));
+async function tokenFor(userId) {
+  return (await manualKey(userId))?.key ?? (await issueKey(userId));
+}
+
+// A new key for each approved device login, named after the client hint the CLI sent.
+export async function issueAgentToken(userId, hint = {}) {
+  return issueKey(userId, { label: agentName(hint), kind: 'agent', tool: hint.tool || '', machine: hint.machine || '' });
+}
+
+export async function listAgents(user) {
+  const keys = await admin.collection('cubby_api_keys').getFullList({ filter: admin.filter('owner = {:u}', { u: user.id }), sort: 'created' });
+  return keys.map((k) => agentView(k, user.keyId));
 }
 
 export async function regenerateToken(userId) {
@@ -68,5 +81,5 @@ export async function authenticate(req) {
   const owner = record.expand?.owner;
   if (!owner || owner.disabled) throw new HttpError(403, 'This account has been disabled by the admin');
   admin.collection('cubby_api_keys').update(record.id, { last_used: new Date().toISOString() }).catch(() => {});
-  return { ...userView(owner), key };
+  return { ...userView(owner), key, keyId: record.id };
 }

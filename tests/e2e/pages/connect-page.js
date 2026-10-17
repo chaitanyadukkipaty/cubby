@@ -7,6 +7,7 @@ export class ConnectPage {
     this.approvalHeading = page.getByRole('heading', { name: /^Connect your agent to .+\?$/ });
     this.credit = page.getByText(/runs on\s*Cubby/);
     this.code = page.getByLabel('Connection code');
+    this.asker = page.getByLabel('Requesting agent');
     this.approveButton = page.getByRole('button', { name: 'Approve' });
     this.connectedHeading = page.getByRole('heading', { name: /Agent connected/ });
     this.error = page.getByRole('alert');

@@ -137,6 +137,12 @@ const tokenLoginCommand = (server) => `cubby login ${server} --token <token>`;
 const displayName = (name) => (typeof name === 'string' && name.trim()) || 'Cubby';
 const inviteText = (server, code, name) => `Join ${name ? displayName(name) : 'my Cubby server'}: ${server}\nSignup code: ${code}`;
 const connectHeading = (name) => `Connect your agent to ${name ? displayName(name) : 'this server'}?`;
+// Who a login link is for, from GET /api/device/:code's `agent` (null for CLIs that send no hint).
+function connectAsker(agent) {
+  const { tool, machine } = agent || {};
+  if (tool) return `${tool}${machine ? ` on ${machine}` : ''} wants access`;
+  return `${machine ? `An agent on ${machine}` : 'An AI agent on your computer'} wants access`;
+}
 const isHttps = (url) => String(url).startsWith('https:');
 // /connect?code=XXXX-XXXX → "XXXX-XXXX"; any other page or a blank code → null.
 function parseConnectCode(pathname, search) {
@@ -353,7 +359,7 @@ function setupCard() {
           h('button', { onclick: () => { revealed = !revealed; draw(); } }, 'Reveal'),
           h('button', { onclick: () => copy(me.token, 'Token copied') }, 'Copy'),
           h('button', { class: 'danger', onclick: async () => {
-            if (!confirm('Regenerate your token? The old one stops working immediately, including for agents already connected.')) return;
+            if (!confirm('Regenerate your token? The old one stops working immediately, and every agent you connected is logged out (they can reconnect with cubby login).')) return;
             const r = await api('POST', '/api/token/regenerate');
             setToken(r.token);
             me.token = r.token;
@@ -370,8 +376,11 @@ function setupCard() {
 // /connect?code=XXXX-XXXX: approve a CLI/agent login.
 const connectCode = parseConnectCode(location.pathname, location.search);
 
-function renderConnect() {
+async function renderConnect() {
   const status = h('p', { class: 'error', role: 'alert' });
+  // Which agent is asking. An expired code still renders, and Approve then says it expired.
+  const agent = await api('GET', `/api/device/${encodeURIComponent(connectCode)}`).then((r) => r.agent, () => null);
+  const asker = h('b', { 'aria-label': 'Requesting agent' }, connectAsker(agent));
   const done = () => {
     history.replaceState(null, '', '/');
     $app.replaceChildren(h('section', { class: 'hero', style: 'grid-template-columns:1fr;max-width:480px;margin:0 auto' },
@@ -386,7 +395,7 @@ function renderConnect() {
     h('section', { class: 'hero', style: 'grid-template-columns:1fr;max-width:480px;margin:0 auto' },
       h('div', { class: 'card stack', style: 'text-align:center' },
         h('h2', {}, connectHeading(info.name)),
-        h('p', { class: 'muted' }, 'An AI agent on your computer wants to build and deploy apps as ', h('b', {}, me.email), '.'),
+        h('p', { class: 'muted' }, asker, ' to build and deploy apps as ', h('b', {}, me.email), '.'),
         h('p', {}, 'Check the code matches what your agent showed:'),
         h('code', { class: 'mono', style: 'font-size:24px;letter-spacing:.08em', 'aria-label': 'Connection code' }, connectCode),
         status,

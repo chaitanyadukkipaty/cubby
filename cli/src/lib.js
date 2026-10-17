@@ -47,6 +47,35 @@ export function deployParams({ message, unlisted, listed, description } = {}) {
 export const formatDeploys = (list) =>
   list.map((d) => `${d.current ? '*' : ' '} ${d.id}  ${d.created}  ${d.files} files  ${d.client ? `[${d.client}] ` : ''}${d.message}`).join('\n') || 'No deploys';
 
+// --- Agents: each `cubby login` becomes its own named key on the server ---
+// The agent tool running this CLI, from the environment it sets.
+export function detectTool(env) {
+  const has = (prefix) => Object.keys(env).some((k) => k.startsWith(prefix) && env[k]);
+  if (env.CLAUDECODE) return 'Claude Code';
+  if (has('CODEX_')) return 'Codex';
+  if (has('CURSOR_')) return 'Cursor';
+  return 'Terminal';
+}
+
+// What `cubby login` tells the server about itself, so it can name the agent ("Claude Code · chaitanya-mbp").
+// An explicit --client / CUBBY_CLIENT (the name recorded on deploys) wins over detection.
+export const loginHint = ({ client, env, hostname }) => ({
+  tool: client || env.CUBBY_CLIENT || detectTool(env),
+  machine: hostname.replace(/\.local$/i, ''),
+});
+
+export function formatAgents(list) {
+  if (!list.length) return 'No agents yet. Connect one with `cubby login <server-url>`.';
+  const cols = [['NAME', (a) => a.name], ['TOOL', (a) => a.tool ?? '-'], ['MACHINE', (a) => a.machine ?? '-']];
+  const widths = cols.map(([head, get]) => Math.max(head.length, ...list.map((a) => get(a).length)) + 2);
+  const row = (mark, cells) => `${mark} ${cells.map((c, i) => c.padEnd(widths[i])).join('')}`;
+  return [
+    row(' ', cols.map(([head]) => head)) + 'CREATED',
+    ...list.map((a) => row(a.current ? '*' : ' ', cols.map(([, get]) => get(a))) + String(a.created).slice(0, 10)),
+    '* = this agent',
+  ].join('\n');
+}
+
 export const formatProjects = (list) =>
   list.map((p) => `${p.slug.padEnd(24)} ${p.url}${p.current_deploy ? '' : '  (not deployed)'}`).join('\n') || 'No projects yet';
 

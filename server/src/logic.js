@@ -50,6 +50,32 @@ export function deployPatch(searchParams) {
 
 export const deployClient = (header) => String(header ?? '').slice(0, 60);
 
+// --- Agents: one API key per approved `cubby login` ---
+// What a CLI says about itself when it starts a device login. Older CLIs send nothing, so every part is optional.
+const hintText = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+export const agentHint = (body) => ({ tool: hintText(body?.tool, 40), machine: hintText(body?.machine, 60) });
+
+// "Claude Code · chaitanya-mbp"; "Agent · 2026-10-17" when the CLI sent no hint.
+export function agentName({ tool, machine } = {}, now = Date.now()) {
+  if (tool && machine) return `${tool} · ${machine}`;
+  return tool || `Agent · ${machine || new Date(now).toISOString().slice(0, 10)}`;
+}
+
+// Keys from before agents (and the dashboard's own) have no kind: they're the user's manual token.
+export const isAgentKey = (k) => k.kind === 'agent';
+export const MANUAL_TOKEN_NAME = 'Manual token';
+
+// Never includes the key itself.
+export const agentView = (k, currentKeyId) => ({
+  id: k.id,
+  name: isAgentKey(k) ? k.label : MANUAL_TOKEN_NAME,
+  tool: k.tool || null,
+  machine: k.machine || null,
+  manual: !isAgentKey(k),
+  current: k.id === currentKeyId,
+  created: k.created,
+});
+
 // Each server has a display name ("Priya's Cubby"), shown to friends and agents.
 export const SERVER_NAME_MAX = 60;
 

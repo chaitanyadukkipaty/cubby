@@ -3,7 +3,7 @@ import { readFile, statfs } from 'node:fs/promises';
 import { config, SLUG_RE, prefixFor } from './config.js';
 import { HttpError, sendJson, readJson, readBody, rateLimiter } from './http.js';
 import { admin, startPocketBase } from './pb.js';
-import { signup, login, authenticate, tokenFor, regenerateToken } from './auth.js';
+import { signup, login, authenticate, regenerateToken, listAgents } from './auth.js';
 import { applySchema, readSchema, dropFromSchema, projectCollections, deleteCollections } from './schema.js';
 import { createDeploy, listDeploys, rollback, removeSite, serveSite, sendPage, appDiskUsage, dirSize } from './sites.js';
 import { proxyPocketBase } from './proxy.js';
@@ -64,11 +64,12 @@ const routes = [
   }],
   ['POST', '/api/signup', 'public', async (req) => (authLimit(req), signup(await readJson(req)))],
   ['POST', '/api/login', 'public', async (req) => (authLimit(req), login(await readJson(req)))],
-  ['POST', '/api/device/start', 'public', async (req) => (deviceLimit(req), startDevice(config.publicUrl))],
+  ['POST', '/api/device/start', 'public', async (req) => (deviceLimit(req), startDevice(config.publicUrl, Date.now(), logic.agentHint(await readJson(req, 4096))))],
   ['POST', '/api/device/poll', 'public', async (req) => pollDevice((await readJson(req)).device_id)],
   ['GET', '/api/device/:code', 'public', async (req, user, { code }) => deviceInfo(code)],
   ['POST', '/api/device/approve', 'user', async (req, user) => approveDevice(user, (await readJson(req)).code)],
-  ['GET', '/api/me', 'user', async (req, user) => ({ ...user, key: undefined, token: user.key })],
+  ['GET', '/api/me', 'user', async (req, user) => ({ ...user, key: undefined, keyId: undefined, token: user.key })],
+  ['GET', '/api/agents', 'user', async (req, user) => listAgents(user)],
   ['POST', '/api/token/regenerate', 'user', async (req, user) => ({ token: await regenerateToken(user.id) })],
 
   ['GET', '/api/projects', 'user', async (req, user) => {

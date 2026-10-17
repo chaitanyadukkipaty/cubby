@@ -3,7 +3,7 @@
 import { parseArgs } from 'node:util';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { join, resolve, relative } from 'node:path';
 import * as tar from 'tar';
 import {
@@ -11,7 +11,7 @@ import {
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
   jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
-  formatStorage, formatBackups, formatBytes,
+  formatStorage, formatBackups, formatBytes, loginHint, formatAgents,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -184,7 +184,9 @@ const commands = {
       useServerArg(device.server);
     } else {
       if (flags.wait) throw new CliError('No login in progress. Run `cubby login <server-url> --no-wait` first.');
-      device = { ...(await api('POST', '/api/device/start', { auth: false })), server: serverUrl() };
+      // The hint names this agent on the approval page and in `cubby agents`.
+      const hint = loginHint({ client: flags.client, env: process.env, hostname: hostname() });
+      device = { ...(await api('POST', '/api/device/start', { auth: false, body: hint })), server: serverUrl() };
       mkdirSync(GLOBAL_DIR, { recursive: true, mode: 0o700 });
       writeFileSync(PENDING, JSON.stringify(device), { mode: 0o600 });
       const msg = `Open this link to approve this login (sign up there if you're new):\n  ${device.verify_url}\n  code: ${device.user_code}`;
@@ -262,6 +264,10 @@ const commands = {
   async whoami() {
     const me = await api('GET', '/api/me');
     out(`${me.email}${me.is_admin ? ' (admin)' : ''} @ ${await where()}`, { email: me.email, is_admin: me.is_admin, server: serverUrl(), server_name: await serverName() });
+  },
+  async agents() {
+    const list = await api('GET', '/api/agents');
+    out(formatAgents(list), list);
   },
 
   async init(slug) {

@@ -104,7 +104,8 @@ async function ensurePlatformCollections() {
     indexes: ['CREATE UNIQUE INDEX idx_cubby_projects_slug ON cubby_projects (slug)'],
   });
 
-  // One token per user. Stored in plain text (superuser-only collection) so the dashboard can show it again.
+  // A user's manual token (empty kind) plus one key per agent (kind "agent", one per approved `cubby login`).
+  // Stored in plain text (superuser-only collection) so the dashboard can show the manual token again.
   await upsertCollection({
     name: 'cubby_api_keys',
     type: 'base',
@@ -112,6 +113,11 @@ async function ensurePlatformCollections() {
     fields: [
       { name: 'owner', type: 'relation', collectionId: users.id, maxSelect: 1, required: true, cascadeDelete: true },
       { name: 'label', type: 'text', max: 100 },
+      { name: 'kind', type: 'text', max: 20 },
+      { name: 'tool', type: 'text', max: 40 },
+      { name: 'machine', type: 'text', max: 60 },
+      // Reserved for limiting what a key may do; empty means full access. Nothing reads it yet.
+      { name: 'scopes', type: 'json' },
       { name: 'key', type: 'text' },
       { name: 'key_hash', type: 'text', required: true },
       { name: 'last_used', type: 'date' },

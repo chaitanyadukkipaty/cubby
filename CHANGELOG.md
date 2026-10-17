@@ -25,10 +25,19 @@ All notable changes to Cubby are documented here. The format follows
   files of the pair, warns when it was the newest, and refuses the only backup without `--leave-none`. Restore stays
   `sudo cubby-server restore <date>`. Non-admins get a clear error. API: `GET /api/admin/storage`,
   `GET|POST /api/admin/backups`, `DELETE /api/admin/backups/<date>[?leave_none=1]`.
+- Every approved `cubby login` becomes its own named agent with its own key, instead of handing out your one token.
+  The CLI tells the server which agent tool it runs under (Claude Code, Codex, Cursor, otherwise "Terminal";
+  `--client` overrides it) and the machine's name, so agents are named like "Claude Code · chaitanya-mbp". Logins
+  from older CLIs still work and get a dated name ("Agent · 2026-10-17"). The approval page says which agent is
+  asking. `cubby agents` (and `GET /api/agents`) lists your agents and marks the current one; the dashboard's token,
+  and tokens from before this release, show up as "Manual token" and keep working. API keys gain an empty `scopes`
+  field, reserved for limiting keys later.
 
 ### Changed
 
 - `cubby rollback` restores the jobs a deploy shipped, not just the frontend.
+- Regenerating the dashboard token now also revokes every agent's key (agents used to share that token, so this
+  keeps Regenerate the way to cut every agent off). Reconnect the agents you still use with `cubby login`.
 
 ### Fixed
 

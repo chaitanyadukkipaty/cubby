@@ -47,7 +47,7 @@ sequenceDiagram
     Agent->>Agent: cubby servers → picks "Priya's Cubby"
     Agent->>Cubby: install CLI, start login
     Agent-->>You: "Open this link and click Approve"
-    You->>Cubby: Approve
+    You->>Cubby: Approve "Claude Code on your laptop"
     Agent->>Cubby: cubby init → schema → build → cubby deploy
     Cubby-->>Agent: https://friend-polls.priyas-server.com
     Agent-->>You: "Here's your app, and what to add next"
@@ -76,7 +76,7 @@ else's platform and you can't bring your own agent.
 
 ## Features
 
-- **Agent-native.** A skill teaches Claude Code, Codex, Cursor and OpenCode to set up, build and deploy by themselves. They log in through a browser approval, so nobody pastes passwords or tokens into a chat.
+- **Agent-native.** A skill teaches Claude Code, Codex, Cursor and OpenCode to set up, build and deploy by themselves. They log in through a browser approval, so nobody pastes passwords or tokens into a chat, and each login becomes its own named agent ("Claude Code · your-laptop") with its own key.
 - **Real backend for every app.** Collections, user accounts, file uploads and live updates from a shared [PocketBase](https://pocketbase.io). Each app is walled off by collection prefix, and its security comes from database rules.
 - **One-command deploys.** `cubby deploy` pushes schema changes, builds and publishes. The last 10 deploys are kept for instant rollback.
 - **Scheduled jobs.** Apps can run code on a cron schedule (digests, reminders, cleanups, syncing from an API) with encrypted secrets. Each run is sandboxed and can only reach its own app's data and the public internet.
@@ -181,6 +181,12 @@ account" error.
    bare `curl … | sh` so the agent knows what you're asking for: pasted on its own, agents rightly flag a pipe-to-shell
    from an unfamiliar domain as suspicious. You can also just give your agent the server's URL: fetched by anything that
    isn't a browser (curl, an agent's fetch tool), the root page answers with these setup steps as plain text.
+
+   The approval page says which agent is asking ("Claude Code on chaitanya-mbp wants access"): the CLI tells the
+   server which agent tool it runs under (Claude Code, Codex, Cursor, otherwise "Terminal"; `--client` overrides it)
+   and the machine's name. Each approved login becomes its own **agent** with its own key, so your laptop's Claude
+   Code and your desktop's Codex are two agents, not one shared token. `cubby agents` lists them and marks the one
+   asking. The token on your dashboard (for scripts and CI) is listed as "Manual token".
 3. Ask your agent for an app in plain words, naming the server if you have more than one. That's it.
 
 <details>
@@ -188,7 +194,8 @@ account" error.
 
 | Command | What it does |
 | --- | --- |
-| `cubby login <server>` | Log in by approving a link in the browser (`--token` for CI). Adds the server to your list. |
+| `cubby login <server>` | Log in by approving a link in the browser (`--token` for CI). Adds the server to your list. Each approved login is a new named agent. |
+| `cubby agents` | Your agents: one per approved login, with tool, machine and date; `*` marks this one |
 | `cubby servers` / `cubby use <name>` | List your servers with their names and versions, set the default |
 | `cubby logout [--server <name>] [--all]` | Forget one server (the current one by default) or all of them |
 | `cubby init <app>` | Create an app from the template |
@@ -325,5 +332,7 @@ for groups who trust each other, not as a hostile multi-tenant cloud.
 - All apps share one SQLite database, which suits a group of friends or a small team.
 - Jobs are for groups who trust each other too: the sandbox stops accidents and snooping between apps, not a
   determined attacker with an account. At most two run at once per server.
+- Agents can't be renamed or revoked one at a time yet. **Regenerate** on the dashboard replaces your manual token
+  and revokes every agent's key with it; reconnect the agents you still use with `cubby login`.
 - Not yet supported: server code that runs per request (API endpoints, hooks), custom domains per app, single sign-on
   across apps, app emails.

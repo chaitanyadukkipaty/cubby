@@ -165,6 +165,30 @@ describe('logic patches', () => {
     assert.equal(logic.deployClient('claude-code'), 'claude-code');
     assert.equal(logic.deployClient('x'.repeat(100)).length, 60);
   });
+  test('agentHint keeps the tool and machine a CLI sends, cleaned and capped; old CLIs send nothing', () => {
+    assert.deepEqual(logic.agentHint({ tool: ' Claude  Code\n', machine: 'mbp\u0007' }), { tool: 'Claude Code', machine: 'mbp' });
+    assert.deepEqual(logic.agentHint({}), { tool: '', machine: '' });
+    assert.deepEqual(logic.agentHint(undefined), { tool: '', machine: '' });
+    assert.deepEqual(logic.agentHint({ tool: 42, machine: ['x'] }), { tool: '', machine: '' });
+    assert.equal(logic.agentHint({ tool: 't'.repeat(100), machine: 'm'.repeat(100) }).tool.length, 40);
+    assert.equal(logic.agentHint({ machine: 'm'.repeat(100) }).machine.length, 60);
+  });
+  test('agentName names an agent from its hint, with a dated fallback for CLIs that sent none', () => {
+    const now = Date.UTC(2026, 9, 17, 12);
+    assert.equal(logic.agentName({ tool: 'Claude Code', machine: 'chaitanya-mbp' }, now), 'Claude Code · chaitanya-mbp');
+    assert.equal(logic.agentName({ tool: 'Codex', machine: '' }, now), 'Codex');
+    assert.equal(logic.agentName({ tool: '', machine: 'build-box' }, now), 'Agent · build-box');
+    assert.equal(logic.agentName({}, now), 'Agent · 2026-10-17');
+    assert.equal(logic.agentName(undefined, now), 'Agent · 2026-10-17');
+    assert.match(logic.agentName(), /^Agent · \d{4}-\d{2}-\d{2}$/);
+  });
+  test('agentView shows agents by name, pre-agent keys as "Manual token", flags the current one and never the key', () => {
+    const agent = { id: 'a1', kind: 'agent', label: 'Codex · box', tool: 'Codex', machine: 'box', key: 'hk_secret', created: 'c1' };
+    const legacy = { id: 'k0', kind: '', label: 'default', tool: '', machine: '', key: 'hk_old', created: 'c0' };
+    assert.deepEqual(logic.agentView(agent, 'a1'), { id: 'a1', name: 'Codex · box', tool: 'Codex', machine: 'box', manual: false, current: true, created: 'c1' });
+    assert.deepEqual(logic.agentView(legacy, 'a1'), { id: 'k0', name: 'Manual token', tool: null, machine: null, manual: true, current: false, created: 'c0' });
+    assert.equal(logic.agentView({ ...legacy, kind: undefined }).manual, true, 'rows from before the kind field');
+  });
   test('settingsPatch validates limits and rotates the code', () => {
     let calls = 0;
     const code = () => (calls++, 'new-code-11');
