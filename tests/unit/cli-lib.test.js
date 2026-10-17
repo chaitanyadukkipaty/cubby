@@ -199,6 +199,32 @@ describe('jobs and env helpers', () => {
       '  2026-10-17   1230 views     2 visitors     4 signups',
     ].join('\n'));
   });
+  test('formatMetrics: top paths and deploys in the range; past a month only the days with traffic', () => {
+    const days = Array.from({ length: 60 }, (_, i) => ({ start: new Date(Date.UTC(2026, 7, 19 + i)).toISOString(), views: i === 59 ? 5 : 0, visitors: i === 59 ? 2 : 0 }));
+    const text = lib.formatMetrics({
+      app: 'polls', range: '60d', views: 5, visitors: 2, active_now: 0, peak_active: 1, api_requests: 0, api_errors: 0, api_error_rate: 0,
+      top_paths: [{ path: '/', views: 4 }, { path: 'other', views: 1 }],
+      deploys: [{ id: 'd1', created: '2026-10-17 09:00:00.000Z', message: 'fix login' }],
+      days, accounts: { total: 0, new: 0, days: days.map((d) => ({ start: d.start, signups: 0 })) },
+    });
+    assert.match(text, /\n {2}Top paths: \/ 4 · other 1\n/);
+    assert.match(text, /\n {2}Deploy 2026-10-17 09:00 d1 fix login\n/);
+    assert.equal(text.split('\n').filter((l) => /^ {2}\d{4}-/.test(l)).length, 1);
+  });
+  test('formatAdminMetrics: totals across apps, then the busiest ones', () => {
+    const text = lib.formatAdminMetrics({
+      range: '7d', apps: 3, views: 20, visitors: 6, active_now: 1, api_requests: 100, api_errors: 1, api_error_rate: 0.01,
+      top_apps: [{ app: 'polls', owner: 'a@x.dev', views: 15, visitors: 4, api_errors: 1 }, { app: 'notes', owner: null, views: 5, visitors: 2, api_errors: 0 }],
+    });
+    assert.equal(text, [
+      'All apps: 20 views, 6 visitors in the last 7d (3 apps)',
+      '  Active now 1',
+      '  API: 100 requests, 1 errors (1.0%)',
+      'Busiest apps:',
+      '  polls     15 views     4 visitors     1 API errors  a@x.dev',
+      '  notes      5 views     2 visitors     0 API errors',
+    ].join('\n'));
+  });
   test('formatMetricsList: one line per app', () => {
     const text = lib.formatMetricsList([
       { app: 'polls', range: '7d', views: 12, visitors: 5, active_now: 1, api_errors: 2 },

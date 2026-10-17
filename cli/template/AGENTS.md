@@ -13,6 +13,8 @@ cubby deploys          # list deploys;  cubby rollback <id> to revert the fronte
 cubby jobs run <name>  # run a scheduled job now and print its log (see "Scheduled jobs" below)
 ```
 
+After deploying, run `cubby metrics {{SLUG}} --range 1h` and check it for API errors (5xx) before calling it done.
+
 Set a one-line `description` in `package.json`; it's shown in the server's app gallery.
 `cubby deploy --unlisted` hides the app from the gallery (it stays reachable by URL).
 

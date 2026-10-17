@@ -11,7 +11,7 @@ import {
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
   jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
-  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents, formatActivity, formatMetrics, formatMetricsList,
+  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents, formatActivity, formatMetrics, formatMetricsList, formatAdminMetrics,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -398,6 +398,13 @@ const commands = {
 
   async metrics(slug) {
     const query = flags.range ? `?${new URLSearchParams({ range: flags.range })}` : '';
+    if (flags.all) {
+      const r = await api('GET', `/api/admin/metrics${query}`).catch(async (err) => {
+        if (err.status === 403) throw new CliError(`\`cubby metrics --all\` is for admins only. You're logged in to ${await where()} as a regular user.`);
+        throw err;
+      });
+      return out(formatAdminMetrics(r), r);
+    }
     if (!slug) {
       const list = await api('GET', `/api/metrics${query}`);
       return out(formatMetricsList(list), list);

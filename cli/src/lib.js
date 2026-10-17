@@ -319,14 +319,30 @@ export const formatEnv = (list) => list.map((e) => `${e.key.padEnd(32)} set ${e.
 const counts = (b) => `${String(b.views).padStart(6)} views  ${String(b.visitors).padStart(4)} visitors`;
 
 // `cubby metrics <app>`: visitors are unique per UTC day, so each day is listed with its own count (and signups: the same days).
+// Past a month, only the days with views or signups are listed.
 export function formatMetrics(r) {
   const signups = new Map(r.accounts.days.map((d) => [d.start, d.signups]));
+  const days = r.days.length > 31 ? r.days.filter((d) => d.views || signups.get(d.start)) : r.days;
   return [
     `${r.app}: ${r.views} views, ${r.visitors} visitors in the last ${r.range}`,
     `  Active now ${r.active_now}, peak ${r.peak_active}`,
     `  API: ${r.api_requests} requests, ${r.api_errors} errors (${(r.api_error_rate * 100).toFixed(1)}%)`,
     `  Accounts: ${r.accounts.total}, ${r.accounts.new} new`,
-    ...r.days.map((d) => `  ${d.start.slice(0, 10)} ${counts(d)}  ${String(signups.get(d.start)).padStart(4)} signups`),
+    ...(r.top_paths?.length ? [`  Top paths: ${r.top_paths.map((p) => `${p.path} ${p.views}`).join(' · ')}`] : []),
+    ...(r.deploys ?? []).map((d) => `  Deploy ${String(d.created).replace('T', ' ').slice(0, 16)} ${d.id} ${d.message}`.trimEnd()),
+    ...days.map((d) => `  ${d.start.slice(0, 10)} ${counts(d)}  ${String(signups.get(d.start)).padStart(4)} signups`),
+  ].join('\n');
+}
+
+// `cubby metrics --all` (admins): every app summed, then the busiest.
+export function formatAdminMetrics(r) {
+  const width = Math.max(0, ...r.top_apps.map((a) => a.app.length));
+  return [
+    `All apps: ${r.views} views, ${r.visitors} visitors in the last ${r.range} (${r.apps} apps)`,
+    `  Active now ${r.active_now}`,
+    `  API: ${r.api_requests} requests, ${r.api_errors} errors (${(r.api_error_rate * 100).toFixed(1)}%)`,
+    ...(r.top_apps.length ? ['Busiest apps:'] : []),
+    ...r.top_apps.map((a) => `  ${a.app.padEnd(width)} ${counts(a)}  ${String(a.api_errors).padStart(4)} API errors  ${a.owner ?? ''}`.trimEnd()),
   ].join('\n');
 }
 

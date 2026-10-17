@@ -13,7 +13,7 @@ import { scheduleBackups, createBackupRunner, runMaintenance } from './backups.j
 import { scanStorage, createTtlCache, listBackups, checkBackupDelete, planRetention, deleteBackup } from './storage.js';
 import { listJobs, runNow, jobRuns, setPaused, allJobs, scheduleJobs, recoverRuns, deployJobs } from './jobs.js';
 import { listEnv, setEnv, unsetEnv } from './secrets.js';
-import { createMetrics, pocketbaseStore, countsAsView, isPerson, parseRange, metricsClock, appAccounts } from './metrics.js';
+import { createMetrics, pocketbaseStore, countsAsView, isPerson, parseRange, metricsClock, appAccounts, summarizeMetrics } from './metrics.js';
 import { buildCliTarball, cliTarball, skillMarkdown } from './cli-dist.js';
 import { startDevice, deviceInfo, approveDevice, pollDevice } from './device.js';
 import * as logic from './logic.js';
@@ -193,7 +193,11 @@ const routes = [
     const project = await metricsProject(user, slug);
     const report = (await metrics.report([project.id], hours))[project.id];
     const accounts = await appAccounts(admin, prefixFor(project.slug), Date.parse(report.from), Date.parse(report.to));
-    return { app: project.slug, range, ...report, accounts };
+    // Deploy markers: the deploys still kept (the last 10) that went out in the range.
+    const deploys = (await admin.collection('cubby_deploys').getFullList({
+      filter: admin.filter('project = {:p} && created >= {:from}', { p: project.id, from: new Date(report.from) }), sort: 'created',
+    })).map((d) => ({ id: d.id, created: d.created, message: d.message }));
+    return { app: project.slug, range, ...report, accounts, deploys };
   }],
   ['GET', '/api/metrics', 'user', async (req, user, params, url) => {
     const range = url.searchParams.get('range') || '24h';
@@ -274,6 +278,13 @@ const routes = [
     return projects.map((p) => ({ ...projectView(p), disk_bytes: usage.get(p.slug) ?? 0 }));
   }],
   ['GET', '/api/admin/jobs', 'admin', async () => allJobs()],
+  // Every app's numbers summed, with the busiest apps (by views).
+  ['GET', '/api/admin/metrics', 'admin', async (req, user, params, url) => {
+    const range = url.searchParams.get('range') || '24h';
+    const hours = parseRange(range);
+    const list = await admin.collection('cubby_projects').getFullList({ sort: 'slug', expand: 'owner' });
+    return { range, ...summarizeMetrics(list, await metrics.report(list.map((p) => p.id), hours)) };
+  }],
   ['GET', '/api/admin/storage', 'admin', async () => storageCache.get(computeStorage)],
   // `estimate`: what the next nightly prune deletes (whole pairs) and frees, for the setting or a ?keep=N to preview.
   ['GET', '/api/admin/backups', 'admin', async (req, user, params, url) => {
@@ -396,7 +407,7 @@ async function handleApp(req, res, slug, url) {
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') return sendPage(res, 405, 'Method not allowed');
   const page = await serveSite(req, res, project, url.pathname);
-  if (page && countsAsView(req)) metrics.record(project.id, { ip: clientIp(req), ua: req.headers['user-agent'] });
+  if (page && countsAsView(req)) metrics.record(project.id, { ip: clientIp(req), ua: req.headers['user-agent'], path: url.pathname });
 }
 
 // Caddy asks before issuing an on-demand certificate; only the root domain and real apps qualify.

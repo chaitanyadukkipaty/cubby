@@ -73,12 +73,19 @@ All notable changes to Cubby are documented here. The format follows
   no cookies. Assets, `/pb` calls, HEAD requests, prefetches and obvious bots don't count. A visitor is a hash of IP
   address and browser with a salt that lives only in memory and changes every UTC day; IPs are never stored. Counts
   are flushed to the database every minute (and on shutdown): views per hour, views and visitors per UTC day.
-  `cubby metrics <app>` shows one app, `cubby metrics` all of yours, `--range` up to 90d (default 24h). Owners see
+  `cubby metrics <app>` shows one app, `cubby metrics` all of yours, `--range` up to 1y (default 24h). Owners see
   their apps; admins see any. `/api/info` lists `metrics` in `features`.
 - Live and backend metrics in `cubby metrics`: active now (visitors seen on a page or a `/pb` call in the last 5
   minutes, in memory only, no heartbeat) and its peak per hour; `/pb` API requests and 5xx errors per hour with the
   error rate; and the app's accounts with signups per day, read from PocketBase when asked. `cubby metrics` without
   an app also shows each app's active now and API errors.
+- Top paths, deploy markers, a year of history and admin totals in `cubby metrics`. Each UTC day keeps its 10 most
+  viewed paths (query strings dropped, cut at 200 characters; the rest is "other"), stored as a small `paths` field
+  on the day row. Reports list the top paths and the deploys in the range. The nightly maintenance folds hourly rows
+  older than 30 days into their day (API counts summed, peak kept) and deletes days older than a year; `--range` now
+  goes up to `1y` (by hour up to 30 days, by day beyond) and takes `1h`. `cubby metrics --all` and
+  `GET /api/admin/metrics` sum every app with the 10 busiest, for admins (others get a clear error). The app guide
+  (`AGENTS.md`) tells agents to check `cubby metrics <app> --range 1h` for errors after deploying.
 - A command palette in the dashboard: ⌘K (Ctrl+K), or Search in the sidebar, jumps to a page or one of your apps
   and copies the setup prompt or a common command (`cubby deploy`, `cubby login`), switches theme or logs out.
   Fuzzy search, fully keyboard-driven.

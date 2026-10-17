@@ -413,6 +413,8 @@ export default async ({ pb, env, log, fetch }) =&gt; {
   Active now 2, peak 7
   API: 1480 requests, 3 errors (0.2%)
   Accounts: 19, 4 new
+  Top paths: / 120 · /polls/7 41 · /new 30 · other 23
+  Deploy 2026-10-14 18:02 k3x9q2 add comments
   2026-10-11     18 views     4 visitors     1 signups
   2026-10-12     41 views     9 visitors     2 signups
   <span class="c">…</span></pre></div>
@@ -424,7 +426,10 @@ export default async ({ pb, env, log, fetch }) =&gt; {
         <li><b>Is the backend healthy?</b> Every database call through <code>/pb</code> counts as an API request, and every 5xx answer as an error, per hour. The error rate is errors over requests.</li>
         <li><b>Accounts.</b> The number of accounts in the app's own users collection, and how many signed up each day, read from the database when you ask.</li>
         <li><b>Charted on the app's page.</b> The dashboard's app page opens on <b>Overview</b>: active now, views, visitors, API error rate and accounts across the top, then views, unique visitors, active visitors and API errors for the last 24 hours, 7 days or 30 days. The charts share one time axis and every deploy is a dashed line through all of them, so a spike right after a deploy stands out. Each chart has a text summary for screen readers and a <b>Show as table</b> fallback. The <b>Apps</b> list shows each app's visitors right now, a 7-day sparkline and which agent deployed it last.</li>
-        <li><b>Yours to see.</b> Only the app's owner (and the server's admins) can see an app's numbers. <code>cubby metrics</code> without an app lists all of yours; <code>--range</code> takes hours or days up to <code>90d</code>, and <code>--json</code> adds views, peaks, API requests and errors per hour, views and visitors per day, and signups per day.</li>
+        <li><b>Which pages.</b> Each day keeps its 10 most viewed paths (query strings dropped, so nothing in them is stored), and everything else as "other". The report adds them up over the range.</li>
+        <li><b>Did my deploy break it?</b> Deploys in the range are listed with the numbers, so a jump in errors lines up with the deploy that caused it. The app guide tells agents to run <code>cubby metrics &lt;app&gt; --range 1h</code> after deploying and look at the errors.</li>
+        <li><b>A year of history, kept small.</b> Hourly numbers are kept 30 days; the nightly maintenance then folds them into their day, and days are kept a year. Ranges up to <code>30d</code> are reported by the hour; longer ones (up to <code>1y</code>) by the day.</li>
+        <li><b>Yours to see.</b> Only the app's owner (and the server's admins) can see an app's numbers. <code>cubby metrics</code> without an app lists all of yours; <code>--range</code> takes <code>1h</code>, <code>24h</code>, <code>7d</code>, <code>30d</code>, <code>1y</code> or any hours or days in between, and <code>--json</code> adds views, peaks, API requests and errors per hour, views, visitors, API requests and errors per day, and signups per day. Admins get every app summed, with the busiest apps, from <code>cubby metrics --all</code>.</li>
       </ul>
       <figure class="shot"><img src="assets/dashboard-app-overview.png?v=0495eb58" alt="Friend Polls' Overview tab: a KPI strip, then views, unique visitors, active visitors and API errors charted on one time axis with dashed deploy lines, and the top paths" loading="lazy" width="1280" height="1450"><figcaption>An app's Overview: deploys v3 and v4 drawn through every chart.</figcaption></figure>
       <p>Its other tabs: <b>Activity</b> (that app's timeline), <b>Deploys</b> (every kept deploy with <b>Roll back to this</b>), <b>Jobs</b>, <b>Env</b> and <b>Settings</b> (show in the gallery, and delete after typing the app's name). The tab is part of the link, like <code>/apps/friend-polls/deploys</code>, so a reload keeps it, and on a phone the tabs scroll sideways. A tab with nothing in it yet suggests what to ask your agent, with a copy button.</p>
@@ -458,7 +463,7 @@ export default async ({ pb, env, log, fetch }) =&gt; {
           <tr><td><code>cubby jobs logs &lt;job&gt; [--limit n] [--run &lt;id&gt;]</code></td><td>Show past runs and their output (the last 100 per job are kept).</td></tr>
           <tr><td><code>cubby jobs pause | resume &lt;job&gt;</code></td><td>Stop or restart a job's schedule. Stays that way across deploys.</td></tr>
           <tr><td><code>cubby env list | set NAME=value | unset NAME --yes</code></td><td>Secrets for jobs. <code>set NAME --from-stdin</code> keeps the value out of shell history.</td></tr>
-          <tr><td><code>cubby metrics [&lt;app&gt;] [--range 7d]</code></td><td>Views, visitors, active now and peak, API requests and errors, accounts and signups of one app, or a summary of all your apps. The last 24 hours by default, at most 90 days.</td></tr>
+          <tr><td><code>cubby metrics [&lt;app&gt;] [--range 7d] [--all]</code></td><td>Views, visitors, active now and peak, API requests and errors, top paths, deploys, accounts and signups of one app, or a summary of all your apps. The last 24 hours by default, at most a year. <code>--all</code>: every app on the server, for admins.</td></tr>
           <tr><td><code>cubby schema push | pull</code></td><td>Apply or download the data model. Push never deletes anything.</td></tr>
           <tr><td><code>cubby schema drop &lt;c&gt;[.&lt;f&gt;] --yes</code></td><td>Delete a collection or field and its data.</td></tr>
           <tr><td><code>cubby projects</code> · <code>info</code> · <code>link &lt;app&gt;</code></td><td>List your apps, show the current one, or attach this folder to an existing app.</td></tr>

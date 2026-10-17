@@ -75,8 +75,8 @@ And when you wonder whether anyone uses it:
 > How many people used the polls app this week?
 
 The agent runs `cubby metrics friend-polls --range 7d` and tells you the page views and unique visitors per day,
-how many people are on it right now and the busiest moment of the week, how many accounts signed up, and whether
-its database calls are failing. Cubby counts all of it itself as it serves the app, so there's no tracking script,
+how many people are on it right now and the busiest moment of the week, which pages they open, how many accounts
+signed up, and whether its database calls started failing after the last deploy. Cubby counts all of it itself as it serves the app, so there's no tracking script,
 cookie banner or analytics account. The same numbers are charted on the app's page in the dashboard, with every
 deploy drawn through the charts, so "did the last deploy break something?" is one glance.
 
@@ -102,7 +102,7 @@ else's platform and you can't bring your own agent.
 - **Scheduled jobs.** Apps can run code on a cron schedule (digests, reminders, cleanups, syncing from an API) with encrypted secrets. Each run is sandboxed and can only reach its own app's data and the public internet.
 - **Know who did what.** Every change (deploys, rollbacks, schema, secrets, jobs, logins, admin actions on users, apps and backups) is logged
   for 30 days with the agent that made it, or "dashboard". `cubby activity` shows yours; admins can see everyone's.
-- **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), API requests and errors, and accounts and signups per app, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them, and each app's page in the dashboard charts them on one time axis with a line for every deploy.
+- **Built-in metrics.** Page views, unique visitors, who's on the app right now (and the hourly peak), the top pages, API requests and errors next to each deploy, and accounts and signups per app, for up to a year, counted on the server as it serves the app: no script in the app, no cookies, and no IP addresses stored. `cubby metrics` shows them; each app's page in the dashboard charts them on one time axis with a line for every deploy; admins see every app with `--all`.
 - **Safe by default.** Schema pushes never delete data. Apps can't touch each other's data or logins. Only owners can change their apps.
 - **Made for groups.** Each server has its own name ("Priya's Cubby"). Invite with a signup code, browse everyone's apps on Explore, and manage users, limits and disk from the Admin page.
 - **A dashboard that follows your agents.** Home is a timeline of what your agents did, one line each, grouped by day: a deploy you don't like is one **Roll back** away, and a failed job comes with a fix-it prompt to paste into your agent. Next to it: who's on your apps right now, views over the last 7 days, your agents, and ready-made prompts for what to ask next. **Agents** lists every agent you connected, with the apps it touched; rename or revoke one there, or open it to see everything it did. Each app has its own page with tabs (Overview charts, Activity, Deploys with rollback, Jobs, Env and Settings), and every tab has its own link.
@@ -275,7 +275,7 @@ account" error.
 | `cubby deploys` / `cubby rollback <id>` | List deploys, restore one instantly (with the jobs it shipped) |
 | `cubby jobs [run \| logs \| pause \| resume <job>]` | List scheduled jobs with their next and last run; run one now and print its log |
 | `cubby env list \| set NAME=value \| unset NAME --yes` | Secrets for jobs (`--from-stdin` keeps a value out of shell history) |
-| `cubby metrics [<app>] [--range 7d]` | Views, visitors, active now and peak, API requests and errors, accounts and signups of one app, or a summary of all yours (last 24h by default) |
+| `cubby metrics [<app>] [--range 1h\|24h\|7d\|30d\|1y]` | Views, visitors, active now and peak, top paths, API requests and errors, deploys in the range, accounts and signups of one app, or a summary of all yours (last 24h by default); `--all` for admins sums every app |
 | `cubby schema push \| pull \| drop` | Manage the data model (push never deletes) |
 | `cubby projects` / `info` / `delete` | Manage apps |
 | `cubby link <app> --server <name>` | Attach this folder to an app, or move it to another server |
@@ -364,6 +364,15 @@ flowchart LR
     proxy) as errors. Counting never changes what the proxy allows. A realtime connection counts when it closes.
   - **Accounts** are the records of the app's own auth collections (its `users`), counted from the database when
     you ask, with signups per day over the range. Nothing extra is stored.
+  - **Top paths**: each day's row keeps its 10 most viewed paths (query strings dropped, cut at 200 characters) and
+    "other" for the rest, a few hundred bytes a day. Between flushes at most 1,000 distinct paths per app are
+    counted; the merge keeps the top 10 of what's stored plus what's new, so it's a close approximation, not exact.
+  - **Deploys** in the range come back with the numbers, so a jump in errors lines up with the deploy behind it.
+  - **Retention**: hourly rows are kept 30 days; the nightly maintenance folds older ones into their day (API counts
+    added up, the peak kept) and deletes them, and deletes days older than a year. An app is at most ~720 hourly and
+    365 daily rows. Ranges up to 30 days are reported by the hour, longer ones (up to `1y`) by the day.
+  - **Admins** get every app summed with the 10 busiest (`cubby metrics --all`, `GET /api/admin/metrics`); visitors
+    are summed across apps there, so someone using two apps counts twice. Deleting an app deletes its metrics.
 - One Docker container runs Caddy, the Cubby server (Node.js) and PocketBase, with a single data volume.
 - Each server serves its own CLI (`/cli.tgz`), agent docs (`/docs.md`) and skill installer (`/skill.sh`), so agents
   always follow the rules of the server they're deploying to.
