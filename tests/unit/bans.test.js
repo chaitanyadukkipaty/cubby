@@ -5,22 +5,30 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseEvent, createBans, memoryStore } from '../../server/src/bans.js';
+import { parseEvent, createBans, bansStore, BANS_COLLECTION } from '../../server/src/bans.js';
+import { fakePocketBase } from '../helpers/fake-pocketbase.js';
+
+// The real store over an in-memory PocketBase with the cubby_bans collection.
+async function banRecords() {
+  const pb = fakePocketBase();
+  await pb.collections.create(BANS_COLLECTION);
+  return { pb, store: bansStore(pb) };
+}
 
 const T0 = 1792348605; // unix seconds
 const iso = (s) => new Date(s * 1000).toISOString();
 
 // A host folder with events/, requests/ and results/, and bans over it with a clock set to `at` (unix seconds).
-function setup({ at = T0 + 1, accessLog } = {}) {
+async function setup({ at = T0 + 1, accessLog } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cubby-f2b-'));
   for (const d of ['tmp', 'events', 'requests', 'results']) mkdirSync(join(dir, d));
   const clock = { at };
   const errors = [];
-  const store = memoryStore();
+  const { pb, store } = await banRecords();
   const bans = createBans({ dir, accessLog, store, now: () => new Date(clock.at * 1000), log: { error: (...a) => errors.push(a.join(' ')) } });
   let n = 0;
   const event = (e, name = `${String(++n).padStart(4, '0')}.json`) => writeFileSync(join(dir, 'events', name), typeof e === 'string' ? e : JSON.stringify(e));
-  return { dir, clock, errors, store, bans, event, events: () => readdirSync(join(dir, 'events')) };
+  return { dir, clock, errors, store, pb, bans, event, events: () => readdirSync(join(dir, 'events')) };
 }
 const ban = (o = {}) => ({ event: 'ban', ip: '203.0.113.9', jail: 'cubby-probe', time: T0, bantime: 600, ...o });
 
@@ -78,7 +86,7 @@ describe('unban: a request the host answers', () => {
   const admin = { email: 'admin@test.dev' };
 
   test('the host unbans, and the IP\'s bans close as lifted by the admin', async () => {
-    const { bans, event, dir } = setup({ at: T0 + 10 });
+    const { bans, event, dir } = await setup({ at: T0 + 10 });
     event(ban());
     event(ban({ jail: 'cubby-ratelimit' }));
     event(ban({ ip: '198.51.100.4' }));
@@ -103,7 +111,7 @@ describe('unban: a request the host answers', () => {
     assert.equal((await bans.list()).history[0].unbanned_by, 'admin admin@test.dev');
   });
   test('the host\'s unban event landing before its answer still names the admin', async () => {
-    const { bans, event, dir } = setup({ at: T0 + 10 });
+    const { bans, event, dir } = await setup({ at: T0 + 10 });
     event(ban());
     const host = fakeHost(dir, (req) => {
       event({ event: 'unban', ip: req.ip, jail: 'cubby-probe', time: T0 + 9 });
@@ -114,7 +122,7 @@ describe('unban: a request the host answers', () => {
     assert.deepEqual([b.unbanned_by, b.unbanned_at], ['admin admin@test.dev', iso(T0 + 9)]);
   });
   test('the host refusing is a 422 with its reason', async () => {
-    const { bans, event, dir } = setup();
+    const { bans, event, dir } = await setup();
     event(ban());
     const host = fakeHost(dir, (req) => ({ id: req.id, ok: false, error: '203.0.113.9 is not banned' }));
     try {
@@ -122,24 +130,41 @@ describe('unban: a request the host answers', () => {
     } finally { host.stop(); }
     assert.equal((await bans.list()).current.length, 1);
   });
+  test('an answer that isn\'t a clear yes is a refusal', async () => {
+    for (const reply of [(req) => ({ id: req.id }), () => 'garbage']) {
+      const { bans, event, dir } = await setup();
+      event(ban());
+      const timer = setInterval(() => {
+        for (const name of readdirSync(join(dir, 'requests'))) {
+          const req = JSON.parse(readFileSync(join(dir, 'requests', name), 'utf8'));
+          rmSync(join(dir, 'requests', name));
+          const res = reply(req);
+          writeFileSync(join(dir, 'results', `${req.id}.json`), typeof res === 'string' ? res : JSON.stringify(res));
+        }
+      }, 10);
+      try {
+        await assert.rejects(bans.unban('203.0.113.9', admin), { status: 422, message: "The host couldn't unban it" });
+      } finally { clearInterval(timer); }
+    }
+  });
   test('no answer in time is a 504, and the request is withdrawn', async () => {
-    const { bans: _, event, dir, store } = setup();
+    const { bans: _, event, dir, store } = await setup();
     const bans = createBans({ dir, store, now: () => new Date((T0 + 1) * 1000), waitMs: 100 });
     event(ban());
     await assert.rejects(bans.unban('203.0.113.9', admin), { status: 504, message: /The host didn't answer\. Check: sudo cubby-server fail2ban status/ });
     assert.deepEqual(readdirSync(join(dir, 'requests')), []);
   });
   test('an IP that isn\'t banned is a 404, without asking the host', async () => {
-    const { bans, dir } = setup();
+    const { bans, dir } = await setup();
     await assert.rejects(bans.unban('203.0.113.9', admin), { status: 404 });
     assert.deepEqual(readdirSync(join(dir, 'requests')), []);
   });
   test('not an IP is a 400', async () => {
-    const { bans } = setup();
+    const { bans } = await setup();
     await assert.rejects(bans.unban('../../etc', admin), { status: 400 });
   });
   test('fail2ban off: a 409 that says how to turn it on', async () => {
-    const bans = createBans({ dir: undefined, store: memoryStore() });
+    const bans = createBans({ dir: undefined, store: (await banRecords()).store });
     await assert.rejects(bans.unban('203.0.113.9', admin), { status: 409, message: /sudo cubby-server fail2ban enable/ });
     assert.deepEqual(await bans.list(), { enabled: false, current: [], history: [] });
     assert.equal(await bans.ingest(), 0);
@@ -148,7 +173,7 @@ describe('unban: a request the host answers', () => {
 
 describe('prune: records are kept 90 days', () => {
   test('the nightly prune deletes bans from more than 90 days ago, and the list never shows them', async () => {
-    const { bans, event, clock, store } = setup();
+    const { bans, event, clock, pb } = await setup();
     event(ban({ time: T0 }));
     event(ban({ ip: '198.51.100.4', time: T0 + 10 * 86400 }));
     clock.at = T0 + 10 * 86400 + 60;
@@ -156,14 +181,14 @@ describe('prune: records are kept 90 days', () => {
     clock.at = T0 + 91 * 86400;
     assert.deepEqual((await bans.list()).history.map((b) => b.ip), ['198.51.100.4']);
     assert.equal(await bans.prune(), 1);
-    assert.equal(store.rows.size, 1);
+    assert.deepEqual(pb.records('cubby_bans').map((r) => r.ip), ['198.51.100.4']);
     assert.equal(await bans.prune(), 0);
   });
 });
 
 describe('ingest: event files become ban records', () => {
   test('a ban is current until it expires; its file is removed', async () => {
-    const { bans, event, events } = setup();
+    const { bans, event, events } = await setup();
     event(ban());
     await bans.ingest();
     assert.deepEqual(events(), []);
@@ -177,7 +202,7 @@ describe('ingest: event files become ban records', () => {
     });
   });
   test('bad files are removed and logged, and never stop the good ones', async () => {
-    const { bans, event, events, errors } = setup();
+    const { bans, event, events, errors } = await setup();
     event('{"event":"ban"');
     event(ban({ jail: 'sshd' }));
     event('x'.repeat(10_000), 'big.json');
@@ -189,14 +214,14 @@ describe('ingest: event files become ban records', () => {
     assert.match(errors[0], /ignored a bad fail2ban event/);
   });
   test('files still being written (dot names) are left for the next round', async () => {
-    const { bans, event, events } = setup();
+    const { bans, event, events } = await setup();
     event(ban(), '.0001.json.tmp');
     await bans.ingest();
     assert.deepEqual(events(), ['.0001.json.tmp']);
     assert.equal((await bans.list()).current.length, 0);
   });
   test('an unban when the ban runs out is "expired"; earlier, it was lifted on the server', async () => {
-    const { bans, event, clock } = setup({ at: T0 + 2000 });
+    const { bans, event, clock } = await setup({ at: T0 + 2000 });
     event(ban());
     event({ event: 'unban', ip: '203.0.113.9', jail: 'cubby-probe', time: T0 + 600 });
     event(ban({ ip: '198.51.100.4', time: T0 + 100 }));
@@ -212,14 +237,14 @@ describe('ingest: event files become ban records', () => {
     assert.equal((await bans.list()).history.length, 2);
   });
   test('an unban with no open ban is ignored', async () => {
-    const { bans, event, errors } = setup();
+    const { bans, event, errors } = await setup();
     event({ event: 'unban', ip: '203.0.113.9', jail: 'cubby-probe', time: T0 });
     await bans.ingest();
     assert.deepEqual(await bans.list(), { enabled: true, current: [], history: [] });
     assert.deepEqual(errors, []);
   });
   test('a ban of an IP still banned (fail2ban restarting restores its bans) extends it instead of adding one', async () => {
-    const { bans, event } = setup({ at: T0 + 10 });
+    const { bans, event } = await setup({ at: T0 + 10 });
     event(ban());
     event(ban({ time: T0 + 5, bantime: 1200 }));
     await bans.ingest();
@@ -229,7 +254,7 @@ describe('ingest: event files become ban records', () => {
     assert.equal(current[0].banned_at, iso(T0));
   });
   test('a ban after the last one ran out is a new record, and knows how often the IP was seen', async () => {
-    const { bans, event } = setup({ at: T0 + 5000 });
+    const { bans, event } = await setup({ at: T0 + 5000 });
     event(ban());
     event(ban({ time: T0 + 4000, bantime: 1200 }));
     event(ban({ ip: '198.51.100.4', time: T0 + 4500 }));
@@ -239,14 +264,30 @@ describe('ingest: event files become ban records', () => {
     assert.deepEqual(history.map((b) => [b.ip, b.seen_before]), [['203.0.113.9', 0]]);
   });
   test('events are applied in time order, whatever their file names', async () => {
-    const { bans, event } = setup({ at: T0 + 300 });
+    const { bans, event } = await setup({ at: T0 + 300 });
     event({ event: 'unban', ip: '203.0.113.9', jail: 'cubby-probe', time: T0 + 200 }, 'a.json');
     event(ban(), 'b.json');
     await bans.ingest();
     assert.equal((await bans.list()).history[0].unbanned_at, iso(T0 + 200));
   });
+  test('re-issued as permanent, a ban becomes permanent; a permanent one stays so', async () => {
+    const { bans, event } = await setup({ at: T0 + 10 });
+    event(ban());
+    event(ban({ time: T0 + 5, bantime: -1 }));
+    event(ban({ time: T0 + 6, bantime: 60 }));
+    await bans.ingest();
+    const { current } = await bans.list();
+    assert.equal(current.length, 1);
+    assert.equal(current[0].expires_at, null);
+  });
+  test('a jail Cubby doesn\'t know yet shows by its name', async () => {
+    const { bans, event } = await setup();
+    event(ban({ jail: 'cubby-newer' }));
+    await bans.ingest();
+    assert.equal((await bans.list()).current[0].reason, 'cubby-newer');
+  });
   test('a permanent ban has no expiry and stays current', async () => {
-    const { bans, event, clock } = setup();
+    const { bans, event, clock } = await setup();
     event(ban({ bantime: -1 }));
     await bans.ingest();
     clock.at = T0 + 80 * 24 * 3600;
@@ -267,7 +308,7 @@ describe('ingest: event files become ban records', () => {
       ...Array.from({ length: 60 }, (_, i) => line('203.0.113.9', 'todo.cubby.example', `/p${i}.php`)),
     ];
     writeFileSync(logFile, `${lines.join('\n')}\n`);
-    const { bans, event } = setup({ accessLog: logFile });
+    const { bans, event } = await setup({ accessLog: logFile });
     event(ban());
     event(ban({ ip: '198.51.100.4', jail: 'cubby-ratelimit' }));
     await bans.ingest();
@@ -279,14 +320,25 @@ describe('ingest: event files become ban records', () => {
     assert.deepEqual(current.find((b) => b.ip === '198.51.100.4').paths, [], 'only probe bans collect a sweep');
   });
   test('a missing access log leaves the sweep empty', async () => {
-    const { bans, event, errors } = setup({ accessLog: '/nonexistent/access.log' });
+    const { bans, event, errors } = await setup({ accessLog: '/nonexistent/access.log' });
     event(ban());
     await bans.ingest();
     assert.deepEqual((await bans.list()).current[0].hosts, []);
     assert.deepEqual(errors, []);
   });
+  test('started, it picks up events by itself; off, it never starts', async () => {
+    const { bans, event, events, store } = await setup();
+    const timer = bans.start(10);
+    try {
+      event(ban());
+      for (let i = 0; i < 200 && events().length; i++) await new Promise((r) => setTimeout(r, 10));
+      assert.deepEqual(events(), []);
+      assert.ok(await store.findOpen({ ip: '203.0.113.9', jail: 'cubby-probe' }));
+    } finally { clearInterval(timer); }
+    assert.equal(createBans({ store }).start(10), null);
+  });
   test('ingests at the same time (the poller and a request) take turns', async () => {
-    const { bans, event, errors } = setup();
+    const { bans, event, errors } = await setup();
     for (let i = 0; i < 20; i++) event(ban({ ip: `203.0.113.${i}` }));
     const counts = await Promise.all([bans.ingest(), bans.ingest(), bans.list()]);
     assert.equal(counts[0] + counts[1], 20);
@@ -294,7 +346,7 @@ describe('ingest: event files become ban records', () => {
     assert.deepEqual(errors, []);
   });
   test('a folder in events/ is not a crash', async () => {
-    const { bans, dir, event } = setup();
+    const { bans, dir, event } = await setup();
     mkdirSync(join(dir, 'events', 'sub.json'));
     event(ban());
     await bans.ingest();

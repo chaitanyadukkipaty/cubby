@@ -46,37 +46,40 @@ const DAY = 24 * 60 * 60 * 1000;
 const ms = (d) => (d ? new Date(String(d).replace(' ', 'T')).getTime() : null);
 const isoOrNull = (d) => (d ? new Date(ms(d)).toISOString() : null);
 
-/** Records in memory, with the same interface as pocketbaseStore. For tests. */
-export function memoryStore() {
-  const rows = new Map();
-  let n = 0;
-  return {
-    rows,
-    create: async (rec) => { const r = { id: `ban${++n}`, unbanned_at: '', unbanned_by: '', hosts: [], paths: [], ...rec }; rows.set(r.id, r); return { ...r }; },
-    update: async (id, patch) => { Object.assign(rows.get(id), patch); return { ...rows.get(id) }; },
-    // The newest record of this ip and jail that wasn't unbanned.
-    findOpen: async ({ ip, jail }) => [...rows.values()].filter((r) => r.ip === ip && r.jail === jail && !r.unbanned_at)
-      .sort((a, b) => ms(b.banned_at) - ms(a.banned_at))[0] ?? null,
-    // Every record of this ip that wasn't unbanned, in any jail.
-    openFor: async (ip) => [...rows.values()].filter((r) => r.ip === ip && !r.unbanned_at).map((r) => ({ ...r })),
-    since: async (from) => [...rows.values()].filter((r) => ms(r.banned_at) >= ms(from)).map((r) => ({ ...r })),
-    removeBefore: async (before) => {
-      let gone = 0;
-      for (const r of [...rows.values()]) if (ms(r.banned_at) < ms(before)) gone += rows.delete(r.id);
-      return gone;
-    },
-  };
-}
+/**
+ * The cubby_bans platform collection (pb.js adds the locked rules and timestamps): one row per ban, with the hosts
+ * and sample paths a scanner swept. It holds raw IPs on purpose, only of banned addresses, for 90 days.
+ */
+export const BANS_COLLECTION = {
+  name: 'cubby_bans',
+  type: 'base',
+  fields: [
+    { name: 'ip', type: 'text', required: true, max: 64 },
+    { name: 'jail', type: 'text', required: true, max: 46 },
+    { name: 'banned_at', type: 'date', required: true },
+    { name: 'expires_at', type: 'date' },
+    { name: 'unbanned_at', type: 'date' },
+    { name: 'unbanned_by', type: 'text', max: 200 },
+    { name: 'hosts', type: 'json', maxSize: 20_000 },
+    { name: 'paths', type: 'json', maxSize: 20_000 },
+  ],
+  indexes: [
+    'CREATE INDEX idx_cubby_bans_ip ON cubby_bans (ip, jail, unbanned_at)',
+    'CREATE INDEX idx_cubby_bans_at ON cubby_bans (banned_at)',
+  ],
+};
 
-/** The records in the cubby_bans platform collection (rules null: only the server reads them). */
+/** The records in cubby_bans, through the superuser client `admin`. */
 export function bansStore(admin) {
   const col = () => admin.collection('cubby_bans');
   return {
     create: (rec) => col().create(rec),
     update: (id, patch) => col().update(id, patch),
+    // The newest record of this ip and jail that wasn't unbanned.
     findOpen: ({ ip, jail }) => col()
       .getFirstListItem(admin.filter('ip = {:ip} && jail = {:jail} && unbanned_at = ""', { ip, jail }), { sort: '-banned_at' })
       .catch((err) => { if (err.status === 404) return null; throw err; }),
+    // Every record of this ip that wasn't unbanned, in any jail.
     openFor: (ip) => col().getFullList({ filter: admin.filter('ip = {:ip} && unbanned_at = ""', { ip }) }),
     since: (from) => col().getFullList({ filter: admin.filter('banned_at >= {:from}', { from: new Date(from) }), sort: '-banned_at', batch: 1000 }),
     async removeBefore(before) {
@@ -111,29 +114,32 @@ export function bansView(records, now = new Date()) {
 const SWEEP_MAX = 50;
 
 /**
- * What `ip` asked for in Caddy's JSON access log during the day before `at` (ms): the hosts it swept and up to 50
- * distinct paths, in order. Streams the file (Caddy rolls it at 10 MB); a missing file is an empty sweep.
+ * What each banned IP asked for in Caddy's JSON access log during the day before its ban: `bans` is a Map of ip to
+ * the ban's time (ms); the result maps ip to the hosts it swept and up to 50 distinct paths, in order. One pass over
+ * the file (Caddy rolls it at 10 MB) however many IPs; a missing file is an empty sweep for each.
  */
-export async function sweepOf(file, ip, at) {
-  const hosts = new Set();
-  const paths = new Set();
-  if (!file || !(await lstat(file).catch(() => null))?.isFile()) return { hosts: [], paths: [] };
-  const needle = `"client_ip":${JSON.stringify(ip)}`;
+export async function sweeps(file, bans) {
+  const found = new Map([...bans.keys()].map((ip) => [ip, { hosts: new Set(), paths: new Set() }]));
+  const result = () => new Map([...found].map(([ip, s]) => [ip, { hosts: [...s.hosts], paths: [...s.paths] }]));
+  if (!bans.size || !file || !(await lstat(file).catch(() => null))?.isFile()) return result();
   const lines = createInterface({ input: createReadStream(file).on('error', () => {}), crlfDelay: Infinity });
   try {
     for await (const line of lines) {
-      if (!line.includes(needle)) continue;
+      const ip = line.match(/"client_ip":"([^"]+)"/)?.[1];
+      if (!found.has(ip)) continue;
       let r;
       try { r = JSON.parse(line); } catch { continue; }
       const t = Date.parse(r?.ts);
+      const at = bans.get(ip);
       if (r?.request?.client_ip !== ip || !(t >= at - DAY && t <= at + 60_000)) continue;
-      if (typeof r.request.host === 'string' && hosts.size < SWEEP_MAX) hosts.add(r.request.host.slice(0, 200));
-      if (typeof r.request.uri === 'string' && paths.size < SWEEP_MAX) paths.add(r.request.uri.slice(0, 300));
+      const s = found.get(ip);
+      if (typeof r.request.host === 'string' && s.hosts.size < SWEEP_MAX) s.hosts.add(r.request.host.slice(0, 200));
+      if (typeof r.request.uri === 'string' && s.paths.size < SWEEP_MAX) s.paths.add(r.request.uri.slice(0, 300));
     }
   } catch {
     // Unreadable (or gone): what was read so far.
   }
-  return { hosts: [...hosts], paths: [...paths] };
+  return result();
 }
 
 /**
@@ -149,7 +155,7 @@ export function createBans({ dir, accessLog, store, now = () => new Date(), log 
   // Unbans asked for from the dashboard or CLI, by IP: who asked, until the host's unban event names them.
   const asked = new Map();
 
-  async function apply(e) {
+  async function apply(e, swept) {
     const at = e.time * 1000;
     const open = await store.findOpen(e);
     if (e.event === 'unban') {
@@ -169,13 +175,13 @@ export function createBans({ dir, accessLog, store, now = () => new Date(), log 
     // A ban that ran out without an unban event (missed while Cubby was down) ends at its expiry.
     if (open) await store.update(open.id, { unbanned_at: new Date(ms(open.expires_at)).toISOString(), unbanned_by: 'expired' });
     // Scanners sweep many apps; the record says which, and what they looked for.
-    const sweep = e.jail === 'cubby-probe' ? await sweepOf(accessLog, e.ip, at) : { hosts: [], paths: [] };
+    const sweep = (e.jail === 'cubby-probe' && swept.get(e.ip)) || { hosts: [], paths: [] };
     await store.create({ ip: e.ip, jail: e.jail, banned_at: new Date(at).toISOString(), expires_at: expires, ...sweep });
   }
 
-  // Reads the events the host wrote, oldest first by their time, and removes their files.
+  // Reads the events the host wrote (at most 1000 a round), oldest first by their time, and removes their files.
   async function readEvents() {
-    const names = (await readdir(eventsDir).catch(() => [])).filter((n) => !n.startsWith('.')).sort();
+    const names = (await readdir(eventsDir).catch(() => [])).filter((n) => !n.startsWith('.')).sort().slice(0, 1000);
     const events = [];
     for (const name of names) {
       const file = join(eventsDir, name);
@@ -185,7 +191,9 @@ export function createBans({ dir, accessLog, store, now = () => new Date(), log 
       else log.error(`ignored a bad fail2ban event (${name.slice(0, 80)})`);
     }
     events.sort((a, b) => a.time - b.time);
-    for (const e of events) await apply(e);
+    const probes = new Map(events.filter((e) => e.event === 'ban' && e.jail === 'cubby-probe').map((e) => [e.ip, e.time * 1000]));
+    const swept = await sweeps(accessLog, probes);
+    for (const e of events) await apply(e, swept);
     return events.length;
   }
 

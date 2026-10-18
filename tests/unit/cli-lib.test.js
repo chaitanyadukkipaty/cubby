@@ -513,6 +513,15 @@ describe('admin output', () => {
     assert.match(lib.formatBans({ enabled: true, current: [{ ...ban, expires_at: null, seen_before: 1 }], history: [] }), /until it's lifted {2}\(banned once before\)/);
     assert.match(lib.formatBans({ enabled: false, current: [], history: [] }), /^fail2ban isn't enabled on this server/);
   });
+  test('formatBans keeps long sweeps short, and names who ended a ban', () => {
+    const at = '2026-10-18T06:00:00.000Z';
+    const paths = Array.from({ length: 12 }, (_, i) => `/p${i}`);
+    const ban = { ip: '203.0.113.9', reason: 'Scanning for secret files', banned_at: at, expires_at: at, hosts: [], paths, seen_before: 0 };
+    const text = lib.formatBans({ enabled: false, current: [ban], history: [{ ...ban, unbanned_by: null }, { ...ban, unbanned_by: 'expired' }] });
+    assert.match(text, /swept this server: \/p0, [^\n]*\/p9, … \(12\)/);
+    assert.match(text, /, unbanned by the server/);
+    assert.match(text, /UTC, expired/);
+  });
   test('formatStorage shows each category, the disk, and apps biggest first', () => {
     const text = lib.formatStorage({
       computed_at: '2026-10-17T09:00:00.000Z',

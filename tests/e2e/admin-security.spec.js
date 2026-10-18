@@ -35,7 +35,9 @@ test('security: a scanner\'s ban shows what it swept, and unbanning moves it to 
   appendFileSync(process.env.CUBBY_E2E_ACCESS_LOG, `${line('todo.example.test', '/.env')}\n${line('chat.example.test', '/.git/config')}\n`);
   hostWrite('events', `${Date.now()}.json`, { event: 'ban', ip, jail: 'cubby-probe', time: Math.floor(Date.now() / 1000), bantime: 600 });
 
-  await dashboard.openAdmin('Security');
+  // Straight to the tab (it's in the URL): the Overview would cache the storage scan the next spec checks.
+  await page.goto('/admin/security');
+  await expect(admin.currentTab).toHaveText('Security');
   const row = admin.banRow(ip);
   await expect(row).toBeVisible();
   await expect(row).toContainText('Scanning for secret files');
