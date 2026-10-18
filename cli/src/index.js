@@ -11,7 +11,7 @@ import {
   deployParams, formatDeploys, formatProjects, formatError, copyTemplate, waitForApproval, serverLabel,
   installSkill as installSkillAt, removeSkill, skillStatus,
   jobEntries, jobSchedule, jobsBuildScript, formatJobs, formatRun, formatEnv, parseEnvAssignment,
-  formatStorage, formatBackups, formatBytes, formatRetention, loginHint, formatAgents, formatActivity, formatMetrics, formatMetricsList, formatAdminMetrics, formatData, formatClear, formatClearPreview, formatSnapshots, formatRestore,
+  formatStorage, formatBackups, formatBans, formatBytes, formatRetention, loginHint, formatAgents, formatActivity, formatMetrics, formatMetricsList, formatAdminMetrics, formatData, formatClear, formatClearPreview, formatSnapshots, formatRestore,
 } from './lib.js';
 import {
   readConfig, writeConfig, upsertServer, removeServer, findServer, resolveTarget, readProject, projectJson,
@@ -566,6 +566,15 @@ const commands = {
       const r = await call('GET', '/api/admin/backups');
       return out(`Keeping the newest ${r.keep} backup${r.keep === 1 ? '' : 's'}: ${formatRetention(r.estimate)}.`, { keep: r.keep, estimate: r.estimate });
     }
+    if (sub === 'bans' && (!action || action === 'list')) {
+      const r = await call('GET', '/api/admin/bans');
+      return out(formatBans(r), r);
+    }
+    if (sub === 'bans' && action === 'unban' && arg) {
+      if (!flags.yes) throw new CliError(`This lifts every ban of ${arg}: it can reach this server's apps again right away. Re-run with --yes.`);
+      const r = await call('POST', `/api/admin/bans/${encodeURIComponent(arg)}/unban`);
+      return out(`Unbanned ${r.ip} (${r.jails.join(', ')})`, r);
+    }
     if (sub === 'deploys' && action) {
       const base = `/api/admin/apps/${encodeURIComponent(action)}/deploys`;
       if (!arg || arg === 'list') {
@@ -587,7 +596,7 @@ const commands = {
 };
 
 const DATA_USAGE = 'Usage: cubby data list [app] | clear [app] (--collections a,b [--drop] | --collection c (--filter "<filter>" | --ids a,b) [--all-matching]) [--dry-run] --yes | clear [app] --wipe --yes | snapshots [app] | restore <snapshot-id> [--overwrite --yes] [--dry-run] | purge <snapshot-id> --yes';
-const ADMIN_USAGE = 'Usage: cubby admin storage | backups [create [--no-wait] | delete <YYYY-MM-DD> --yes [--leave-none] | keep <n> [--yes]] | deploys <app> [prune [--keep <n>] --yes | delete <deploy-id> --yes]';
+const ADMIN_USAGE = 'Usage: cubby admin storage | backups [create [--no-wait] | delete <YYYY-MM-DD> --yes [--leave-none] | keep <n> [--yes]] | deploys <app> [prune [--keep <n>] --yes | delete <deploy-id> --yes] | bans [unban <ip> --yes]';
 
 const [cmd, ...rest] = positionals;
 if (!cmd || flags.help || !commands[cmd]) {
