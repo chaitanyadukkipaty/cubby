@@ -5,6 +5,8 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-18
+
 ### Added
 
 - Scanner and brute-force bans with fail2ban. The installer sets it up on the host (`--no-fail2ban` skips it) with two
