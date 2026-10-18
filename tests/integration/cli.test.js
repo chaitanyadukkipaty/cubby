@@ -221,7 +221,7 @@ describe('app lifecycle', () => {
     writeFileSync(join(dir(), 'dist/index.html'), '<h1>one</h1>');
     const pkg = JSON.parse(readFileSync(join(dir(), 'package.json'), 'utf8'));
     writeFileSync(join(dir(), 'package.json'), JSON.stringify({ ...pkg, description: 'CLI test app' }));
-    const first = ok(await inApp(['deploy', '--no-build', '-m', 'one', '--client', 'test-agent']));
+    const first = ok(await inApp(['deploy', '--no-build', '-m', 'one', '--client', '🤖 test-agent']));
     assert.match(first.stdout, /Schema applied\. created: users, tasks/);
     assert.match(first.stdout, /Deployed \w+ to admin's Cubby \(http:\/\/localhost:\d+\) \(1 files/);
     const second = ok(await inApp(['deploy', '--no-build', '-m', 'two', '--unlisted']));
@@ -232,7 +232,7 @@ describe('app lifecycle', () => {
     const deploys = ok(await inApp(['deploys'])).stdout.trim().split('\n');
     assert.equal(deploys.length, 2);
     assert.match(deploys[0], /^\* .*two$/);
-    assert.match(deploys[1], /\[test-agent\] one$/);
+    assert.match(deploys[1], /\[🤖 test-agent\] one$/, 'names beyond Latin-1 survive the header');
   });
   test('rollback', async () => {
     const list = ok(await inApp(['deploys', '--json'])).json;

@@ -180,6 +180,13 @@ describe('logic patches', () => {
     assert.equal(logic.deployClient('claude-code'), 'claude-code');
     assert.equal(logic.deployClient('x'.repeat(100)).length, 60);
   });
+  test('deployClient decodes the percent-encoded header new CLIs send, and takes old CLIs\' plain values as they are', () => {
+    assert.equal(logic.deployClient(encodeURIComponent('🤖 agent')), '🤖 agent');
+    assert.equal(logic.deployClient(encodeURIComponent('Кубик')), 'Кубик');
+    assert.equal(logic.deployClient('Caf\u00e9'), 'Café', 'an old CLI sent Latin-1 raw');
+    assert.equal(logic.deployClient('50%-bot'), '50%-bot', 'not a valid escape: kept as sent');
+    assert.equal(logic.deployClient(encodeURIComponent('a\u202Eb\n')), 'ab', 'cleaned like agent names');
+  });
   test('agentHint keeps the tool and machine a CLI sends, cleaned and capped; old CLIs send nothing', () => {
     assert.deepEqual(logic.agentHint({ tool: ' Claude  Code\n', machine: 'mbp\u0007' }), { tool: 'Claude Code', machine: 'mbp' });
     assert.deepEqual(logic.agentHint({}), { tool: '', machine: '' });

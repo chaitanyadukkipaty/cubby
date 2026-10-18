@@ -69,7 +69,8 @@ async function api(method, path, { body, raw, contentType, auth = true } = {}) {
     headers.authorization = `Bearer ${token}`;
   }
   const client = flags.client || process.env.CUBBY_CLIENT;
-  if (client) headers['x-cubby-client'] = client;
+  // Percent-encoded: header values can't hold characters above U+00FF (emoji, CJK). The server decodes it.
+  if (client) headers['x-cubby-client'] = encodeURIComponent(client);
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (raw) headers['content-type'] = contentType;
   let res;

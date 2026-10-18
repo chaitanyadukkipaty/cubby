@@ -48,7 +48,14 @@ export function deployPatch(searchParams) {
   return patch;
 }
 
-export const deployClient = (header) => String(header ?? '').slice(0, 60);
+// The agent's name from the x-cubby-client header. HTTP headers can't carry characters above U+00FF, so CLIs
+// percent-encode it; older CLIs sent it raw (ASCII, or Latin-1), which decodes to itself or isn't a valid escape.
+export function deployClient(header) {
+  const raw = String(header ?? '');
+  let text;
+  try { text = decodeURIComponent(raw); } catch { text = raw; }
+  return hintText(text, 60);
+}
 
 // --- Agents: one API key per approved `cubby login` ---
 // What a CLI says about itself when it starts a device login. Older CLIs send nothing, so every part is optional.
