@@ -390,11 +390,11 @@ const routes = [
   ['GET', '/api/admin/apps/:slug/deploys', 'admin', async (req, user, { slug }) => listDeploys(await adminProject(slug))],
   ['POST', '/api/admin/apps/:slug/deploys/prune', 'admin', async (req, user, { slug }) => {
     const project = await adminProject(slug);
-    return removeDeploys(project, oldDeploys(await listDeploys(project), { keep: (await readJson(req)).keep ?? 0 }));
+    return removeDeploys(user, project, oldDeploys(await listDeploys(project), { keep: (await readJson(req)).keep ?? 0 }));
   }],
   ['DELETE', '/api/admin/apps/:slug/deploys/:id', 'admin', async (req, user, { slug, id }) => {
     const project = await adminProject(slug);
-    return removeDeploys(project, oldDeploys(await listDeploys(project), { id }));
+    return removeDeploys(user, project, oldDeploys(await listDeploys(project), { id }));
   }],
   ['DELETE', '/api/admin/apps/:slug', 'admin', async (req, user, { slug }) => {
     const project = await adminProject(slug);
@@ -412,9 +412,18 @@ async function adminProject(slug) {
   return project;
 }
 
-async function removeDeploys(project, picked) {
+// An admin's delete of older deploys is logged for the admin, and for the owner (who loses rollback targets) as the
+// admin's, like an admin's data clear.
+async function removeDeploys(user, project, picked) {
   const freed = await deleteDeploys(project, picked);
-  if (picked.length) storageCache.clear();
+  if (picked.length) {
+    storageCache.clear();
+    const ids = picked.map((d) => d.id);
+    const what = `${ids.length} older deploy${ids.length === 1 ? '' : 's'} of ${project.slug}: ${ids.join(', ')}`;
+    const entry = { action: 'admin.deploys.delete', app: project.slug, meta: { deploys: ids } };
+    await recordActivity(user, { ...entry, summary: `Deleted ${what}` });
+    if (project.owner !== user.id) await recordActivity({ id: project.owner, byAdmin: user.email }, { ...entry, summary: `Admin (${user.email}) deleted ${what}` });
+  }
   return { ok: true, deleted: picked.map((d) => d.id), freed_bytes: freed, deploys: await listDeploys(project) };
 }
 

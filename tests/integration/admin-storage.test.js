@@ -143,6 +143,18 @@ describe('admin storage and backups', () => {
     assert.equal((await app(srv, 'pruned-app')('GET', '/')).text, 'v3'.repeat(50), 'the app still serves its current deploy');
 
     assert.equal((await adminCall('POST', '/api/admin/apps/pruned-app/deploys/prune', { body: {} })).data.deleted.length, 0);
+    // Logged for the admin, and for the owner (who loses rollback targets), as the admin's; deleting nothing isn't.
+    const logged = (call) => call('GET', '/api/activity?app=pruned-app').then((r) => r.data.filter((x) => x.action === 'admin.deploys.delete'));
+    const mine = await logged(adminCall);
+    assert.deepEqual(mine.map((r) => [r.summary, r.meta]), [
+      [`Deleted 1 older deploy of pruned-app: ${id('v4')}`, { deploys: [id('v4')] }],
+      [`Deleted 2 older deploys of pruned-app: ${id('v1')}, ${id('v2')}`, { deploys: [id('v1'), id('v2')] }],
+    ]);
+    const owners = await logged(user);
+    assert.deepEqual(owners.map((r) => [r.via, r.admin, r.summary]), [
+      ['admin', ADMIN.email, `Admin (${ADMIN.email}) deleted 1 older deploy of pruned-app: ${id('v4')}`],
+      ['admin', ADMIN.email, `Admin (${ADMIN.email}) deleted 2 older deploys of pruned-app: ${id('v1')}, ${id('v2')}`],
+    ]);
     assert.equal((await adminCall('POST', '/api/admin/apps/pruned-app/deploys/prune', { body: { keep: -1 } })).status, 400);
     assert.equal((await adminCall('GET', '/api/admin/apps/no-such-app/deploys')).status, 404);
     for (const [m, p] of [['GET', '/api/admin/apps/pruned-app/deploys'], ['POST', '/api/admin/apps/pruned-app/deploys/prune'], ['DELETE', `/api/admin/apps/pruned-app/deploys/${id('v3')}`]]) {
