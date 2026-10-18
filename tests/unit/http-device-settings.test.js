@@ -103,6 +103,15 @@ describe('device login', () => {
     assert.deepEqual(await pollDevice(d.device_id, { now: T0 + 3, issueToken }), { status: 'approved', token: 'hk_new' });
     assert.deepEqual(calls, [['u1', { tool: 'Claude Code', machine: 'chaitanya-mbp' }]]);
   });
+  test('an approved code can\'t be approved again by someone else: the first approval stands', async () => {
+    const d = startDevice('x', T0, { tool: 'Codex' });
+    approveDevice({ id: 'dave' }, d.user_code, T0 + 1);
+    assert.throws(() => approveDevice({ id: 'bob' }, d.user_code, T0 + 2), (e) => e.status === 409 && /already approved/.test(e.message));
+    assert.throws(() => approveDevice({ id: 'dave' }, d.user_code, T0 + 2), (e) => e.status === 409, 'not even by the same person');
+    assert.throws(() => deviceInfo(d.user_code, T0 + 2, { id: 'bob' }), (e) => e.status === 409 && /already approved/.test(e.message), 'the approval page says so');
+    const issueToken = async (uid) => `hk_${uid}`;
+    assert.deepEqual(await pollDevice(d.device_id, { now: T0 + 3, issueToken }), { status: 'approved', token: 'hk_dave' });
+  });
   test('codes expire after 10 minutes', async () => {
     const d = startDevice('x', T0);
     const later = T0 + 10 * 60 * 1000 + 1;
