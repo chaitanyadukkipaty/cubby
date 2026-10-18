@@ -5,6 +5,8 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-18
+
 ### Fixed
 
 - `cubby-server upgrade`, `cubby-server version` and the installer now ask the server inside its container whether it's
