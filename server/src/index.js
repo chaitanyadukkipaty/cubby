@@ -558,6 +558,11 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': asset.type, 'content-length': asset.body.length, 'cache-control': 'public, max-age=31536000, immutable' });
       return res.end(asset.body);
     }
+    // A browser asking for a page the dashboard doesn't have gets the shell with a 404, so it can say so and link home.
+    if (req.method === 'GET' && logic.isBrowser(req.headers['user-agent']) && /text\/html/.test(req.headers.accept ?? '')) {
+      res.writeHead(404, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', vary: 'User-Agent, Accept' });
+      return res.end(dashboard.page({ publicUrl: config.publicUrl, version: config.version }));
+    }
     sendPage(res, 404, 'Not found');
   } catch (err) {
     const status = err instanceof HttpError ? err.status : 500;

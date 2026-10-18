@@ -1,14 +1,14 @@
 // /apps: the signed-in user's apps, one row each with who's on it now, a 7-day views sparkline and who deployed it
 // last. /apps/:slug[/<tab>]: one app, with Overview (charts), Activity, Deploys, Jobs, Env, Data and Settings tabs;
 // the tab is in the path so a reload or a shared link keeps it.
-import { h, ago, fmtBytes, fmtCount, jobState } from '../helpers.js';
-import { emptyPrompt, lastDeployers, monogram } from '../feed.js';
+import { h, ago, fmtBytes, fmtCount, jobState, withDistinctNames } from '../helpers.js';
+import { deploySources, emptyPrompt, lastDeployers } from '../feed.js';
 import { chartBuckets, deployMarkers, timeTicks } from '../charts.js';
-import { RANGES, chartSummary, kpis, rangeFrom, topPathRows, weekViews } from '../app-view.js';
+import { RANGES, chartSummary, fixedRangeSearch, kpis, rangeFrom, topPathRows, weekViews } from '../app-view.js';
 import { APP_TABS, appPath } from '../routes.js';
 import { api, rerender } from '../session.js';
 import { navigate } from '../router.js';
-import { agentBadge, askAgent, copy, icon, pageHeader, toast } from '../ui.js';
+import { agentBadge, askAgent, copy, guarded, icon, pageHeader, toast } from '../ui.js';
 import { timeline } from './feed-ui.js';
 import { sparkSvg, timeChart } from './chart-ui.js';
 import { adminClearBanner, renderData } from './data.js';
@@ -23,7 +23,7 @@ export async function renderApps(el) {
   const list = h('p', { class: 'muted' }, 'Loading…');
   const header = pageHeader('Apps');
   el.replaceChildren(header, list);
-  const [apps, activity, keys] = await Promise.all([api('GET', '/api/projects'), api('GET', '/api/activity?limit=200'), api('GET', '/api/agents')]);
+  const [apps, activity, keys] = await Promise.all([api('GET', '/api/projects'), api('GET', '/api/activity?limit=200'), api('GET', '/api/agents').then(withDistinctNames)]);
   header.append(h('span', { class: 'muted' }, String(apps.length)));
   if (!apps.length) return list.replaceWith(noAppsYet());
   const deployers = lastDeployers(activity, keys);
@@ -66,6 +66,8 @@ const empty = (text, tab, a) => h('div', { class: 'empty' }, h('p', {}, text), a
 
 async function overviewTab(a, body) {
   const range = rangeFrom(location.search);
+  const fixed = fixedRangeSearch(location.search);
+  if (fixed) history.replaceState(history.state, '', `${location.pathname}${fixed}`);
   const [m, deploys] = await Promise.all([api('GET', `/api/projects/${a.slug}/metrics?range=${range}`), api('GET', `/api/projects/${a.slug}/deploys`)]);
   const { buckets, domain } = chartBuckets(m, range);
   const markers = deployMarkers(deploys, domain, 1000);
@@ -87,7 +89,7 @@ async function overviewTab(a, body) {
   const pathsSection = paths ? [h('h3', {}, 'Top paths'), paths.length
     ? h('div', { class: 'card table-wrap' }, h('table', { 'aria-label': 'Top paths' },
       h('thead', {}, h('tr', {}, h('th', {}, 'Path'), h('th', { class: 'r' }, 'Views'))),
-      h('tbody', {}, paths.map((p) => h('tr', {}, h('td', {}, h('div', { class: 'path-bar', style: `--share:${(p.share * 100).toFixed(1)}%` }, h('span', { class: 'mono' }, p.path))), h('td', { class: 'r num' }, fmtCount(p.views)))))))
+      h('tbody', {}, paths.map((p) => h('tr', {}, h('td', { class: 'path-cell' }, h('div', { class: 'path-bar', style: `--share:${(p.share * 100).toFixed(1)}%` }, h('span', { class: 'mono', title: p.path }, p.path))), h('td', { class: 'r num' }, fmtCount(p.views)))))))
     : h('p', { class: 'muted small' }, 'No page views in this range yet.')] : [];
   body.replaceChildren(...[
     h('div', { class: 'spread overview-h' }, h('p', { class: 'muted small' }, 'Every chart shares one time axis; dashed lines are deploys.'), ranges),
@@ -99,7 +101,7 @@ async function overviewTab(a, body) {
 }
 
 async function activityTab(a, body) {
-  const [rows, keys, apps] = await Promise.all([api('GET', `/api/activity?app=${a.slug}&limit=200`), api('GET', '/api/agents'), api('GET', '/api/projects')]);
+  const [rows, keys, apps] = await Promise.all([api('GET', `/api/activity?app=${a.slug}&limit=200`), api('GET', '/api/agents').then(withDistinctNames), api('GET', '/api/projects')]);
   body.replaceChildren(rows.length ? timeline(rows, { apps, agents: keys, showApp: false, label: `Activity of ${a.name}`, onChange: rerender })
     : empty('No changes in the last 30 days.', 'activity', a));
 }
@@ -112,7 +114,8 @@ async function rollTo(a, d, label) {
 }
 
 async function deploysTab(a, body) {
-  const deploys = await api('GET', `/api/projects/${a.slug}/deploys`);
+  const [deploys, activity, keys] = await Promise.all([api('GET', `/api/projects/${a.slug}/deploys`), api('GET', `/api/activity?app=${a.slug}&limit=200`), api('GET', '/api/agents').then(withDistinctNames)]);
+  const from = deploySources(activity, keys);
   if (!deploys.length) return body.replaceChildren(empty('No deploys yet.', 'deploys', a));
   body.replaceChildren(
     h('p', { class: 'muted small' }, 'Rolling back serves an earlier deploy again, with the jobs it shipped. Data and secrets are not rolled back.'),
@@ -120,10 +123,11 @@ async function deploysTab(a, body) {
       h('thead', {}, h('tr', {}, h('th', {}, 'Deploy'), h('th', {}, 'Message'), h('th', { class: 'hide-sm' }, 'From'), h('th', { class: 'hide-sm r' }, 'Size'), h('th', {}, 'When'), h('th', {}, h('span', { class: 'sr-only' }, 'Actions')))),
       h('tbody', {}, deploys.map((d, i) => {
         const label = `v${deploys.length - i}`;
+        const src = from(d);
         return h('tr', { 'aria-label': label },
           h('td', { class: 'nowrap' }, h('b', { class: 'mono' }, label), ' ', d.current ? h('span', { class: 'badge ok' }, 'live') : null, h('div', { class: 'muted mono tiny' }, d.id)),
           h('td', {}, d.message || h('span', { class: 'muted' }, '–')),
-          h('td', { class: 'muted hide-sm' }, d.client || '–'),
+          h('td', { class: 'muted hide-sm', 'data-col': 'from' }, src ? byLine(src).slice(1) : '–'),
           h('td', { class: 'muted hide-sm r' }, `${d.files} files · ${fmtBytes(d.bytes)}`),
           h('td', { class: 'muted nowrap' }, ago(d.created)),
           h('td', { class: 'r' }, d.current ? null : h('button', { type: 'button', class: 'sm', 'aria-label': `Roll back to ${label}`, onclick: () => rollTo(a, d, label).catch((ex) => toast(ex.message)) }, icon('undo'), 'Roll back to this')));
@@ -151,15 +155,15 @@ async function jobsTab(a, body) {
               await draw();
             } catch (ex) { toast(ex.message); btn.disabled = false; }
           } }, 'Run now'),
-          h('button', { type: 'button', class: 'sm', onclick: async () => {
+          h('button', { type: 'button', class: 'sm', onclick: guarded(async () => {
             await api('PATCH', `/api/projects/${a.slug}/jobs/${j.name}`, { paused: !j.paused });
             toast(j.paused ? `${j.name} resumed` : `${j.name} paused`);
             await draw();
-          } }, j.paused ? 'Resume' : 'Pause'),
-          j.last_run ? h('button', { type: 'button', class: 'link', onclick: async () => {
+          }) }, j.paused ? 'Resume' : 'Pause'),
+          j.last_run ? h('button', { type: 'button', class: 'link', onclick: guarded(async () => {
             if (log.hidden) log.textContent = (await api('GET', `/api/projects/${a.slug}/jobs/${j.name}/runs?limit=1`))[0]?.log || '(no output)';
             log.hidden = !log.hidden;
-          } }, 'Last log') : null),
+          }) }, 'Last log') : null),
         log);
     })));
   };
@@ -236,14 +240,14 @@ const TABS = { overview: overviewTab, activity: activityTab, deploys: deploysTab
 export async function renderApp(el, { slug, tab = 'overview' }) {
   const back = h('a', { class: 'back', href: '/apps' }, '← Apps');
   el.replaceChildren(back, h('p', { class: 'muted' }, 'Loading…'));
-  const [apps, activity, keys] = await Promise.all([api('GET', '/api/projects'), api('GET', `/api/activity?app=${slug}&limit=50`), api('GET', '/api/agents')]);
+  const [apps, activity, keys] = await Promise.all([api('GET', '/api/projects'), api('GET', `/api/activity?app=${slug}&limit=50`), api('GET', '/api/agents').then(withDistinctNames)]);
   const a = apps.find((p) => p.slug === slug);
   if (!a) return el.replaceChildren(back, pageHeader(slug), h('div', { class: 'empty' }, `You don't have an app called ${slug}.`));
   const by = lastDeployers(activity, keys)[slug];
   const body = h('div', { class: 'tab-body', role: 'region', 'aria-label': TAB_LABELS[tab] }, h('p', { class: 'muted' }, 'Loading…'));
   el.replaceChildren(back,
     h('header', { class: 'page-h app-h' },
-      h('span', { class: `dot${a.current_deploy ? ' live' : ''}`, 'aria-hidden': 'true' }), h('h2', {}, a.name),
+      h('h2', {}, h('span', { class: `dot${a.current_deploy ? ' live' : ''}`, 'aria-hidden': 'true' }), a.name),
       a.unlisted ? h('span', { class: 'badge' }, 'unlisted') : null,
       h('div', { class: 'row page-actions' }, a.current_deploy ? h('a', { class: 'btn', href: a.url, target: '_blank', rel: 'noopener' }, icon('external'), 'Open') : null)),
     h('p', { class: 'app-meta muted small' },

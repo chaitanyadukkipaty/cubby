@@ -68,6 +68,19 @@ describe('rangeFrom()', () => {
   });
 });
 
+describe('fixedRangeSearch()', () => {
+  test('an unsupported ?range= is rewritten to the range the page shows, keeping other parameters', () => {
+    assert.equal(v.fixedRangeSearch('?range=1y'), '?range=7d');
+    assert.equal(v.fixedRangeSearch('?range=1h&x=1'), '?range=7d&x=1');
+    assert.equal(v.fixedRangeSearch('?range='), '?range=7d');
+  });
+  test('a supported range, or none at all, needs no change', () => {
+    assert.equal(v.fixedRangeSearch('?range=24h'), null);
+    assert.equal(v.fixedRangeSearch(''), null);
+    assert.equal(v.fixedRangeSearch('?x=1'), null);
+  });
+});
+
 // Home's "Views · 7 days" and each sparkline on /apps come from the GET /api/metrics?range=7d list rows alone.
 describe('weekViews()', () => {
   const days = (...views) => views.map((n, i) => ({ start: `2026-10-${String(10 + i).padStart(2, '0')}T00:00:00.000Z`, views: n, visitors: 0 }));

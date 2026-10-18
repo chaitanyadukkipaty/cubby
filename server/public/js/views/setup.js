@@ -1,7 +1,7 @@
 // The connect-your-agent card (the setup prompt to paste into an agent) and the token card for scripts and CI.
 import { h, ago, displayName, maskToken, setupPrompt, tokenLoginCommand } from '../helpers.js';
 import { state, api, setToken, rerender, SERVER } from '../session.js';
-import { toast, copy, icon } from '../ui.js';
+import { toast, copy, guarded, icon } from '../ui.js';
 
 const APP_IDEAS = ['polls', 'chat', 'team tracker', 'booking', 'recipe', 'trivia', 'expense', 'quiz'];
 const AGENTS = ['Claude Code', 'Codex', 'Cursor', 'OpenCode'];
@@ -41,22 +41,26 @@ export function tokenCard({ lastUsed } = {}) {
   const { me } = state;
   let revealed = false;
   const tokenEl = h('code', { class: 'mono', 'aria-label': 'Your token', style: 'overflow-wrap:anywhere' });
-  const draw = () => { tokenEl.textContent = revealed ? me.token : maskToken(me.token); };
+  const reveal = h('button', { type: 'button', onclick: () => { revealed = !revealed; draw(); } });
+  const draw = () => {
+    tokenEl.textContent = revealed ? me.token : maskToken(me.token);
+    reveal.textContent = revealed ? 'Hide' : 'Reveal';
+  };
   draw();
   return h('div', { class: 'card stack small', id: 'token', role: 'region', 'aria-label': 'Token for scripts and CI' },
     h('div', { class: 'spread' },
       tokenEl,
       h('div', { class: 'row' },
-        h('button', { onclick: () => { revealed = !revealed; draw(); } }, 'Reveal'),
+        reveal,
         h('button', { onclick: () => copy(me.token, 'Token copied') }, 'Copy'),
-        h('button', { class: 'danger', onclick: async () => {
+        h('button', { class: 'danger', onclick: guarded(async () => {
           if (!confirm('Regenerate your token for scripts and CI? The old one stops working immediately. Agents you connected with cubby login have their own keys and stay connected (revoke one with cubby agents revoke).')) return;
           const r = await api('POST', '/api/token/regenerate');
           setToken(r.token);
           me.token = r.token;
           toast('New token created');
           rerender();
-        } }, 'Regenerate'),
+        }) }, 'Regenerate'),
       ),
     ),
     h('p', { class: 'muted' }, 'Use with ', h('code', {}, tokenLoginCommand(SERVER)), ' or the CUBBY_TOKEN environment variable.',

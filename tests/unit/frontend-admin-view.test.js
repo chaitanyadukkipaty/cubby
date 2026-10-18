@@ -138,3 +138,16 @@ describe('overviewKpis()', () => {
     assert.equal(k[5].alert, true);
   });
 });
+
+describe('settingsError()', () => {
+  test("names a setting by its label, not the server's field key", () => {
+    assert.equal(v.settingsError('max_apps_per_user must be a whole number between 1 and 10000'), 'Apps per user must be a whole number between 1 and 10000');
+    assert.equal(v.settingsError('max_deploy_mb must be a whole number between 1 and 10000'), 'Max deploy (MB) must be a whole number between 1 and 10000');
+    assert.equal(v.settingsError('job_timeout_s must be a whole number between 5 and 290'), 'Time limit per run (seconds) must be a whole number between 5 and 290');
+    assert.equal(v.settingsError('backup_keep must be a whole number between 1 and 90'), 'Nightly backups to keep must be a whole number between 1 and 90');
+  });
+  test('other messages pass through', () => {
+    assert.equal(v.settingsError('Server name is required'), 'Server name is required');
+    assert.equal(v.settingsError(undefined), 'Saving failed');
+  });
+});

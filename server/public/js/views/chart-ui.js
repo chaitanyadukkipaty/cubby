@@ -1,6 +1,6 @@
 // Draws the dashboard's SVG charts from the geometry in js/charts.js (pure, unit-tested). Every chart has a <title>
 // and an accessible name; the numbers it shows are also in text next to it.
-import { barRects, bucketLabel, linePath, niceMax, sparkline } from '../charts.js';
+import { barRects, bucketLabel, linePath, markerLabels, niceMax, sparkline } from '../charts.js';
 import { h, fmtCount } from '../helpers.js';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -18,6 +18,8 @@ export function s(tag, attrs = {}, ...children) {
 const W = 1000;
 const PH = 100;
 const pct = (x) => `${(x / W) * 100}%`;
+// Deploy labels closer than this (in W units) share one label.
+const LABEL_GAP = 80;
 
 /**
  * One chart on the app page's shared time axis. `kind` is 'line' or 'bar'; `markers` are deploys (js/charts.js
@@ -44,7 +46,7 @@ export function timeChart({ id, title, sub, total, field, buckets, domain, marke
     h('div', { class: 'plot' },
       svg,
       h('span', { class: 'ymax', 'aria-hidden': 'true' }, fmtCount(max)),
-      markers.map((m) => h('span', { class: `dmark${m.current ? ' live' : ''}`, style: `left:${pct(m.x)}`, title: `Deploy ${m.label}`, 'aria-hidden': 'true' }, m.label))),
+      markerLabels(markers, LABEL_GAP).map((m) => h('span', { class: `dmark${m.current ? ' live' : ''}`, style: `left:${pct(m.x)}`, title: m.title, 'aria-hidden': 'true' }, m.label))),
     h('div', { class: 'ticks', 'aria-hidden': 'true' }, ticks.map((t) => h('span', { style: `left:${pct(t.x)}` }, t.label))),
     rows.length ? h('details', { class: 'chart-table small' }, h('summary', { class: 'muted' }, 'Show as table'),
       h('div', { class: 'table-wrap' }, h('table', {},

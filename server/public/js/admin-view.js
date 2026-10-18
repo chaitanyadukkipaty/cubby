@@ -92,3 +92,13 @@ export function overviewKpis(m, server) {
     { label: 'Disk free', value: fmtBytes(server.disk_free_bytes), sub: `of ${fmtBytes(server.disk_total_bytes)}`, alert: server.disk_free_bytes < server.disk_total_bytes * 0.1 },
   ];
 }
+
+// The labels of the settings form, for the server's messages, which name the field key ("job_timeout_s must be …").
+const SETTING_LABELS = { max_apps_per_user: 'Apps per user', max_deploy_mb: 'Max deploy (MB)', job_timeout_s: 'Time limit per run (seconds)', backup_keep: 'Nightly backups to keep' };
+
+/** A settings error as the admin reads it: "Apps per user must be …" instead of "max_apps_per_user must be …". */
+export function settingsError(message) {
+  if (!message) return 'Saving failed';
+  const key = Object.keys(SETTING_LABELS).find((k) => message.startsWith(`${k} `));
+  return key ? SETTING_LABELS[key] + message.slice(key.length) : message;
+}

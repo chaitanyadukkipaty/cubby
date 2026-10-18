@@ -4,13 +4,13 @@
 // reload keeps it; /admin/apps/<slug> is an admin clearing data of any app. Words and numbers come from
 // js/admin-view.js (pure, unit-tested).
 import { h, ago, fmtBytes, fmtCount, displayName, inviteText, jobState, updateNotice, versionLabel } from '../helpers.js';
-import { activeAgents, backupDelete, diskBar, overviewKpis, purgeRule, restoreCommand, retentionText } from '../admin-view.js';
+import { activeAgents, backupDelete, diskBar, overviewKpis, purgeRule, restoreCommand, retentionText, settingsError } from '../admin-view.js';
 import { chartBuckets, timeTicks } from '../charts.js';
 import { chartSummary } from '../app-view.js';
 import { monogram } from '../feed.js';
 import { ADMIN_TABS, adminPath, appPath } from '../routes.js';
 import { state, api, rerender, SERVER } from '../session.js';
-import { agentBadge, toast, copy, copyChip, pageHeader } from '../ui.js';
+import { agentBadge, guarded, toast, copy, copyChip, pageHeader } from '../ui.js';
 import { timeChart } from './chart-ui.js';
 import { renderData } from './data.js';
 
@@ -19,7 +19,9 @@ const ACTIVITY_LIMIT = 500;
 
 const kpiStrip = (items, label) => h('div', { class: `kpis n${items.length}`, role: 'list', 'aria-label': label }, items.map((k) => h('div', { role: 'listitem', class: k.alert ? 'alert' : null },
   h('span', { class: 'muted small' }, k.label), h('b', { class: 'num' }, k.value), k.sub ? h('span', { class: 'muted small' }, k.sub) : null)));
-const save = (patch, done) => api('PATCH', '/api/admin/settings', patch).then((r) => { toast(done); return r; });
+const save = (patch, done) => api('PATCH', '/api/admin/settings', patch).then((r) => { toast(done); return r; }, (ex) => { throw new Error(settingsError(ex.message)); });
+// A settings checkbox goes back to how it was when saving fails.
+const uncheck = (e) => { e.target.checked = !e.target.checked; };
 const sectionH = (title, link) => h('div', { class: 'sec-h' }, h('h3', {}, title), link ?? null);
 
 // ---------- Overview ----------
@@ -35,10 +37,10 @@ function updateCard(update, s) {
       h('pre', {}, n.command),
       h('button', { onclick: () => copy(n.command, 'Command copied') }, 'Copy command')) : null,
     update?.reason === 'env' ? null : h('label', { class: 'check small' },
-      h('input', { type: 'checkbox', checked: s.update_check, onchange: async (e) => {
+      h('input', { type: 'checkbox', checked: s.update_check, onchange: guarded(async (e) => {
         await save({ update_check: e.target.checked }, e.target.checked ? 'Update checks on' : 'Update checks off');
         rerender();
-      } }),
+      }, uncheck) }),
       'Check for new Cubby releases once a day (asks GitHub; the only request Cubby itself makes)'));
 }
 
@@ -93,17 +95,17 @@ async function usersTab(body) {
       h('td', {}, u.email, ' ', u.is_admin ? h('span', { class: 'badge accent' }, 'admin') : null, u.disabled ? h('span', { class: 'badge' }, 'disabled') : null),
       h('td', { class: 'r num' }, u.apps), h('td', { class: 'r num hide-sm' }, fmtBytes(u.disk_bytes)), h('td', { class: 'muted hide-sm' }, ago(u.created)),
       h('td', { class: 'actions' }, u.id === state.me.id ? null : h('div', { class: 'row nowrap' },
-        h('button', { type: 'button', class: 'sm', onclick: async () => {
+        h('button', { type: 'button', class: 'sm', onclick: guarded(async () => {
           await api('PATCH', `/api/admin/users/${u.id}`, { disabled: !u.disabled });
           toast(u.disabled ? 'User enabled' : 'User disabled — their apps stay online');
           rerender();
-        } }, u.disabled ? 'Enable' : 'Disable'),
-        h('button', { type: 'button', class: 'sm danger', onclick: async () => {
+        }) }, u.disabled ? 'Enable' : 'Disable'),
+        h('button', { type: 'button', class: 'sm danger', onclick: guarded(async () => {
           if (prompt(`Delete ${u.email} and all ${u.apps} of their apps? Type their email to confirm:`) !== u.email) return;
           await api('DELETE', `/api/admin/users/${u.id}`);
           toast('User deleted');
           rerender();
-        } }, 'Delete')))))))));
+        }) }, 'Delete')))))))));
 }
 
 // ---------- Apps ----------
@@ -149,12 +151,12 @@ async function appsTab(body, { slug }) {
         h('td', { class: 'muted hide-sm' }, a.owner), h('td', { class: 'r num' }, fmtBytes(a.disk_bytes)), h('td', { class: 'muted hide-sm' }, ago(a.last_deployed)),
         h('td', { class: 'actions' }, h('div', { class: 'row nowrap' }, toggle,
           h('a', { class: 'btn sm', href: adminPath('apps', a.slug) }, 'Clear data'),
-          h('button', { type: 'button', class: 'sm danger', onclick: async () => {
+          h('button', { type: 'button', class: 'sm danger', onclick: guarded(async () => {
             if (prompt(`Delete ${a.slug} (owned by ${a.owner}), its data and deploys? Type the app name to confirm:`) !== a.slug) return;
             await api('DELETE', `/api/admin/apps/${a.slug}`);
             toast(`Deleted ${a.slug}`);
             rerender();
-          } }, 'Delete')))), detailRow];
+          }) }, 'Delete')))), detailRow];
     })))));
 }
 
@@ -197,16 +199,16 @@ async function jobsTab(body, { overview }) {
     h('h3', {}, `Scheduled jobs (${jobs.length})`),
     h('div', { class: 'card stack' },
       h('label', { class: 'check small' },
-        h('input', { type: 'checkbox', checked: s.jobs, onchange: async (e) => {
+        h('input', { type: 'checkbox', checked: s.jobs, onchange: guarded(async (e) => {
           await save({ jobs: e.target.checked }, e.target.checked ? 'Jobs will run on schedule' : 'All jobs stopped');
           rerender();
-        } }),
+        }, uncheck) }),
         'Run scheduled jobs (turn off to stop every app\'s jobs at once)'),
       h('form', { class: 'row', onsubmit: async (e) => {
         e.preventDefault();
         try { await save({ job_timeout_s: Number(new FormData(e.target).get('job_timeout_s')) }, 'Time limit saved'); } catch (ex) { toast(ex.message); }
       } },
-        h('label', { class: 'small' }, 'Time limit per run (seconds)', h('input', { type: 'number', name: 'job_timeout_s', min: 5, max: 290, value: s.job_timeout_s, style: 'width:110px;display:block' })),
+        h('label', { class: 'small' }, 'Time limit per run (seconds)', h('input', { type: 'number', name: 'job_timeout_s', min: 5, max: 290, step: 1, required: true, value: s.job_timeout_s, style: 'width:110px;display:block' })),
         h('button', { type: 'submit', style: 'align-self:flex-end' }, 'Save'))),
     jobs.length ? h('div', { class: 'card table-wrap' }, h('table', { 'aria-label': 'Jobs' },
       h('thead', {}, h('tr', {}, h('th', {}, 'App'), h('th', {}, 'Job'), h('th', { class: 'hide-sm' }, 'Schedule (UTC)'), h('th', {}, 'Last run'))),
@@ -223,7 +225,7 @@ async function jobsTab(body, { overview }) {
 
 function retentionCard(s) {
   const estimate = h('p', { class: 'small', 'aria-live': 'polite' }, '…');
-  const input = h('input', { type: 'number', name: 'backup_keep', min: 1, max: 90, value: s.backup_keep, style: 'width:110px;display:block' });
+  const input = h('input', { type: 'number', name: 'backup_keep', min: 1, max: 90, step: 1, required: true, value: s.backup_keep, style: 'width:110px;display:block' });
   let last = null;
   let timer;
   const check = async () => {
@@ -272,8 +274,8 @@ async function settingsTab(body, { overview }) {
     const d = Object.fromEntries(new FormData(e.target));
     try { await save({ max_apps_per_user: Number(d.max_apps_per_user), max_deploy_mb: Number(d.max_deploy_mb) }, 'Limits saved'); } catch (ex) { toast(ex.message); }
   } },
-    h('label', { class: 'small' }, 'Apps per user', h('input', { type: 'number', name: 'max_apps_per_user', min: 1, value: s.max_apps_per_user, style: 'width:110px;display:block' })),
-    h('label', { class: 'small' }, 'Max deploy (MB)', h('input', { type: 'number', name: 'max_deploy_mb', min: 1, value: s.max_deploy_mb, style: 'width:110px;display:block' })),
+    h('label', { class: 'small' }, 'Apps per user', h('input', { type: 'number', name: 'max_apps_per_user', min: 1, max: 10000, step: 1, required: true, value: s.max_apps_per_user, style: 'width:110px;display:block' })),
+    h('label', { class: 'small' }, 'Max deploy (MB)', h('input', { type: 'number', name: 'max_deploy_mb', min: 1, max: 10000, step: 1, required: true, value: s.max_deploy_mb, style: 'width:110px;display:block' })),
     h('button', { type: 'submit', style: 'align-self:flex-end' }, 'Save limits'));
   body.replaceChildren(
     h('h3', {}, 'Server name'),
@@ -284,13 +286,13 @@ async function settingsTab(body, { overview }) {
         h('div', {}, h('span', { class: 'muted small' }, 'Signup code '), h('code', { class: 'mono', style: 'font-size:15px', 'aria-label': 'Current signup code' }, s.signup_code)),
         h('div', { class: 'row' },
           h('button', { class: 'primary', onclick: () => copy(invite, 'Invite copied') }, 'Copy invite'),
-          h('button', { onclick: async () => {
+          h('button', { onclick: guarded(async () => {
             if (!confirm('Rotate the signup code? The current code stops working for new signups.')) return;
             await save({ rotate_code: true }, 'New code generated');
             rerender();
-          } }, 'Rotate code'))),
+          }) }, 'Rotate code'))),
       h('label', { class: 'check small' },
-        h('input', { type: 'checkbox', checked: s.open_signup, onchange: (e) => save({ open_signup: e.target.checked }, e.target.checked ? 'Anyone with the URL can sign up' : 'Signup code required') }),
+        h('input', { type: 'checkbox', checked: s.open_signup, onchange: guarded((e) => save({ open_signup: e.target.checked }, e.target.checked ? 'Anyone with the URL can sign up' : 'Signup code required'), uncheck) }),
         'Open signup (no code needed — anyone with the URL can join)')),
     h('h3', {}, 'Limits'),
     h('div', { class: 'card' }, limitsForm),

@@ -1,7 +1,7 @@
 // Home: the agent activity timeline is the spine, opened by "What should your agent do next?". Beside it (above it on
 // phones): who's on your apps now, views over 7 days, and your agents. A first-time user (no agent, no app) gets the
 // connect steps instead. Only the signed-in user's own apps are shown here; friends' apps are on Explore.
-import { h, ago, fmtCount, setupPrompt } from '../helpers.js';
+import { h, ago, fmtCount, setupPrompt, withDistinctNames } from '../helpers.js';
 import { monogram, needsAttention, nextPrompts } from '../feed.js';
 import { weekViews } from '../app-view.js';
 import { appPath } from '../routes.js';
@@ -67,7 +67,7 @@ async function loadSummary(apps, activeCard, viewsCard, attention) {
 
 export async function renderHome(el) {
   el.replaceChildren(pageHeader('Home'), h('p', { class: 'muted' }, 'Loading…'));
-  const [apps, keys, activity] = await Promise.all([api('GET', '/api/projects'), api('GET', '/api/agents'), api('GET', `/api/activity?limit=${FEED_LIMIT}`)]);
+  const [apps, keys, activity] = await Promise.all([api('GET', '/api/projects'), api('GET', '/api/agents').then(withDistinctNames), api('GET', `/api/activity?limit=${FEED_LIMIT}`)]);
   const agents = keys.filter((k) => !k.manual);
   if (!agents.length && !apps.length) return firstRun(el);
 

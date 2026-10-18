@@ -34,6 +34,13 @@ function sidebar(route) {
   ));
 }
 
+// A path that isn't a dashboard page (the server sends the shell with a 404 for those, too).
+const notFound = (path) => h('div', {},
+  h('header', { class: 'page-h' }, h('h2', {}, 'Page not found')),
+  h('div', { class: 'placeholder stack' },
+    h('p', {}, 'There is no page at ', h('code', { class: 'clip-wide' }, path), '. The link may be old, or the app or tab was renamed.'),
+    h('div', { class: 'row', style: 'justify-content:center' }, h('a', { class: 'btn', href: '/' }, 'Go to Home'), h('a', { class: 'btn', href: '/apps' }, 'Your apps'))));
+
 function render() {
   const route = currentRoute();
   if (!state.token || !state.me) return renderAuth($app, route?.name === 'connect' ? parseConnectCode(location.pathname, location.search) : null);
@@ -48,9 +55,12 @@ function render() {
   const banner = httpBanner();
   const page = h('div');
   main.append(banner ?? '', page);
-  if (!route) return page.replaceChildren(h('div', { class: 'placeholder' }, h('p', {}, 'Nothing here.'), h('a', { href: '/' }, 'Go home')));
+  if (!route) return page.replaceChildren(notFound(location.pathname));
   Promise.resolve(VIEWS[route.name](page, route)).catch((ex) => toast(ex.message));
 }
+
+// Anything a handler didn't catch still reaches the person as a toast instead of failing silently.
+window.addEventListener('unhandledrejection', (e) => toast(e.reason?.message || 'Something went wrong'));
 
 setRenderer(render);
 startRouter(render);

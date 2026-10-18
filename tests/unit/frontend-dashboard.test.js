@@ -47,6 +47,26 @@ describe('h()', () => {
   });
 });
 
+describe('withDistinctNames()', () => {
+  const keys = [
+    { id: 'k1aaaaaaaaaaaa1', name: 'twin', tool: 'Codex', machine: 'laptop' },
+    { id: 'k2aaaaaaaaaaaa2', name: 'Twin', tool: 'Cursor', machine: 'desktop' },
+    { id: 'k3aaaaaaaaaaaa3', name: 'Claude Code · mbp', tool: 'Claude Code', machine: 'mbp' },
+    { id: 'm', name: 'Manual token', manual: true },
+  ];
+  test('agents sharing a name are told apart by tool and machine; the name they were given is kept', () => {
+    const out = f.withDistinctNames(keys);
+    assert.deepEqual(out.map((k) => k.name), ['twin (Codex on laptop)', 'Twin (Cursor on desktop)', 'Claude Code · mbp', 'Manual token']);
+    assert.deepEqual(out.map((k) => k.given), ['twin', 'Twin', undefined, undefined]);
+    assert.equal(keys[0].name, 'twin', 'the input is not changed');
+  });
+  test('when tool and machine match too, the end of the id tells them apart', () => {
+    const same = [{ id: 'aaaaaaaaaaaa111', name: 'bot', tool: 'Codex', machine: 'ci' }, { id: 'aaaaaaaaaaaa222', name: 'bot', tool: 'Codex', machine: 'ci' }];
+    assert.deepEqual(f.withDistinctNames(same).map((k) => k.name), ['bot (#a111)', 'bot (#a222)']);
+    assert.deepEqual(f.withDistinctNames([{ id: 'x1', name: 'solo' }]).map((k) => k.name), ['solo']);
+  });
+});
+
 describe('fmtBytes()', () => {
   const cases = [[0, '0 B'], [1023, '1023 B'], [1024, '1 KB'], [1536, '2 KB'], [1048575, '1024 KB'],
     [1048576, '1.0 MB'], [5.5 * 1048576, '5.5 MB'], [1073741824, '1.0 GB'], [2.25 * 1073741824, '2.3 GB']];

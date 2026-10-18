@@ -397,6 +397,22 @@ describe('public pages and files', () => {
     for (const p of ['/apps/Bad_Slug', '/apps/a/b', '/static/x', '/index.html', '/app.css']) assert.equal((await anon('GET', p)).status, 404, p);
     assert.equal((await anon('POST', '/apps')).status, 404, 'pages are GET only');
   });
+  test("a browser opening a page that doesn't exist gets the shell with a 404, so the dashboard can say so; scripts get plain text", async () => {
+    const shell = await anon('GET', '/', { headers: { 'user-agent': BROWSER_UA } });
+    const page = { 'user-agent': BROWSER_UA, accept: 'text/html,application/xhtml+xml,*/*;q=0.8' };
+    for (const p of ['/zzz', '/apps/Bad_Slug', '/admin/bogus']) {
+      const r = await anon('GET', p, { headers: page });
+      assert.equal(r.status, 404, p);
+      assert.match(r.headers.get('content-type'), /^text\/html/, p);
+      assert.equal(r.text, shell.text, p);
+    }
+    for (const [p, headers] of [['/zzz', { 'user-agent': 'curl/8.7.1', accept: 'text/html' }], ['/favicon.ico', { 'user-agent': BROWSER_UA, accept: 'image/*' }]]) {
+      const r = await anon('GET', p, { headers });
+      assert.equal(r.status, 404, p);
+      assert.notEqual(r.text, shell.text, p);
+    }
+    assert.notEqual((await anon('POST', '/zzz', { headers: page })).text, shell.text, 'pages are GET only');
+  });
   test('dashboard, connect page, docs, skill, CLI tarball', async () => {
     for (const p of ['/', '/connect']) {
       const r = await anon('GET', p, { headers: { 'user-agent': BROWSER_UA } });

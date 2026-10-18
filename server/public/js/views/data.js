@@ -227,7 +227,7 @@ function snapshotsTable(snaps, { done }) {
           h('td', { class: 'small' }, `${snap.mode} ${snap.collections.map((c) => c.name).join(', ')}`, h('div', { class: 'muted tiny' }, snapshotCounts(snap))),
           h('td', { class: 'small hide-sm' }, snap.by ?? '–', snap.by_admin ? h('span', { class: 'badge', style: 'margin-left:6px' }, 'admin') : null, snap.reason ? h('div', { class: 'muted tiny' }, snap.reason) : null),
           h('td', { class: 'muted small hide-sm nowrap' }, snap.expires.slice(0, 10)),
-          h('td', { class: 'actions' }, h('div', { class: 'row nowrap' },
+          h('td', { class: 'actions' }, h('div', { class: 'row nowrap stack-sm' },
             h('button', { type: 'button', class: 'sm', 'aria-label': `Restore ${snap.id}`, onclick: () => restore(snap) }, icon('undo'), 'Restore'),
             h('button', { type: 'button', class: 'sm danger', 'aria-label': `Purge ${snap.id}`, disabled: !rule.allowed, title: rule.why ?? 'Delete this snapshot now', onclick: async () => {
               if (!confirm(`Purge snapshot ${snap.id}? It can't be restored after this.`)) return;

@@ -69,6 +69,28 @@ export function deployMarkers(deploys, domain, w) {
     .map((d) => ({ id: d.id, label: d.label, x: x(d.at), at: d.at, current: d.current }));
 }
 
+/**
+ * The labels above the deploy lines: [{ x, label, title, current }]. Markers (in time order) less than `gap` after the
+ * first of a run share one label ("v1–v4") centred on them, so deploys made close together never print over each other.
+ */
+export function markerLabels(markers, gap) {
+  const runs = [];
+  for (const m of markers) {
+    const run = runs.at(-1);
+    if (run && m.x - run[0].x < gap) run.push(m);
+    else runs.push([m]);
+  }
+  return runs.map((run) => {
+    const [first, last] = [run[0], run.at(-1)];
+    return {
+      x: r((first.x + last.x) / 2),
+      label: run.length > 1 ? `${first.label}–${last.label}` : first.label,
+      title: run.length > 1 ? `Deploys ${run.map((m) => m.label).join(', ')}` : `Deploy ${first.label}`,
+      current: run.some((m) => m.current),
+    };
+  });
+}
+
 const pad = (n) => String(n).padStart(2, '0');
 const utcDay = (ms) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 

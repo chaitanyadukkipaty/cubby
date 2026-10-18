@@ -153,6 +153,16 @@ export class Api {
     }
   }
 
+  /** Loads pages of a deployed app the way a person's browser does, so metrics count them (one visitor per path). */
+  async visit(slug, paths) {
+    const port = Number(process.env.CUBBY_E2E_PORT);
+    for (const path of paths) {
+      await hostRequest(port, `${slug}.localhost:${port}`, 'GET', path, {
+        headers: { 'user-agent': 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15', accept: 'text/html', 'x-forwarded-for': setupClientIp() },
+      });
+    }
+  }
+
   async dataCounts(token, slug) {
     const list = await ok(await this.as(token)('GET', `/api/projects/${slug}/data`), 'list data');
     return Object.fromEntries(list.map((c) => [c.name, c.records]));

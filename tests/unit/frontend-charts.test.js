@@ -99,6 +99,25 @@ describe('deployMarkers()', () => {
   });
 });
 
+describe('markerLabels()', () => {
+  const m = (label, x, current = false) => ({ id: label, label, x, at: x, current });
+  test('deploys far enough apart keep a label each', () => {
+    assert.deepEqual(c.markerLabels([m('v1', 100), m('v2', 300, true)], 80), [
+      { x: 100, label: 'v1', title: 'Deploy v1', current: false },
+      { x: 300, label: 'v2', title: 'Deploy v2', current: true },
+    ]);
+  });
+  test('deploys closer than the gap share one label, centred on them, naming the first and last', () => {
+    assert.deepEqual(c.markerLabels([m('v1', 900), m('v2', 905), m('v3', 910), m('v4', 920, true)], 80), [
+      { x: 910, label: 'v1–v4', title: 'Deploys v1, v2, v3, v4', current: true },
+    ]);
+  });
+  test('a cluster only reaches as far as the gap from its first deploy, so a long run splits', () => {
+    assert.deepEqual(c.markerLabels([m('v1', 0), m('v2', 50), m('v3', 100), m('v4', 150)], 80).map((l) => l.label), ['v1–v2', 'v3–v4']);
+  });
+  test('no markers, no labels', () => assert.deepEqual(c.markerLabels([], 80), []));
+});
+
 describe('timeTicks()', () => {
   test('24h: a label every 6 hours, as local times', () => {
     const start = new Date(2026, 9, 15, 0).getTime();

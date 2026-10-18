@@ -28,14 +28,23 @@ export function renderAuth(root, connectCode) {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submit = form.querySelector('button[type=submit]');
+    if (submit.disabled) return; // one request at a time: a second click would only get a 409
     const data = Object.fromEntries(new FormData(form));
+    const label = submit.textContent;
     err.textContent = '';
+    submit.disabled = true;
+    submit.textContent = mode === 'signup' ? 'Creating account…' : 'Logging in…';
     try {
       const r = await api('POST', mode === 'signup' ? '/api/signup' : '/api/login', data);
       setToken(r.key);
       await loadMe();
       rerender();
-    } catch (ex) { err.textContent = ex.message; }
+    } catch (ex) {
+      err.textContent = ex.message;
+      submit.disabled = false;
+      submit.textContent = label;
+    }
   });
   draw();
 
