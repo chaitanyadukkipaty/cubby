@@ -1,4 +1,4 @@
-// Admin page (/admin[/<tab>]): Overview, Users, Apps, Agents, Jobs, Settings and Storage tabs.
+// Admin page (/admin[/<tab>]): Overview, Users, Apps, Agents, Jobs, Settings, Storage and Security tabs.
 export class AdminSection {
   constructor(page) {
     this.page = page;
@@ -34,6 +34,9 @@ export class AdminSection {
     this.backupRows = this.backups.getByRole('table', { name: 'Backup list' }).getByRole('row');
     this.appsBySize = page.getByRole('table', { name: 'Apps by size' });
     this.agentsTable = page.getByRole('table', { name: 'Agents on this server' });
+    // Security
+    this.banRow = (ip) => page.getByRole('table', { name: 'Banned now' }).getByRole('row', { name: ip, exact: true });
+    this.pastBanRow = (ip) => page.getByRole('table', { name: 'Bans in the last 90 days' }).getByRole('row', { name: ip, exact: true }).first();
   }
 
   async openTab(name) {

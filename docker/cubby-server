@@ -10,6 +10,13 @@ SRC="$CUBBY_HOME/src"
 IMAGE=cubby:local
 NAME=cubby
 VOLUME=cubby-data
+# Host paths for fail2ban. CUBBY_HOST_ROOT moves them all, for tests only.
+HOST_ROOT="${CUBBY_HOST_ROOT:-}"
+F2B_ETC="$HOST_ROOT/etc/fail2ban"
+SYSTEMD_DIR="$HOST_ROOT/etc/systemd/system"
+LOG_DIR="$HOST_ROOT/var/log/cubby"
+F2B_DIR="$HOST_ROOT/var/lib/cubby/fail2ban" # ban events in, unban requests out; mounted into the container
+F2B_JAILS=(cubby-probe cubby-ratelimit)
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -52,9 +59,182 @@ start_container() {
   # Plain HTTP (IP mode) doesn't use 443, so a busy 443 doesn't block it.
   if [[ "$(get_env CUBBY_HTTPS)" == 1 ]]; then ports+=(-p 443:443); hostports+=(443); fi
   check_ports "${hostports[@]}"
+  # With fail2ban on, Caddy writes the access log fail2ban reads, and Cubby sees ban events and files unban requests.
+  local f2b=()
+  if fail2ban_enabled; then
+    f2b=(-v "$LOG_DIR":/var/log/cubby -e CUBBY_ACCESS_LOG=/var/log/cubby/access.log
+      -v "$F2B_DIR":/var/lib/cubby/fail2ban -e CUBBY_FAIL2BAN_DIR=/var/lib/cubby/fail2ban)
+  fi
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   docker run -d --name "$NAME" --restart unless-stopped "${ports[@]}" \
-    -v "$VOLUME":/data --env-file "$ENV_FILE" "$IMAGE" >/dev/null
+    -v "$VOLUME":/data ${f2b[@]+"${f2b[@]}"} --env-file "$ENV_FILE" "$IMAGE" >/dev/null
+}
+
+container_running() { docker ps -q --filter "name=^${NAME}$" | grep -q .; }
+
+# --- fail2ban -------------------------------------------------------------------------------------
+# Cubby's jails ban IPs that probe for secret files or keep hitting the login limit, in Docker's DOCKER-USER chain
+# (published ports skip INPUT). The container never talks to fail2ban: it reads ban events from $F2B_DIR/events and
+# drops unban requests in $F2B_DIR/requests, which a systemd path unit hands to `fail2ban process-requests`.
+
+fail2ban_enabled() { [[ "$(get_env CUBBY_FAIL2BAN)" == 1 ]]; }
+
+fail2ban_install_package() {
+  fail2ban-client --version >/dev/null 2>&1 && return 0
+  echo "Installing fail2ban…"
+  if command -v apt-get >/dev/null; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban >/dev/null 2>&1 || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban >/dev/null; } || true
+  fi
+  if ! fail2ban-client --version >/dev/null 2>&1 && command -v dnf >/dev/null; then
+    dnf install -y -q fail2ban || { dnf install -y -q epel-release && dnf install -y -q fail2ban; } || true # RHEL ships it in EPEL
+  fi
+  fail2ban-client --version >/dev/null 2>&1 || die "Couldn't install fail2ban. Install it with your package manager, then re-run: sudo cubby-server fail2ban enable"
+}
+
+# Cubby's filters, action and jails (from this version's source), and the systemd units. Safe to repeat.
+fail2ban_install_config() {
+  local conf="$SRC/docker/fail2ban"
+  [[ -d "$conf" ]] || die "$conf is missing; run: sudo cubby-server upgrade"
+  mkdir -p "$F2B_ETC/filter.d" "$F2B_ETC/action.d" "$F2B_ETC/jail.d" "$LOG_DIR" "$SYSTEMD_DIR/fail2ban.service.d"
+  mkdir -p "$F2B_DIR/events" "$F2B_DIR/requests" "$F2B_DIR/results" "$F2B_DIR/tmp"
+  chmod 700 "$LOG_DIR" "$F2B_DIR"
+  touch "$LOG_DIR/access.log" # fail2ban refuses a jail whose log doesn't exist yet
+  cp "$conf"/filter.d/cubby-*.conf "$F2B_ETC/filter.d/"
+  cp "$conf"/action.d/cubby-*.conf "$F2B_ETC/action.d/"
+  sed -e "s#__LOG__#$LOG_DIR/access.log#g" -e "s#__CUBBY_BIN__#$CUBBY_BIN#g" -e "s#__CUBBY_HOME__#$CUBBY_HOME#g" "$conf/jail.d/cubby.conf" > "$F2B_ETC/jail.d/cubby.conf"
+  # Debian 12 without rsyslog has no auth.log, so the stock sshd jail can't start and takes fail2ban down with it.
+  # Debian's fix: read sshd from the journal.
+  if [[ -f "$F2B_ETC/paths-debian.conf" && ! -f "$HOST_ROOT/var/log/auth.log" ]]; then
+    printf '[sshd]\nbackend = systemd\n' > "$F2B_ETC/jail.d/cubby-sshd.conf"
+  fi
+  # The DOCKER-USER chain exists once Docker runs; fail2ban fails to add its rules before that.
+  printf '[Unit]\nAfter=docker.service\n' > "$SYSTEMD_DIR/fail2ban.service.d/cubby.conf"
+  cat > "$SYSTEMD_DIR/cubby-fail2ban.path" <<UNIT
+[Unit]
+Description=Cubby unban requests
+
+[Path]
+DirectoryNotEmpty=$F2B_DIR/requests
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  cat > "$SYSTEMD_DIR/cubby-fail2ban.service" <<UNIT
+[Unit]
+Description=Answer Cubby unban requests
+
+[Service]
+Type=oneshot
+Environment=CUBBY_HOME=$CUBBY_HOME
+ExecStart=$CUBBY_BIN fail2ban process-requests
+UNIT
+}
+
+valid_ip() { [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ || ( "$1" =~ ^[0-9A-Fa-f:.]{2,45}$ && "$1" == *:* ) ]]; }
+valid_jail() { [[ " ${F2B_JAILS[*]} " == *" $1 "* ]]; }
+
+# Writes a file into $F2B_DIR/<dir> by rename, so a reader never sees half of it.
+f2b_drop() { # dir name content
+  local tmp="$F2B_DIR/tmp/$2"
+  printf '%s\n' "$3" > "$tmp" && mv "$tmp" "$F2B_DIR/$1/$2"
+}
+
+# Called by fail2ban (action.d/cubby-events.conf) for every ban and unban in Cubby's jails.
+cmd_fail2ban_event() { # ban|unban ip jail [bantime]
+  local kind="${1:-}" ip="${2:-}" jail="${3:-}" bantime="${4:-}" now extra=""
+  [[ "$kind" == ban || "$kind" == unban ]] || die "usage: cubby-server fail2ban event ban|unban <ip> <jail> [bantime]"
+  valid_ip "$ip" || die "not an IP address: $ip"
+  valid_jail "$jail" || die "not a Cubby jail: $jail"
+  if [[ "$kind" == ban ]]; then
+    [[ "$bantime" =~ ^-?[0-9]+$ ]] || die "bantime must be seconds: $bantime"
+    extra=",\"bantime\":$bantime"
+  fi
+  [[ -d "$F2B_DIR/events" ]] || return 0 # fail2ban is being turned off
+  now="$(date +%s)"
+  f2b_drop events "$now-$kind-${ip//:/_}-$jail-$$.json" "{\"event\":\"$kind\",\"ip\":\"$ip\",\"jail\":\"$jail\",\"time\":$now$extra}"
+}
+
+# Lifts a ban in Cubby's jails only (never sshd or the admin's own jails). Prints the jails it was lifted from.
+f2b_unban() { # ip
+  local jail lifted=()
+  for jail in "${F2B_JAILS[@]}"; do
+    if [[ "$(fail2ban-client get "$jail" banned "$1" 2>/dev/null)" == 1 ]]; then
+      fail2ban-client set "$jail" unbanip "$1" >/dev/null && lifted+=("$jail")
+    fi
+  done
+  [[ ${#lifted[@]} -gt 0 ]] && echo "${lifted[*]}"
+}
+
+json_string() { sed -n "s/.*\"$1\":\"\([^\"\\\\]*\)\".*/\\1/p" | head -n 1; }
+
+# Run by cubby-fail2ban.service whenever Cubby drops a request. Requests come from the container, so they're
+# untrusted: the only thing one can do is lift a ban in Cubby's own jails.
+cmd_fail2ban_process_requests() {
+  local file id body action ip jails
+  for file in "$F2B_DIR"/requests/*; do
+    [[ -f "$file" ]] || continue
+    id="$(basename "$file" .json)"
+    body="$(head -c 4096 "$file")"
+    rm -f "$file"
+    [[ "$id" =~ ^[A-Za-z0-9_-]{1,64}$ ]] || continue
+    action="$(printf '%s' "$body" | json_string action)"
+    ip="$(printf '%s' "$body" | json_string ip)"
+    if [[ "$action" != unban ]] || ! valid_ip "$ip"; then
+      f2b_drop results "$id.json" "{\"id\":\"$id\",\"ok\":false,\"error\":\"Not a valid unban request.\"}"
+    elif jails="$(f2b_unban "$ip")"; then
+      f2b_drop results "$id.json" "{\"id\":\"$id\",\"ok\":true}"
+    else
+      f2b_drop results "$id.json" "{\"id\":\"$id\",\"ok\":false,\"error\":\"$ip isn't banned by Cubby's jails.\"}"
+    fi
+  done
+}
+
+cmd_fail2ban_disable() {
+  rm -f "$F2B_ETC/jail.d/cubby.conf" "$F2B_ETC"/filter.d/cubby-*.conf "$F2B_ETC"/action.d/cubby-*.conf
+  systemctl disable --now cubby-fail2ban.path >/dev/null 2>&1 || true
+  rm -f "$SYSTEMD_DIR/cubby-fail2ban.path" "$SYSTEMD_DIR/cubby-fail2ban.service" "$SYSTEMD_DIR/fail2ban.service.d/cubby.conf"
+  systemctl daemon-reload
+  # Restarting without the jails also lifts their bans. The package and the stock sshd jail stay (and so does the
+  # sshd journal fix, which the stock jail needs to start).
+  ! fail2ban-client --version >/dev/null 2>&1 || systemctl restart fail2ban
+  set_env CUBBY_FAIL2BAN 0
+  container_running && start_container
+  rm -rf "$LOG_DIR" "$F2B_DIR" # visitor IPs aren't kept once nothing reads them
+  echo "fail2ban is off for Cubby. Ban history stays in the Security tab for 90 days."
+}
+
+cmd_fail2ban_status() {
+  if ! fail2ban_enabled; then
+    echo "fail2ban is off. Turn it on with: sudo cubby-server fail2ban enable"
+    return 0
+  fi
+  local jail
+  for jail in "${F2B_JAILS[@]}"; do fail2ban-client status "$jail"; done
+}
+
+cmd_fail2ban_unban() { # ip
+  local ip="${1:-}" jails
+  valid_ip "$ip" || die "not an IP address: $ip (usage: cubby-server fail2ban unban <ip>)"
+  jails="$(f2b_unban "$ip")" || die "$ip isn't banned by Cubby's jails."
+  echo "Unbanned $ip ($jails)."
+}
+
+cmd_fail2ban_enable() {
+  local restart=1
+  [[ "${1:-}" != "--no-restart" ]] || restart=0
+  fail2ban_install_package
+  fail2ban_install_config
+  set_env CUBBY_FAIL2BAN 1
+  systemctl daemon-reload
+  systemctl enable --now cubby-fail2ban.path >/dev/null 2>&1
+  systemctl enable fail2ban >/dev/null 2>&1 || true
+  systemctl restart fail2ban # a reload doesn't add actions to running jails
+  if [[ "$restart" == 1 ]] && container_running; then
+    start_container
+    wait_healthy || echo "Cubby didn't come back up. Check: cubby-server logs" >&2
+  fi
+  echo "fail2ban is on: IPs that scan for secret files or keep hitting the login limit are banned from Cubby."
+  echo "See bans with: sudo cubby-server fail2ban status   (or the Security tab on the Admin page)"
 }
 
 # /api/info of the running server ("" if it isn't answering).
@@ -105,7 +285,7 @@ cmd_upgrade() {
     return 0
   fi
 
-  if [[ "$backup" == 1 ]] && docker ps -q --filter "name=^${NAME}$" | grep -q .; then
+  if [[ "$backup" == 1 ]] && container_running; then
     echo "Backing up before upgrading…"
     if ! docker exec "$NAME" node /app/server/src/admin-tasks.js backup >/dev/null; then
       [[ -z "$before_commit" ]] || git -C "$SRC" -c advice.detachedHead=false checkout -q --detach "$before_commit"
@@ -126,6 +306,13 @@ cmd_upgrade() {
   local after
   after="$(server_info | json_field version)"
   echo "Upgraded Cubby ${before_version:-?} → ${after:-?} ($CUBBY_TARGET_REF). Data is untouched."
+  if fail2ban_enabled; then
+    fail2ban_install_config # this version's filters and jails
+    systemctl daemon-reload
+    systemctl restart fail2ban
+  elif [[ -z "$(get_env CUBBY_FAIL2BAN)" ]]; then
+    echo "Ban IPs that scan for secret files: sudo cubby-server fail2ban enable"
+  fi
 
   # Install this version's cubby-server last, by rename, so the running copy is never edited in place.
   if [[ -f "$SRC/docker/cubby-server" ]]; then
@@ -166,6 +353,9 @@ cubby-server — manage this Cubby install
   backups                     list available backups (7 nightly kept)
   restore <YYYY-MM-DD>        restore all data to a backup
   set-domain <domain>         switch from IP to a real domain with HTTPS
+  fail2ban [status]           what Cubby's jails have banned (IPs scanning for secret files, login brute force)
+  fail2ban enable | disable   install fail2ban and Cubby's jails / remove the jails and the access log
+  fail2ban unban <ip>         lift a ban (also in the Admin page's Security tab)
 USAGE
 }
 
@@ -191,6 +381,17 @@ main() {
       start_container
       ;;
     upgrade) shift; cmd_upgrade "$@" ;;
+    fail2ban)
+      case "${2:-status}" in
+        enable) cmd_fail2ban_enable "${3:-}" ;;
+        event) shift 2; cmd_fail2ban_event "$@" ;;
+        process-requests) cmd_fail2ban_process_requests ;;
+        status) cmd_fail2ban_status ;;
+        disable) cmd_fail2ban_disable ;;
+        unban) cmd_fail2ban_unban "${3:-}" ;;
+        *) echo "usage: cubby-server fail2ban enable | disable | status | unban <ip>"; exit 1 ;;
+      esac
+      ;;
     version) cmd_version ;;
     code) docker exec "$NAME" node /app/server/src/admin-tasks.js code ;;
     reset-password)

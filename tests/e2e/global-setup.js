@@ -1,7 +1,8 @@
 // Starts one real Cubby server (+ PocketBase) for the whole e2e run; workers read its URL from env.
 // GitHub's "latest release" API is replaced by a local stub whose answer specs can change via POST /set?tag=vX.Y.Z.
 import http from 'node:http';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, ROOT } from '../helpers/server.js';
 
@@ -17,12 +18,19 @@ export default async function globalSetup() {
   await new Promise((r) => releases.listen(0, '127.0.0.1', r));
   const releasesUrl = `http://127.0.0.1:${releases.address().port}`;
 
-  const server = await startServer({ CUBBY_UPDATE_CHECK: '1', CUBBY_UPDATE_URL: `${releasesUrl}/releases/latest` });
+  // fail2ban "enabled": the folder the host would share, and Caddy's access log. Specs play the host.
+  const f2b = mkdtempSync(join(tmpdir(), 'cubby-e2e-f2b-'));
+  for (const d of ['tmp', 'events', 'requests', 'results']) mkdirSync(join(f2b, d));
+  const accessLog = join(f2b, 'access.log');
+  const server = await startServer({ CUBBY_UPDATE_CHECK: '1', CUBBY_UPDATE_URL: `${releasesUrl}/releases/latest`, CUBBY_FAIL2BAN_DIR: f2b, CUBBY_ACCESS_LOG: accessLog });
+  process.env.CUBBY_E2E_F2B_DIR = f2b;
+  process.env.CUBBY_E2E_ACCESS_LOG = accessLog;
   process.env.CUBBY_E2E_URL = server.url;
   process.env.CUBBY_E2E_PORT = String(server.port);
   process.env.CUBBY_E2E_RELEASES_URL = releasesUrl;
   return async () => {
     await server.stop();
     releases.close();
+    rmSync(f2b, { recursive: true, force: true });
   };
 }

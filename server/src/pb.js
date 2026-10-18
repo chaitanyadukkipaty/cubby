@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
 import { config } from './config.js';
+import { BANS_COLLECTION } from './bans.js';
 
 export const admin = new PocketBase(config.pb.url);
 admin.autoCancellation(false);
@@ -255,4 +256,7 @@ async function ensurePlatformCollections() {
       'CREATE INDEX idx_cubby_activity_at ON cubby_activity (at)',
     ],
   });
+
+  // IPs fail2ban banned (bans.js), one row per ban, kept 90 days.
+  await upsertCollection({ ...BANS_COLLECTION, ...LOCKED, fields: [...BANS_COLLECTION.fields, ...autodates] });
 }

@@ -144,6 +144,28 @@ export function formatBackups(r) {
   return lines.join('\n');
 }
 
+// IPs fail2ban banned (GET /api/admin/bans): in force now, with what a scanner swept, then the last 90 days.
+export function formatBans(r) {
+  if (!r.enabled && !r.current.length && !r.history.length) return "fail2ban isn't enabled on this server. On the server run: sudo cubby-server fail2ban enable";
+  if (!r.current.length && !r.history.length) return 'No bans in the last 90 days.';
+  const utc = (iso) => `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+  const before = (n) => (n ? `  (banned ${n === 1 ? 'once' : `${n} times`} before)` : '');
+  const lines = [];
+  if (r.current.length) {
+    lines.push(`Banned now (${r.current.length}):`);
+    for (const b of r.current) {
+      lines.push(`  ${b.ip}  ${b.reason}  since ${utc(b.banned_at)}, ${b.expires_at ? `until ${utc(b.expires_at)}` : "until it's lifted"}${before(b.seen_before)}`);
+      if (b.hosts.length || b.paths.length) lines.push(`    swept ${b.hosts.join(', ') || 'this server'}: ${b.paths.slice(0, 10).join(', ')}${b.paths.length > 10 ? `, … (${b.paths.length})` : ''}`);
+    }
+  }
+  if (r.history.length) {
+    lines.push(`Last 90 days (${r.history.length}):`);
+    for (const b of r.history) lines.push(`  ${b.ip}  ${b.reason}  ${utc(b.banned_at)}, ${b.unbanned_by === 'expired' ? 'expired' : `unbanned by ${b.unbanned_by ?? 'the server'}`}${before(b.seen_before)}`);
+  }
+  if (r.current.length) lines.push('Unban with: cubby admin bans unban <ip> --yes');
+  return lines.join('\n');
+}
+
 // What a backup retention means (the server's `estimate` from GET /api/admin/backups).
 export function formatRetention(e) {
   if (e.delete.length) return `the next nightly backup deletes ${e.delete.length} (${e.delete.join(', ')}), freeing ${formatBytes(e.frees_bytes)}`;

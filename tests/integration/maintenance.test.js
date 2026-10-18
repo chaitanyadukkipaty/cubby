@@ -116,6 +116,18 @@ describe('admin tasks', () => {
     const left = await rows.getFullList({ filter: pb.filter('project = {:p}', { p: project.id }), sort: 'start' });
     assert.deepEqual(left.map((x) => [x.period, x.views, x.api_requests, x.api_errors, x.peak_active]), [['day', 3, 7, 1, 2], ['hour', 1, 0, 0, 0]]);
   });
+  test('the nightly maintenance deletes ban records older than 90 days', async () => {
+    const pb = new PocketBase(srv.pbUrl);
+    await pb.collection('_superusers').authWithPassword(srv.env.PB_SUPERUSER_EMAIL, srv.env.PB_SUPERUSER_PASSWORD);
+    const day = 24 * 60 * 60 * 1000;
+    const ban = (ip, ago) => pb.collection('cubby_bans').create({ ip, jail: 'cubby-probe', banned_at: new Date(Date.now() - ago * day).toISOString() });
+    await ban('203.0.113.1', 91);
+    await ban('203.0.113.2', 89);
+    const r = await task(['backup']);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /pruned 1 ban records older than 90 days/);
+    assert.deepEqual((await pb.collection('cubby_bans').getFullList()).map((b) => b.ip), ['203.0.113.2']);
+  });
   test('reset-password lets the user log in with the new password', async () => {
     const r = await task(['reset-password', 'owner@test.dev', 'brand-new-pass']);
     assert.equal(r.code, 0, r.stderr);

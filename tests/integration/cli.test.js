@@ -516,6 +516,19 @@ describe('admin commands', () => {
       assert.match(r.stderr, /Usage: cubby admin/);
     }
   });
+  test('admin bans: off until fail2ban is enabled on the server; unbanning needs --yes', async () => {
+    const asAdmin = async (args) => cubby([...args, '--server', srv.url], { env: { CUBBY_TOKEN: await adminToken(srv.url, ADMIN) } });
+    assert.deepEqual(ok(await asAdmin(['admin', 'bans', '--json'])).json, { enabled: false, current: [], history: [] });
+    assert.match(ok(await asAdmin(['admin', 'bans'])).stdout, /fail2ban isn't enabled on this server\. On the server run: sudo cubby-server fail2ban enable/);
+    const noYes = await asAdmin(['admin', 'bans', 'unban', '203.0.113.9']);
+    assert.equal(noYes.code, 1);
+    assert.match(noYes.stderr, /Re-run with --yes/);
+    const off = await asAdmin(['admin', 'bans', 'unban', '203.0.113.9', '--yes', '--json']);
+    assert.equal(off.code, 1);
+    assert.match(off.json.error, /sudo cubby-server fail2ban enable/);
+    assert.match((await asAdmin(['admin', 'bans', 'frob'])).stderr, /Usage: cubby admin/);
+    assert.equal((await asUser(['admin', 'bans'])).code, 1);
+  });
   test('an admin sets backup retention, confirming with --yes when backups would go', async () => {
     const asAdmin = async (args) => cubby([...args, '--server', srv.url], { env: { CUBBY_TOKEN: await adminToken(srv.url, ADMIN) } });
     for (let i = 0; i < 100 && ok(await asAdmin(['admin', 'backups', '--json'])).json.running; i++) await new Promise((res) => setTimeout(res, 100));

@@ -495,6 +495,33 @@ describe('admin output', () => {
     assert.equal(lib.formatBytes(5 * 1024 ** 3), '5.0 GB');
     assert.equal(lib.formatBytes(null), '-');
   });
+  test('formatBans lists bans in force with their sweep, then recent ones', () => {
+    const at = '2026-10-18T06:00:00.000Z';
+    const ban = { ip: '203.0.113.9', jail: 'cubby-probe', reason: 'Scanning for secret files', banned_at: at, expires_at: '2026-10-18T06:10:00.000Z', unbanned_at: null, unbanned_by: null,
+      hosts: ['todo.example.test', 'chat.example.test'], paths: ['/.env', '/.git/config'], seen_before: 2 };
+    const text = lib.formatBans({
+      enabled: true,
+      current: [ban],
+      history: [{ ...ban, ip: '198.51.100.4', jail: 'cubby-ratelimit', reason: 'Too many login attempts', unbanned_at: at, unbanned_by: 'admin a@b.c', hosts: [], paths: [], seen_before: 0 }],
+    });
+    assert.match(text, /^Banned now \(1\):/);
+    assert.match(text, /203\.0\.113\.9 {2}Scanning for secret files {2}since 2026-10-18 06:00 UTC, until 2026-10-18 06:10 UTC {2}\(banned 2 times before\)/);
+    assert.match(text, /swept todo\.example\.test, chat\.example\.test: \/\.env, \/\.git\/config/);
+    assert.match(text, /Last 90 days \(1\):\n {2}198\.51\.100\.4 {2}Too many login attempts {2}2026-10-18 06:00 UTC, unbanned by admin a@b\.c/);
+    assert.match(text, /Unban with: cubby admin bans unban <ip> --yes/);
+    assert.equal(lib.formatBans({ enabled: true, current: [], history: [] }), 'No bans in the last 90 days.');
+    assert.match(lib.formatBans({ enabled: true, current: [{ ...ban, expires_at: null, seen_before: 1 }], history: [] }), /until it's lifted {2}\(banned once before\)/);
+    assert.match(lib.formatBans({ enabled: false, current: [], history: [] }), /^fail2ban isn't enabled on this server/);
+  });
+  test('formatBans keeps long sweeps short, and names who ended a ban', () => {
+    const at = '2026-10-18T06:00:00.000Z';
+    const paths = Array.from({ length: 12 }, (_, i) => `/p${i}`);
+    const ban = { ip: '203.0.113.9', reason: 'Scanning for secret files', banned_at: at, expires_at: at, hosts: [], paths, seen_before: 0 };
+    const text = lib.formatBans({ enabled: false, current: [ban], history: [{ ...ban, unbanned_by: null }, { ...ban, unbanned_by: 'expired' }] });
+    assert.match(text, /swept this server: \/p0, [^\n]*\/p9, … \(12\)/);
+    assert.match(text, /, unbanned by the server/);
+    assert.match(text, /UTC, expired/);
+  });
   test('formatStorage shows each category, the disk, and apps biggest first', () => {
     const text = lib.formatStorage({
       computed_at: '2026-10-17T09:00:00.000Z',

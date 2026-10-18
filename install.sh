@@ -12,6 +12,7 @@
 #   --name "<server name>"     skip the server name question
 #   --http-port <port>         IP mode only: serve on this port instead of 80 (asked when 80 is busy)
 #   --pb-port <port>           host port for the PocketBase admin UI, loopback only (default 8090)
+#   --no-fail2ban              don't install fail2ban to ban IPs that scan for secret files or brute-force logins
 # With all four answered, the install runs without any prompts (unless port 80 or 8090 is busy).
 set -euo pipefail
 
@@ -35,6 +36,7 @@ ADMIN_PASSWORD="${CUBBY_ADMIN_PASSWORD:-}"
 SERVER_NAME="${CUBBY_SERVER_NAME:-}"
 HTTP_PORT="${CUBBY_HTTP_PORT:-}"
 PB_PORT="${CUBBY_PB_PORT:-}"
+FAIL2BAN=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version) WANT_VERSION="${2:-}"; shift 2 ;;
@@ -46,7 +48,8 @@ while [[ $# -gt 0 ]]; do
     --name) SERVER_NAME="${2:-}"; shift 2 ;;
     --http-port) HTTP_PORT="${2:-}"; shift 2 ;;
     --pb-port) PB_PORT="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,17p' "$0" 2>/dev/null || echo "See https://chaitanyadukkipaty.github.io/cubby/#install"; exit 0 ;;
+    --no-fail2ban) FAIL2BAN=0; shift ;;
+    -h|--help) sed -n '2,16p' "$0" 2>/dev/null || echo "See https://chaitanyadukkipaty.github.io/cubby/#install"; exit 0 ;;
     *) die "Unknown option: $1" ;;
   esac
 done
@@ -217,6 +220,15 @@ PB_SUPERUSER_PASSWORD=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | 
 ENV
 
 install -m 755 "$CUBBY_HOME/src/docker/cubby-server" "$CUBBY_BIN"
+F2B_NOTE=""
+if [[ "$FAIL2BAN" == 1 ]]; then
+  info "fail2ban…"
+  # Before the first start, so the container comes up already writing the access log fail2ban reads.
+  if ! F2B_OUT="$(CUBBY_HOME="$CUBBY_HOME" CUBBY_BIN="$CUBBY_BIN" "$CUBBY_BIN" fail2ban enable --no-restart 2>&1)"; then
+    FAIL2BAN=0
+    F2B_NOTE="$(printf '%s' "$F2B_OUT" | tail -n 1)"
+  fi
+fi
 info "Building image (takes a minute)…"
 CUBBY_HOME="$CUBBY_HOME" CUBBY_BIN="$CUBBY_BIN" "$CUBBY_BIN" rebuild >/dev/null
 
@@ -244,4 +256,9 @@ info "Send your friends the URL and the signup code."
 [[ "$HTTP_PORT" == 80 ]] || info "Open port $HTTP_PORT (TCP) in your cloud provider's firewall, or the URL won't load."
 info "PocketBase admin UI: ssh -L $PB_PORT:127.0.0.1:$PB_PORT you@$PUBLIC_IP, then http://localhost:$PB_PORT/_/"
 [[ "$CUBBY_HTTPS" == "1" ]] || info "Running on plain HTTP. Add a domain later with: cubby-server set-domain <domain>"
+if [[ "$FAIL2BAN" == 1 ]]; then
+  info "Bans:         fail2ban bans IPs that scan for secret files or brute-force logins (cubby-server fail2ban status)"
+elif [[ -n "$F2B_NOTE" ]]; then
+  info "! fail2ban couldn't be set up: ${F2B_NOTE#error: }"
+fi
 info "Manage it with: cubby-server status | version | upgrade | backup | restore | code"

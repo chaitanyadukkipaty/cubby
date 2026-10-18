@@ -1,14 +1,16 @@
 // An in-memory stand-in for the superuser PocketBase client, for unit-testing data clears and restores: collections
 // (from fake-pb.js), records with ids, cascades on delete, truncate, uploaded files under
 // <dataDir>/pb_data/storage/<collectionId>/<recordId>/ and a small filter language: clauses joined by `||` / `&&`,
-// each `field op value` (or `relation.id op value`) with op `=`, `!=`, `?=`, `>`, `<` and value a "string", number,
-// true/false or ''. Cascades, relation filters and failed deletes behave like PocketBase 0.40.5 (see deleteRecord).
+// each `field op value` (or `relation.id op value`) with op `=`, `!=`, `?=`, `>`, `>=`, `<`, `<=` and value a "string",
+// number, true/false or ''. Dates are kept and compared in PocketBase's format ("2026-10-18 06:00:00.000Z"). Cascades, relation filters and failed deletes behave like PocketBase 0.40.5 (see deleteRecord).
 // Auth records never expose a password, like the real one.
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fakeCollections } from './fake-pb.js';
 
-const quote = (v) => (typeof v === 'string' ? JSON.stringify(v) : String(v));
+// PocketBase's own date format ("2026-10-18 06:00:00.000Z"), which it stores and compares dates in.
+const pbDate = (d) => (d instanceof Date ? d : new Date(String(d).replace(' ', 'T'))).toISOString().replace('T', ' ');
+const quote = (v) => (v instanceof Date ? JSON.stringify(pbDate(v)) : typeof v === 'string' ? JSON.stringify(v) : String(v));
 
 function parseValue(text) {
   const t = text.trim();
@@ -26,7 +28,7 @@ export function compileFilter(filter, col) {
   if (!filter) return () => true;
   const multiRelation = (name) => col?.fields.some((f) => f.name === name && f.type === 'relation' && (f.maxSelect ?? 1) > 1);
   const ors = filter.split(/\s*\|\|\s*/).map((part) => part.replace(/^\(|\)$/g, '').split(/\s*&&\s*/).map((clause) => {
-    const m = /^([a-zA-Z_][a-zA-Z0-9_.]*)\s*(\?=|!=|=|>|<)\s*(.+)$/.exec(clause.replace(/^\(|\)$/g, '').trim());
+    const m = /^([a-zA-Z_][a-zA-Z0-9_.]*)\s*(\?=|!=|>=|<=|=|>|<)\s*(.+)$/.exec(clause.replace(/^\(|\)$/g, '').trim());
     if (!m) throw Object.assign(new Error(`fake filter: bad clause ${clause}`), { status: 400, response: { message: 'Invalid filter' } });
     const [, path, op, raw] = m;
     const want = parseValue(raw);
@@ -42,7 +44,7 @@ export function compileFilter(filter, col) {
       if (op === '?=') return Array.isArray(v) ? v.includes(want) : v === want;
       if (op === '=') return Array.isArray(v) ? (want === '' ? v.length === 0 : false) : v === want;
       if (op === '!=') return Array.isArray(v) ? (want === '' ? v.length > 0 : true) : v !== want;
-      return op === '>' ? v > want : v < want;
+      return op === '>' ? v > want : op === '>=' ? v >= want : op === '<=' ? v <= want : v < want;
     };
   }));
   return (r) => ors.some((ands) => ands.every((p) => p(r)));
@@ -123,6 +125,7 @@ export function fakePocketBase({ dataDir } = {}) {
         }
         v = (f.maxSelect ?? 1) > 1 ? names : (names[0] ?? '');
       }
+      if (f.type === 'date' && v) v = pbDate(v);
       if (f.type === 'relation' && v) {
         const target = collections.cols.get(f.collectionId);
         for (const id of [].concat(v)) {
@@ -170,6 +173,7 @@ export function fakePocketBase({ dataDir } = {}) {
           return { page, perPage, totalItems: all.length, items: all.slice((page - 1) * perPage, page * perPage).map((r) => view(col(), r)) };
         },
         async getFullList({ filter, sort } = {}) { return matching(filter, sort).map((r) => view(col(), r)); },
+        async getFirstListItem(filter, { sort } = {}) { const [r] = matching(filter, sort); if (!r) throw notFound(); return view(col(), r); },
         async getOne(id) { const r = rowsOf(col()).get(id); if (!r) throw notFound(); return view(col(), r); },
         async create(data) { return writeRecord(col(), data); },
         async update(id, data) { const r = rowsOf(col()).get(id); if (!r) throw notFound(); return writeRecord(col(), data, r); },

@@ -5,6 +5,26 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Scanner and brute-force bans with fail2ban. The installer sets it up on the host (`--no-fail2ban` skips it) with two
+  jails: `cubby-probe` bans IPs that ask for scanner paths (`/.env`, `/.git/config`, `*.php`, `/wp-login.php` …) 5
+  times in 10 minutes, and `cubby-ratelimit` bans IPs that hit the login limit 30 times; bans start at 10 minutes and
+  double for repeat offenders. They block Cubby's web ports only (in Docker's `DOCKER-USER` chain); SSH keeps
+  fail2ban's own jail. Caddy writes the access log fail2ban reads only while it's on, without headers or `?token=`,
+  and keeps it 7 days. Existing servers turn it on with `sudo cubby-server fail2ban enable` (upgrades say so once);
+  `fail2ban status`, `unban <ip>` and `disable` manage it.
+- **Admin → Security** lists current bans (why, when, until, the hosts and paths each IP swept) with **Unban**, and 90
+  days of ban history. Agents get the same with `cubby admin bans` and `cubby admin bans unban <ip> --yes`; every unban
+  shows in the activity log.
+
+### Fixed
+
+- Paths with a part starting with a dot (`/.env`, `/.aws/credentials`, `/admin/.env`) are a 404 instead of the app's
+  page, so vulnerability scans no longer show up as page views or tell scanners a file exists. `/.well-known/` is
+  still served.
+- **Admin → Apps** no longer shows a stray "null" when an admin opens the data panel of an app they own.
+
 ## [0.1.5] - 2026-10-18
 
 ### Added

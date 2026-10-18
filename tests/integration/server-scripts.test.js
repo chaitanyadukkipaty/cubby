@@ -5,7 +5,7 @@
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync, existsSync, cpSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -28,6 +28,7 @@ before(() => {
   mkdirSync(join(origin, 'docker'));
   copyFileSync(join(ROOT, 'docker/ref.sh'), join(origin, 'docker/ref.sh'));
   copyFileSync(join(ROOT, 'docker/cubby-server'), join(origin, 'docker/cubby-server'));
+  cpSync(join(ROOT, 'docker/fail2ban'), join(origin, 'docker/fail2ban'), { recursive: true });
   git(origin, 'init', '-q', '-b', 'main');
   commitVersion('0.1.0', 'first');
   git(origin, 'tag', 'v0.1.0');
@@ -73,7 +74,24 @@ exit 0
 `);
   // uname: install.sh only runs on Linux.
   writeFileSync(join(fakebin, 'uname'), '#!/bin/bash\necho Linux\n');
-  for (const tool of ['docker', 'curl', 'ss', 'uname']) chmodSync(join(fakebin, tool), 0o755);
+  // fail2ban-client: missing (exit 127) until the fake apt-get/dnf "installs" it. Bans live in $STATE/banned as
+  // "<jail> <ip>" lines. systemctl only logs.
+  writeFileSync(join(fakebin, 'fail2ban-client'), `#!/bin/bash
+[[ -f "$STATE/f2b-installed" ]] || exit 127
+echo "fail2ban-client $*" >> "$STATE/f2b-log"
+touch "$STATE/banned"
+case "$1 $3" in
+  "get banned") grep -qx "$2 $4" "$STATE/banned" && echo 1 || echo 0 ;;
+  "set unbanip") if grep -qx "$2 $4" "$STATE/banned"; then grep -vx "$2 $4" "$STATE/banned" > "$STATE/b"; mv "$STATE/b" "$STATE/banned"; echo 1; else echo 0; fi ;;
+  "status "*) printf 'Status for the jail: %s\n\`- Banned IP list:\t%s\n' "$2" "$(sed -n "s/^$2 //p" "$STATE/banned" | tr '\n' ' ')" ;;
+esac
+exit 0
+`);
+  writeFileSync(join(fakebin, 'systemctl'), '#!/bin/bash\necho "systemctl $*" >> "$STATE/log"\n');
+  for (const pm of ['apt-get', 'dnf']) {
+    writeFileSync(join(fakebin, pm), `#!/bin/bash\necho "${pm} $*" >> "$STATE/log"\n[[ "$FAKE_PM" == ${pm} && "$*" == *fail2ban* ]] && touch "$STATE/f2b-installed"\nexit 0\n`);
+  }
+  for (const tool of ['docker', 'curl', 'ss', 'uname', 'fail2ban-client', 'systemctl', 'apt-get', 'dnf']) chmodSync(join(fakebin, tool), 0o755);
 });
 
 function install(ref, channel, runningVersion) {
@@ -96,14 +114,16 @@ function baseEnv(home, state) {
     ...gitEnv,
     PATH: `${fakebin}:${process.env.PATH}`, HOME: home, STATE: state, CUBBY_HOME: home, CUBBY_BIN: join(home, 'bin/cubby-server'),
     CUBBY_REPO: origin, CUBBY_RELEASES_API: 'https://api.example/releases', CUBBY_TEST_NONROOT: '1', CUBBY_HEALTH_SLEEP: '0', CUBBY_HEALTH_TRIES: '3',
-    FAKE_SS: '', FAKE_DOCKER_PS: '', FAKE_DOCKER_PORT: '',
+    FAKE_SS: '', FAKE_DOCKER_PS: '', FAKE_DOCKER_PORT: '', FAKE_PM: 'apt-get',
+    // Host paths (/etc/fail2ban, /etc/systemd/system, /var/log/cubby, /var/lib/cubby) live under this root.
+    CUBBY_HOST_ROOT: join(home, 'host'),
   };
 }
 
 function cubbyServer(inst, args, extraEnv = {}) {
   const env = { ...inst.env, ...extraEnv };
   // Safety: these tests must never reach a real docker or curl (a real `cubby` container may be running).
-  for (const tool of ['docker', 'curl', 'ss']) {
+  for (const tool of ['docker', 'curl', 'ss', 'fail2ban-client', 'systemctl', 'apt-get', 'dnf']) {
     const found = spawnSync('bash', ['-c', `command -v ${tool}`], { env, encoding: 'utf8' }).stdout.trim();
     assert.equal(found, join(fakebin, tool), `${tool} must resolve to the fake`);
   }
@@ -313,7 +333,7 @@ describe('install.sh ports', () => {
     let tty = join(home, 'no-tty');
     if (answers !== null) writeFileSync((tty = join(home, 'tty')), answers);
     const env = { ...baseEnv(home, state), CUBBY_HOME: join(home, 'cubby'), CUBBY_TTY: tty, ...extraEnv };
-    for (const tool of ['docker', 'curl', 'ss', 'uname']) {
+    for (const tool of ['docker', 'curl', 'ss', 'uname', 'fail2ban-client', 'systemctl', 'apt-get', 'dnf']) {
       assert.equal(spawnSync('bash', ['-c', `command -v ${tool}`], { env, encoding: 'utf8' }).stdout.trim(), join(fakebin, tool));
     }
     const r = spawnSync('bash', [join(ROOT, 'install.sh'), '--admin-email', 'admin@example.com', '--admin-password-file', join(home, 'pw'), '--name', 'Test', ...args], { env, encoding: 'utf8' });
@@ -382,11 +402,195 @@ describe('install.sh ports', () => {
     assert.match(r.err, /Port 8090 is in use by postgres\. Free it, or re-run with --pb-port 8091\./);
   });
 
+  test('fail2ban is on by default and the first container already writes the access log; --no-fail2ban skips it', () => {
+    const r = runInstall(['--no-domain']);
+    assert.equal(r.status, 0, r.err + r.out);
+    assert.match(r.env, /CUBBY_FAIL2BAN=1\n/);
+    assert.match(r.log, /apt-get install -y -qq fail2ban/);
+    assert.equal(r.log.match(/docker run/g).length, 1, 'one container start');
+    assert.match(r.log, /docker run .*-e CUBBY_ACCESS_LOG=\/var\/log\/cubby\/access\.log/);
+    assert.match(r.out, /Bans: +fail2ban bans IPs that scan for secret files/);
+
+    const skipped = runInstall(['--no-domain', '--no-fail2ban']);
+    assert.equal(skipped.status, 0, skipped.err + skipped.out);
+    assert.doesNotMatch(skipped.env, /CUBBY_FAIL2BAN=1/);
+    assert.doesNotMatch(skipped.log, /fail2ban|CUBBY_ACCESS_LOG/);
+  });
+
+  test('a host where fail2ban can\'t be installed still gets Cubby, with a note', () => {
+    const r = runInstall(['--no-domain'], { FAKE_PM: 'none' });
+    assert.equal(r.status, 0, r.err + r.out);
+    assert.doesNotMatch(r.env, /CUBBY_FAIL2BAN=1/);
+    assert.match(r.out, /fail2ban couldn't be set up/);
+    assert.match(r.log, /docker run/);
+  });
+
   test('a domain needs ports 80 and 443; --http-port is refused with one', () => {
     const r = runInstall(['--domain', 'cubby.example.com'], { FAKE_SS: '443=caddy' });
     assert.equal(r.status, 1);
     assert.match(r.err, /Port 443 is in use by caddy\. A domain with HTTPS needs ports 80 and 443/);
     assert.equal(r.env, null);
     assert.match(runInstall(['--domain', 'cubby.example.com', '--http-port', '8080']).err, /--http-port only works without a domain/);
+  });
+});
+
+describe('cubby-server fail2ban', () => {
+  const host = (inst, ...p) => join(inst.home, 'host', ...p);
+  const log = (inst) => readFileSync(join(inst.state, 'log'), 'utf8');
+  const dockerRun = (inst) => log(inst).split('\n').findLast((l) => l.startsWith('docker run')) || '';
+  const running = { FAKE_DOCKER_PS: '' };
+
+  test('enable installs fail2ban, Cubby\'s jails and the request watcher, and restarts Cubby with its access log', () => {
+    const inst = install('v0.1.1', 'release', '0.1.1');
+    const r = cubbyServer(inst, ['fail2ban', 'enable'], running);
+    assert.equal(r.status, 0, r.err + r.out);
+    assert.match(log(inst), /apt-get install -y -qq fail2ban/);
+    for (const f of ['filter.d/cubby-probe.conf', 'filter.d/cubby-ratelimit.conf', 'action.d/cubby-events.conf']) {
+      assert.ok(existsSync(host(inst, 'etc/fail2ban', f)), f);
+    }
+    const jail = readFileSync(host(inst, 'etc/fail2ban/jail.d/cubby.conf'), 'utf8');
+    assert.match(jail, new RegExp(`logpath = ${host(inst, 'var/log/cubby/access.log')}\n`));
+    assert.match(jail, new RegExp(`cubby_bin="${join(inst.home, 'bin/cubby-server')}"`));
+    // fail2ban and systemd run the hooks without our environment, so the install's home goes along.
+    assert.match(jail, new RegExp(`cubby_home="${inst.home}"`));
+    assert.match(readFileSync(host(inst, 'etc/systemd/system/cubby-fail2ban.service'), 'utf8'), new RegExp(`Environment=CUBBY_HOME=${inst.home}\\n`));
+    assert.ok(existsSync(host(inst, 'var/log/cubby/access.log')), 'the log exists before fail2ban reads it');
+    for (const d of ['events', 'requests', 'results', 'tmp']) assert.ok(existsSync(host(inst, 'var/lib/cubby/fail2ban', d)), d);
+    assert.match(readFileSync(host(inst, 'etc/systemd/system/fail2ban.service.d/cubby.conf'), 'utf8'), /After=docker\.service/);
+    assert.match(readFileSync(host(inst, 'etc/systemd/system/cubby-fail2ban.path'), 'utf8'), new RegExp(`DirectoryNotEmpty=${host(inst, 'var/lib/cubby/fail2ban/requests')}`));
+    assert.match(log(inst), /systemctl enable --now cubby-fail2ban\.path/);
+    assert.match(log(inst), /systemctl restart fail2ban/);
+    assert.match(envFile(inst), /CUBBY_FAIL2BAN=1\n/);
+    const run = dockerRun(inst);
+    assert.match(run, new RegExp(`-v ${host(inst, 'var/log/cubby')}:/var/log/cubby -e CUBBY_ACCESS_LOG=/var/log/cubby/access\\.log`));
+    assert.match(run, new RegExp(`-v ${host(inst, 'var/lib/cubby/fail2ban')}:/var/lib/cubby/fail2ban -e CUBBY_FAIL2BAN_DIR=/var/lib/cubby/fail2ban`));
+  });
+
+  test('Debian without /var/log/auth.log: the stock sshd jail reads the journal, or fail2ban would not start', () => {
+    const inst = install('v0.1.1', 'release', '0.1.1');
+    mkdirSync(host(inst, 'etc/fail2ban'), { recursive: true });
+    writeFileSync(host(inst, 'etc/fail2ban/paths-debian.conf'), '');
+    assert.equal(cubbyServer(inst, ['fail2ban', 'enable']).status, 0);
+    assert.match(readFileSync(host(inst, 'etc/fail2ban/jail.d/cubby-sshd.conf'), 'utf8'), /\[sshd\]\nbackend = systemd\n/);
+
+    const withLog = install('v0.1.1', 'release', '0.1.1');
+    mkdirSync(host(withLog, 'etc/fail2ban'), { recursive: true });
+    mkdirSync(host(withLog, 'var/log'), { recursive: true });
+    writeFileSync(host(withLog, 'etc/fail2ban/paths-debian.conf'), '');
+    writeFileSync(host(withLog, 'var/log/auth.log'), '');
+    assert.equal(cubbyServer(withLog, ['fail2ban', 'enable']).status, 0);
+    assert.ok(!existsSync(host(withLog, 'etc/fail2ban/jail.d/cubby-sshd.conf')), 'sshd left as shipped');
+  });
+
+  test('installs with dnf too; with no way to install it, says so and changes nothing', () => {
+    const inst = install('v0.1.1', 'release', '0.1.1');
+    assert.equal(cubbyServer(inst, ['fail2ban', 'enable'], { FAKE_PM: 'dnf' }).status, 0);
+    assert.match(log(inst), /dnf install -y -q fail2ban/);
+
+    const none = install('v0.1.1', 'release', '0.1.1');
+    const r = cubbyServer(none, ['fail2ban', 'enable'], { FAKE_PM: 'none' });
+    assert.equal(r.status, 1);
+    assert.match(r.err, /Couldn't install fail2ban\. Install it with your package manager, then re-run: sudo cubby-server fail2ban enable/);
+    assert.doesNotMatch(envFile(none), /CUBBY_FAIL2BAN/);
+    assert.ok(!existsSync(host(none, 'etc/fail2ban/jail.d/cubby.conf')));
+    assert.doesNotMatch(log(none), /docker run/);
+  });
+
+  const events = (inst) => readdirSync(host(inst, 'var/lib/cubby/fail2ban/events')).map((f) => JSON.parse(readFileSync(host(inst, 'var/lib/cubby/fail2ban/events', f), 'utf8')));
+
+  test('event: each ban and unban becomes one event file for Cubby; bad input is refused', () => {
+    const inst = install('v0.1.1', 'release', '0.1.1');
+    assert.equal(cubbyServer(inst, ['fail2ban', 'enable']).status, 0);
+    assert.equal(cubbyServer(inst, ['fail2ban', 'event', 'ban', '203.0.113.9', 'cubby-probe', '600']).status, 0);
+    assert.equal(cubbyServer(inst, ['fail2ban', 'event', 'unban', '2001:db8::7', 'cubby-ratelimit']).status, 0);
+    const got = events(inst).sort((a, b) => a.event.localeCompare(b.event));
+    assert.equal(got.length, 2);
+    assert.deepEqual({ ...got[0], time: 0 }, { event: 'ban', ip: '203.0.113.9', jail: 'cubby-probe', time: 0, bantime: 600 });
+    assert.ok(Math.abs(got[0].time - Date.now() / 1000) < 60);
+    assert.deepEqual({ ...got[1], time: 0 }, { event: 'unban', ip: '2001:db8::7', jail: 'cubby-ratelimit', time: 0 });
+    assert.deepEqual(readdirSync(host(inst, 'var/lib/cubby/fail2ban/tmp')), [], 'written through tmp/, nothing left behind');
+
+    for (const args of [['ban', '1.2.3.4"', 'cubby-probe', '600'], ['ban', '1.2.3.4', 'sshd', '600'], ['ban', '1.2.3.4', 'cubby-probe', '10m'], ['nuke', '1.2.3.4', 'cubby-probe']]) {
+      assert.equal(cubbyServer(inst, ['fail2ban', 'event', ...args]).status, 1, args.join(' '));
+    }
+    assert.equal(events(inst).length, 2);
+  });
+
+  const dir = (inst, d) => host(inst, 'var/lib/cubby/fail2ban', d);
+  const request = (inst, id, body) => writeFileSync(join(dir(inst, 'requests'), `${id}.json`), typeof body === 'string' ? body : JSON.stringify(body));
+  const result = (inst, id) => JSON.parse(readFileSync(join(dir(inst, 'results'), `${id}.json`), 'utf8'));
+
+  test('process-requests answers each unban request from Cubby and empties the queue', () => {
+    const inst = install('v0.1.1', 'release', '0.1.1');
+    assert.equal(cubbyServer(inst, ['fail2ban', 'enable']).status, 0);
+    writeFileSync(join(inst.state, 'banned'), 'cubby-ratelimit 203.0.113.9\nsshd 198.51.100.1\n');
+    request(inst, 'a1', { id: 'a1', action: 'unban', ip: '203.0.113.9' });
+    request(inst, 'b2', { id: 'b2', action: 'unban', ip: '198.51.100.1' });
+    request(inst, 'c3', { id: 'c3', action: 'unban', ip: '1.2.3.4; rm -rf /' });
+    request(inst, 'd4', { id: 'd4', action: 'ban', ip: '1.2.3.4' });
+    request(inst, 'e5', 'not json');
+    const r = cubbyServer(inst, ['fail2ban', 'process-requests']);
+    assert.equal(r.status, 0, r.err);
+    assert.deepEqual(result(inst, 'a1'), { id: 'a1', ok: true });
+    assert.deepEqual(result(inst, 'b2'), { id: 'b2', ok: false, error: "198.51.100.1 isn't banned by Cubby's jails." }, 'never touches other jails');
+    assert.equal(result(inst, 'c3').ok, false);
+    assert.equal(result(inst, 'd4').ok, false);
+    assert.equal(result(inst, 'e5').ok, false);
+    assert.equal(readFileSync(join(inst.state, 'banned'), 'utf8'), 'sshd 198.51.100.1\n');
+    assert.deepEqual(readdirSync(dir(inst, 'requests')), []);
+  });
+
+  test('status lists what each jail has banned; unban lifts a ban from the command line', () => {
+    const inst = install('v0.1.1', 'release', '0.1.1');
+    const off = cubbyServer(inst, ['fail2ban', 'status']);
+    assert.equal(off.status, 0);
+    assert.match(off.out, /fail2ban is off\. Turn it on with: sudo cubby-server fail2ban enable/);
+    assert.equal(cubbyServer(inst, ['fail2ban', 'enable']).status, 0);
+    writeFileSync(join(inst.state, 'banned'), 'cubby-probe 203.0.113.9\n');
+    assert.match(cubbyServer(inst, ['fail2ban', 'status']).out, /cubby-probe[\s\S]*203\.0\.113\.9/);
+    const r = cubbyServer(inst, ['fail2ban', 'unban', '203.0.113.9']);
+    assert.equal(r.status, 0, r.err);
+    assert.match(r.out, /Unbanned 203\.0\.113\.9 \(cubby-probe\)/);
+    const again = cubbyServer(inst, ['fail2ban', 'unban', '203.0.113.9']);
+    assert.equal(again.status, 1);
+    assert.match(again.err, /203\.0\.113\.9 isn't banned by Cubby's jails\./);
+    assert.match(cubbyServer(inst, ['fail2ban', 'unban', 'nope']).err, /not an IP address/);
+  });
+
+  test('disable removes Cubby\'s jails, stops logging and deletes the access log; the package and sshd jail stay', () => {
+    const inst = install('v0.1.1', 'release', '0.1.1');
+    assert.equal(cubbyServer(inst, ['fail2ban', 'enable']).status, 0);
+    writeFileSync(host(inst, 'var/log/cubby/access.log.1'), 'old');
+    const r = cubbyServer(inst, ['fail2ban', 'disable'], running);
+    assert.equal(r.status, 0, r.err);
+    for (const f of ['jail.d/cubby.conf', 'filter.d/cubby-probe.conf', 'filter.d/cubby-ratelimit.conf', 'action.d/cubby-events.conf']) {
+      assert.ok(!existsSync(host(inst, 'etc/fail2ban', f)), f);
+    }
+    assert.ok(!existsSync(host(inst, 'var/log/cubby')), 'no IPs left on disk');
+    assert.ok(!existsSync(host(inst, 'etc/systemd/system/cubby-fail2ban.path')));
+    assert.match(log(inst), /systemctl disable --now cubby-fail2ban\.path/);
+    assert.equal(log(inst).match(/systemctl restart fail2ban/g).length, 2, 'restarted again without the jails');
+    assert.doesNotMatch(log(inst), /apt-get (remove|purge)/);
+    assert.match(envFile(inst), /CUBBY_FAIL2BAN=0\n/);
+    assert.doesNotMatch(dockerRun(inst), /access\.log|fail2ban/);
+    assert.match(r.out, /fail2ban is off/);
+  });
+
+  test('upgrade refreshes Cubby\'s jails when on, suggests them when never set up, and stays quiet once disabled', () => {
+    const on = install('v0.1.0', 'release', '0.1.0');
+    assert.equal(cubbyServer(on, ['fail2ban', 'enable']).status, 0);
+    writeFileSync(host(on, 'etc/fail2ban/filter.d/cubby-probe.conf'), 'stale');
+    const up = cubbyServer(on, ['upgrade', '--no-backup']);
+    assert.equal(up.status, 0, up.err);
+    assert.notEqual(readFileSync(host(on, 'etc/fail2ban/filter.d/cubby-probe.conf'), 'utf8'), 'stale');
+    assert.match(dockerRun(on), /CUBBY_FAIL2BAN_DIR/);
+    assert.doesNotMatch(up.out, /fail2ban enable/);
+
+    const never = install('v0.1.0', 'release', '0.1.0');
+    assert.match(cubbyServer(never, ['upgrade', '--no-backup']).out, /Ban IPs that scan for secret files: sudo cubby-server fail2ban enable/);
+
+    const off = install('v0.1.0', 'release', '0.1.0');
+    writeFileSync(join(off.home, 'cubby.env'), envFile(off) + 'CUBBY_FAIL2BAN=0\n');
+    assert.doesNotMatch(cubbyServer(off, ['upgrade', '--no-backup']).out, /fail2ban/);
   });
 });

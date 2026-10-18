@@ -22,6 +22,7 @@ import { listData, clearData, oneAtATime } from './data.js';
 import { removeAppSnapshots, listSnapshots, findSnapshot, removeSnapshot } from './snapshots.js';
 import { restoreSnapshot } from './restore.js';
 import { loadDashboard } from './dashboard.js';
+import { createBans, bansStore } from './bans.js';
 import { matchRoute } from '../public/js/routes.js';
 import { commandsMarkdown } from '../../cli/src/commands.js';
 import { createUpdateChecker, fetchLatestRelease, scheduleUpdateChecks, updateView } from './updates.js';
@@ -88,6 +89,9 @@ async function appForOwnerOrAdmin(user, slug) {
   if (!project) throw new HttpError(404, `App "${clip(slug)}" not found`);
   return project;
 }
+
+// IPs fail2ban banned on the host, for the Admin page's Security tab (off unless cubby-server enabled fail2ban).
+const bans = createBans({ dir: config.fail2ban.dir, accessLog: config.fail2ban.accessLog, store: bansStore(admin) });
 
 const authLimit = rateLimiter(10, 60_000);
 const deviceLimit = rateLimiter(20, 60_000);
@@ -387,6 +391,13 @@ const routes = [
     return { ok: true, deleted: date, files, warning };
   }],
   ['GET', '/api/admin/activity', 'admin', async (req, user, params, url) => listActivity(user, Object.fromEntries(url.searchParams), { all: true })],
+  // Bans in force and the last 90 days of them. An unban asks the host and waits for its answer (up to 10s).
+  ['GET', '/api/admin/bans', 'admin', async () => bans.list()],
+  ['POST', '/api/admin/bans/:ip/unban', 'admin', async (req, user, { ip }) => {
+    const r = await bans.unban(ip, user);
+    await recordActivity(user, { action: 'admin.ban.unban', summary: `Unbanned ${ip} (${r.jails.join(', ')})` });
+    return r;
+  }],
   // Older deploys of any app (kept for rollback), oldest first; never the current one.
   ['GET', '/api/admin/apps/:slug/deploys', 'admin', async (req, user, { slug }) => listDeploys(await adminProject(slug))],
   ['POST', '/api/admin/apps/:slug/deploys/prune', 'admin', async (req, user, { slug }) => {
@@ -580,6 +591,7 @@ await recoverRuns();
 scheduleJobs();
 metrics.start();
 onShutdown(() => metrics.flush());
+bans.start();
 scheduleUpdateChecks({ checker: updates, isEnabled: updatesOn });
 server.listen(config.port, () => {
   console.log(`cubby ${config.version} on ${config.publicUrl}`);

@@ -116,9 +116,9 @@ describe('runMaintenance', () => {
     assert.deepEqual(order, ['metrics', 'backup']);
     assert.match(errors.join('\n'), /activity prune failed: db busy/);
   });
-  test('the nightly cleanups are the activity prune, the metrics rollup and the snapshot prune', async () => {
+  test('the nightly cleanups are the activity prune, the metrics rollup, the snapshot prune and the bans prune', async () => {
     const { MAINTENANCE } = await import('../../server/src/backups.js');
-    assert.deepEqual(MAINTENANCE.map(([name]) => name), ['activity prune', 'metrics rollup', 'snapshot prune']);
+    assert.deepEqual(MAINTENANCE.map(([name]) => name), ['activity prune', 'metrics rollup', 'snapshot prune', 'bans prune']);
   });
 });
 

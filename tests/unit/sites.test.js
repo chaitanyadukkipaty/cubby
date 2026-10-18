@@ -45,6 +45,9 @@ before(() => {
   writeFileSync(join(root, 'robots.txt'), 'ok');
   writeFileSync(join(root, 'data.bin'), 'xx');
   writeFileSync(join(root, 'docs', 'index.html'), '<h1>docs</h1>');
+  mkdirSync(join(root, '.well-known'), { recursive: true });
+  writeFileSync(join(root, '.well-known', 'assetlinks.json'), '[]');
+  writeFileSync(join(root, '.env'), 'SECRET=1');
   writeFileSync(join(dataDir, 'secret.txt'), 'top secret');
 });
 after(() => rmSync(dataDir, { recursive: true, force: true }));
@@ -73,6 +76,17 @@ describe('serveSite', () => {
   test('SPA fallback: unknown extensionless paths serve the root index.html', async () => {
     for (const p of ['/polls/123', '/settings', '/a/b/c']) assert.equal((await get(p)).body, '<h1>home</h1>', p);
   });
+  test('dotfile paths are a 404, never the app page: only scanners ask for /.env or /.git/config', async () => {
+    for (const p of ['/.env', '/.aws/credentials', '/.git/config', '/admin/.env', '/.docker/laravel/app/.env', '/a/.hg/dirstate', '/%2eenv']) {
+      const r = await get(p);
+      assert.equal(r.status, 404, p);
+      assert.ok(!r.body.includes('home') && !r.body.includes('SECRET'), p);
+    }
+  });
+  test('/.well-known/ still serves deployed files, without the SPA fallback', async () => {
+    assert.equal((await get('/.well-known/assetlinks.json')).body, '[]');
+    assert.equal((await get('/.well-known/security')).status, 404);
+  });
   test('missing files with an extension are a real 404', async () => {
     const r = await get('/assets/missing.js');
     assert.equal(r.status, 404);
@@ -97,7 +111,7 @@ describe('serveSite', () => {
       return page;
     };
     for (const p of ['/', '/docs', '/polls/123', '/index.html']) assert.equal(await served(p), true, p);
-    for (const p of ['/assets/app-abc.js', '/favicon.svg', '/robots.txt', '/assets/missing.js', '/%E0%A4%A']) assert.equal(await served(p), false, p);
+    for (const p of ['/assets/app-abc.js', '/favicon.svg', '/robots.txt', '/assets/missing.js', '/%E0%A4%A', '/.env', '/.git/config']) assert.equal(await served(p), false, p);
     assert.equal(await served('/', { slug: 'empty', current_deploy: '' }), false);
   });
   test('apps with no deploy explain how to deploy', async () => {

@@ -128,8 +128,13 @@ export async function serveSite(req, res, project, pathname) {
   }
   let file = join(root, rel);
   if (!file.startsWith(root + sep) && file !== root) return fail(400, 'Bad request');
+  // No client-side route starts with a dot: /.env, /.git/config and the like come from vulnerability scanners. A 404
+  // (not the app page) tells them nothing is there and keeps them out of page views. /.well-known/ stays servable.
+  const dotted = rel.split(/[/\\]/).some((part) => part.startsWith('.'));
+  if (dotted && !rel.startsWith('.well-known/')) return fail(404, 'Not found');
 
   if (!(await exists(file))) {
+    if (dotted) return fail(404, 'Not found');
     if (await exists(join(file, 'index.html'))) file = join(file, 'index.html');
     else if (extname(rel)) return fail(404, 'Not found');
     else file = join(root, 'index.html'); // SPA fallback for client-side routes
