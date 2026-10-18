@@ -93,6 +93,39 @@ export function overviewKpis(m, server) {
   ];
 }
 
+// ---------- Security (GET /api/admin/bans) ----------
+
+/** fail2ban runs on the host, so only the server can turn it on. */
+export const FAIL2BAN_ENABLE = 'sudo cubby-server fail2ban enable';
+
+/** When a ban in force lifts by itself: "lifts in 8 min", or "until unbanned" for a permanent one. */
+export function banExpiry(b, now = Date.now()) {
+  if (!b.expires_at) return 'until unbanned';
+  const min = Math.floor((Date.parse(b.expires_at) - now) / 60_000);
+  if (min < 1) return 'lifts in under a minute';
+  if (min < 60) return `lifts in ${min} min`;
+  if (min < 48 * 60) return `lifts in ${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''}`;
+  return `lifts in ${Math.floor(min / (24 * 60))} days`;
+}
+
+/** The apps a scanner swept (the paths it asked for are listed apart), or null when there's nothing to say. */
+export function banSweep(b) {
+  if (!b.hosts?.length) return null;
+  return b.hosts.length === 1 ? `Swept ${b.hosts[0]}` : `Swept ${b.hosts.length} apps: ${b.hosts.join(', ')}`;
+}
+
+/** An IP banned before (in the last 90 days) is worth a second look. */
+export const seenBefore = (n) => (!n ? null : n === 1 ? 'banned once before' : `banned ${n} times before`);
+
+/** How a past ban ended, from its `unbanned_by` ("expired", "admin <email>", or done on the server). */
+export function banOutcome(b) {
+  const by = b.unbanned_by;
+  if (!by || by === 'expired') return 'Expired';
+  return by.startsWith('admin ') ? `Unbanned by ${by.slice(6)}` : `Unbanned ${by}`;
+}
+
+export const unbanConfirm = (b) => `Unban ${b.ip} (${b.reason})? It can reach every app on this server again right away.`;
+
 // The labels of the settings form, for the server's messages, which name the field key ("job_timeout_s must be …").
 const SETTING_LABELS = { max_apps_per_user: 'Apps per user', max_deploy_mb: 'Max deploy (MB)', job_timeout_s: 'Time limit per run (seconds)', backup_keep: 'Nightly backups to keep' };
 

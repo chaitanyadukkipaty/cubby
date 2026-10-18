@@ -1,10 +1,11 @@
 // /admin[/<tab>]: the whole server. Overview (server-wide numbers, views chart, busiest apps and agents, disk),
 // Users, Apps (old deploys, clear data, delete), Agents (seen across every user), Jobs, Settings (name, invites,
-// limits, backup retention) and Storage (disk bar, per-app sizes, backups, snapshots). The tab is in the path so a
+// limits, backup retention), Storage (disk bar, per-app sizes, backups, snapshots) and Security (IPs fail2ban
+// banned, what scanners swept, unban). The tab is in the path so a
 // reload keeps it; /admin/apps/<slug> is an admin clearing data of any app. Words and numbers come from
 // js/admin-view.js (pure, unit-tested).
 import { h, ago, fmtBytes, fmtCount, displayName, inviteText, jobState, updateNotice, versionLabel } from '../helpers.js';
-import { activeAgents, backupDelete, diskBar, overviewKpis, purgeRule, restoreCommand, retentionText, settingsError } from '../admin-view.js';
+import { activeAgents, backupDelete, banExpiry, banOutcome, banSweep, diskBar, FAIL2BAN_ENABLE, overviewKpis, purgeRule, restoreCommand, retentionText, seenBefore, settingsError, unbanConfirm } from '../admin-view.js';
 import { chartBuckets, timeTicks } from '../charts.js';
 import { chartSummary } from '../app-view.js';
 import { monogram } from '../feed.js';
@@ -14,7 +15,7 @@ import { agentBadge, guarded, toast, copy, copyChip, pageHeader } from '../ui.js
 import { timeChart } from './chart-ui.js';
 import { renderData } from './data.js';
 
-const TAB_LABELS = { overview: 'Overview', users: 'Users', apps: 'Apps', agents: 'Agents', jobs: 'Jobs', settings: 'Settings', storage: 'Storage' };
+const TAB_LABELS = { overview: 'Overview', users: 'Users', apps: 'Apps', agents: 'Agents', jobs: 'Jobs', settings: 'Settings', storage: 'Storage', security: 'Security' };
 const ACTIVITY_LIMIT = 500;
 
 const kpiStrip = (items, label) => h('div', { class: `kpis n${items.length}`, role: 'list', 'aria-label': label }, items.map((k) => h('div', { role: 'listitem', class: k.alert ? 'alert' : null },
@@ -379,6 +380,60 @@ async function storageTab(body) {
   );
 }
 
+// ---------- Security ----------
+
+function bannedNow(bans) {
+  return h('div', { class: 'card table-wrap' }, h('table', { 'aria-label': 'Banned now' },
+    h('thead', {}, h('tr', {}, h('th', {}, 'IP'), h('th', {}, 'Why'), h('th', { class: 'hide-sm' }, 'Banned'), h('th', {}, 'Lifts'), h('th', {}, h('span', { class: 'sr-only' }, 'Actions')))),
+    h('tbody', {}, bans.map((b) => {
+      const paths = h('ul', { class: 'mono tiny', hidden: true, 'aria-label': `Paths ${b.ip} asked for` }, b.paths.map((p) => h('li', {}, p)));
+      const toggle = b.paths.length ? h('button', { type: 'button', class: 'sm', 'aria-expanded': 'false', 'aria-label': `Show paths ${b.ip} asked for`, onclick: () => {
+        paths.hidden = !paths.hidden;
+        toggle.setAttribute('aria-expanded', String(!paths.hidden));
+      } }, `${b.paths.length} path${b.paths.length === 1 ? '' : 's'}`) : null;
+      const before = seenBefore(b.seen_before);
+      return h('tr', { 'aria-label': b.ip },
+        h('td', {}, h('span', { class: 'mono' }, b.ip), before ? h('div', {}, h('span', { class: 'badge danger' }, before)) : null),
+        h('td', {}, b.reason, banSweep(b) ? h('div', { class: 'muted small' }, banSweep(b)) : null, toggle ? h('div', {}, toggle) : null, paths),
+        h('td', { class: 'muted hide-sm nowrap' }, ago(b.banned_at)),
+        h('td', { class: 'muted nowrap' }, banExpiry(b)),
+        h('td', { class: 'actions' }, h('button', { type: 'button', class: 'sm', 'aria-label': `Unban ${b.ip}`, onclick: guarded(async () => {
+          if (!confirm(unbanConfirm(b))) return;
+          await api('POST', `/api/admin/bans/${encodeURIComponent(b.ip)}/unban`);
+          toast(`Unbanned ${b.ip}`);
+          rerender();
+        }) }, 'Unban')));
+    }))));
+}
+
+function pastBans(bans) {
+  return h('div', { class: 'card table-wrap' }, h('table', { 'aria-label': 'Bans in the last 90 days' },
+    h('thead', {}, h('tr', {}, h('th', {}, 'IP'), h('th', {}, 'Why'), h('th', { class: 'hide-sm' }, 'Banned'), h('th', {}, 'Ended'))),
+    h('tbody', {}, bans.map((b) => h('tr', { 'aria-label': b.ip },
+      h('td', {}, h('span', { class: 'mono' }, b.ip), seenBefore(b.seen_before) ? h('div', { class: 'muted tiny' }, seenBefore(b.seen_before)) : null),
+      h('td', {}, b.reason, banSweep(b) ? h('div', { class: 'muted small' }, banSweep(b)) : null),
+      h('td', { class: 'muted hide-sm nowrap' }, ago(b.banned_at)),
+      h('td', { class: 'muted small' }, banOutcome(b)))))));
+}
+
+async function securityTab(body) {
+  const r = await api('GET', '/api/admin/bans');
+  const intro = h('p', { class: 'muted small', 'aria-label': 'About bans' }, 'fail2ban on this server bans IPs that scan apps for secret files or keep hitting the login limit. A ban blocks every app on this server, lifts by itself, and lasts longer each time an IP comes back. Records are kept 90 days.');
+  if (!r.enabled && !r.current.length && !r.history.length) {
+    return body.replaceChildren(h('div', { class: 'card stack', role: 'region', 'aria-label': 'fail2ban is off' },
+      h('b', {}, "fail2ban isn't enabled on this server."),
+      h('p', { class: 'muted small' }, 'It bans IPs that scan apps for secret files or keep hitting the login limit. Turn it on from the server:'),
+      h('div', {}, copyChip(FAIL2BAN_ENABLE, { what: 'Command copied', label: 'Copy command' }))));
+  }
+  body.replaceChildren(intro,
+    r.enabled ? null : h('p', { class: 'small warn' }, 'fail2ban is off on this server now; these are its earlier bans. Turn it back on with ', h('code', {}, FAIL2BAN_ENABLE), '.'),
+    sectionH(`Banned now (${r.current.length})`),
+    r.current.length ? bannedNow(r.current) : h('p', { class: 'muted small' }, 'Nobody is banned right now.'),
+    sectionH(`Last 90 days (${r.history.length})`),
+    r.history.length ? pastBans(r.history) : h('p', { class: 'muted small' }, 'No earlier bans.'),
+    h('p', { class: 'muted small' }, 'On the server, ', h('code', {}, 'sudo cubby-server fail2ban status'), ' shows the same, and works even when Cubby is down.'));
+}
+
 async function waitForBackup() {
   for (let i = 0; i < 600; i++) {
     await new Promise((r) => setTimeout(r, 1000));
@@ -390,7 +445,7 @@ async function waitForBackup() {
   }
 }
 
-const TABS = { overview: overviewTab, users: usersTab, apps: appsTab, agents: agentsTab, jobs: jobsTab, settings: settingsTab, storage: storageTab };
+const TABS = { overview: overviewTab, users: usersTab, apps: appsTab, agents: agentsTab, jobs: jobsTab, settings: settingsTab, storage: storageTab, security: securityTab };
 
 export async function renderAdmin(el, route) {
   const tab = route?.tab ?? 'overview';

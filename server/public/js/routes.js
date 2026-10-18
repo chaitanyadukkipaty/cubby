@@ -4,7 +4,7 @@ const PAGES = new Map([['/', 'home'], ['/apps', 'apps'], ['/agents', 'agents'], 
 // An app page's tabs, in order. The first is the default and has no path segment of its own.
 export const APP_TABS = ['overview', 'activity', 'deploys', 'jobs', 'env', 'data', 'settings'];
 // The admin page's tabs, the same way: /admin is the overview, /admin/storage another tab.
-export const ADMIN_TABS = ['overview', 'users', 'apps', 'agents', 'jobs', 'settings', 'storage'];
+export const ADMIN_TABS = ['overview', 'users', 'apps', 'agents', 'jobs', 'settings', 'storage', 'security'];
 // /admin[/<tab>], or /admin/apps/<slug>: an admin clearing data of any app.
 const ADMIN_PAGE = /^\/admin(?:\/([a-z]+)(?:\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*))?)?$/;
 // Same shape as SLUG_RE in server/src/config.js.

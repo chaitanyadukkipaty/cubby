@@ -151,3 +151,39 @@ describe('settingsError()', () => {
     assert.equal(v.settingsError(undefined), 'Saving failed');
   });
 });
+
+describe('the Security tab (GET /api/admin/bans rows)', () => {
+  const now = Date.parse('2026-10-18T06:00:00Z');
+  const ban = { ip: '203.0.113.9', jail: 'cubby-probe', reason: 'Scanning for secret files', banned_at: '2026-10-18T05:58:00.000Z', expires_at: '2026-10-18T06:08:00.000Z',
+    unbanned_at: null, unbanned_by: null, hosts: ['todo.example.test', 'chat.example.test'], paths: ['/.env', '/.git/config'], seen_before: 0 };
+
+  test('banExpiry: when a ban lifts by itself', () => {
+    assert.equal(v.banExpiry(ban, now), 'lifts in 8 min');
+    assert.equal(v.banExpiry({ ...ban, expires_at: '2026-10-18T06:00:30.000Z' }, now), 'lifts in under a minute');
+    assert.equal(v.banExpiry({ ...ban, expires_at: '2026-10-18T09:30:00.000Z' }, now), 'lifts in 3 h 30 min');
+    assert.equal(v.banExpiry({ ...ban, expires_at: '2026-10-20T07:00:00.000Z' }, now), 'lifts in 2 days');
+    assert.equal(v.banExpiry({ ...ban, expires_at: null }, now), 'until unbanned');
+  });
+  test('banSweep: what a scanner swept, or nothing to say', () => {
+    assert.equal(v.banSweep(ban), 'Swept 2 apps: todo.example.test, chat.example.test');
+    assert.equal(v.banSweep({ ...ban, hosts: ['todo.example.test'] }), 'Swept todo.example.test');
+    assert.equal(v.banSweep({ ...ban, hosts: [], paths: [] }), null);
+  });
+  test('seenBefore: repeat offenders stand out', () => {
+    assert.equal(v.seenBefore(0), null);
+    assert.equal(v.seenBefore(1), 'banned once before');
+    assert.equal(v.seenBefore(4), 'banned 4 times before');
+  });
+  test('banOutcome: how a past ban ended', () => {
+    assert.equal(v.banOutcome({ ...ban, unbanned_by: 'expired' }), 'Expired');
+    assert.equal(v.banOutcome({ ...ban, unbanned_by: 'admin a@b.c' }), 'Unbanned by a@b.c');
+    assert.equal(v.banOutcome({ ...ban, unbanned_by: 'on the server (cubby-server or fail2ban)' }), 'Unbanned on the server (cubby-server or fail2ban)');
+    assert.equal(v.banOutcome({ ...ban, unbanned_by: null }), 'Expired');
+  });
+  test('unbanConfirm: says what unbanning does', () => {
+    assert.equal(v.unbanConfirm(ban), 'Unban 203.0.113.9 (Scanning for secret files)? It can reach every app on this server again right away.');
+  });
+  test('the server command that turns it on', () => {
+    assert.equal(v.FAIL2BAN_ENABLE, 'sudo cubby-server fail2ban enable');
+  });
+});

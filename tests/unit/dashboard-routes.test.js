@@ -25,9 +25,10 @@ describe('matchRoute()', () => {
     assert.ok(APP_TABS.indexOf('data') < APP_TABS.indexOf('settings'));
   });
   test('an admin tab is part of the path, so a reload keeps it', () => {
-    assert.deepEqual(ADMIN_TABS, ['overview', 'users', 'apps', 'agents', 'jobs', 'settings', 'storage']);
+    assert.deepEqual(ADMIN_TABS, ['overview', 'users', 'apps', 'agents', 'jobs', 'settings', 'storage', 'security']);
     for (const tab of ADMIN_TABS.slice(1)) assert.deepEqual(matchRoute(`/admin/${tab}`), { name: 'admin', tab });
     assert.deepEqual(matchRoute('/admin/storage/'), { name: 'admin', tab: 'storage' });
+    assert.equal(adminPath('security'), '/admin/security');
   });
   test("an admin's data page for any app lives under Admin → Apps", () => {
     assert.deepEqual(matchRoute('/admin/apps/polls'), { name: 'admin', tab: 'apps', slug: 'polls' });
