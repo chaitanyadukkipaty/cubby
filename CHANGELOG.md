@@ -5,6 +5,8 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-18
+
 ### Added
 
 - Scanner and brute-force bans with fail2ban. The installer sets it up on the host (`--no-fail2ban` skips it) with two
@@ -12,7 +14,8 @@ All notable changes to Cubby are documented here. The format follows
   times in 10 minutes, and `cubby-ratelimit` bans IPs that hit the login limit 30 times; bans start at 10 minutes and
   double for repeat offenders. They block Cubby's web ports only (in Docker's `DOCKER-USER` chain); SSH keeps
   fail2ban's own jail. Caddy writes the access log fail2ban reads only while it's on, without headers or `?token=`,
-  and keeps it 7 days. Existing servers turn it on with `sudo cubby-server fail2ban enable` (upgrades say so once);
+  and keeps it 7 days. Existing servers turn it on once with `sudo cubby-server fail2ban enable` after upgrading (later upgrades
+  remind you until it's on);
   `fail2ban status`, `unban <ip>` and `disable` manage it.
 - **Admin → Security** lists current bans (why, when, until, the hosts and paths each IP swept) with **Unban**, and 90
   days of ban history. Agents get the same with `cubby admin bans` and `cubby admin bans unban <ip> --yes`; every unban
