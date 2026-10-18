@@ -109,7 +109,7 @@ else's platform and you can't bring your own agent.
 - **A dashboard that follows your agents.** Home is a timeline of what your agents did, one line each, grouped by day: a deploy you don't like is one **Roll back** away, and a failed job comes with a fix-it prompt to paste into your agent. Next to it: who's on your apps right now, views over the last 7 days, your agents, and ready-made prompts for what to ask next. **Agents** lists every agent you connected, with the apps it touched; rename or revoke one there, or open it to see everything it did. Each app has its own page with tabs (Overview charts, Activity, Deploys with rollback, Jobs, Env, Data and Settings), and every tab has its own link.
 - **Quick to get around.** Press ⌘K (Ctrl+K) anywhere in the dashboard to jump to a page or one of your apps, copy the setup prompt or a common command, switch theme or log out.
 - **Many servers, one agent.** Belong to your friends' cubby and your team's: one skill and one CLI know them all by name, even when they run different Cubby versions.
-- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, and versioned releases: the Admin page tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins see where the disk goes on the Admin page's **Storage** tab (a bar of database, uploads, live and old deploys, backups, snapshots and free space; every app's size; backups to take, delete or copy the restore command for), and their agent can do the same with `cubby admin storage`, `cubby admin backups` and `cubby admin deploys`.
+- **Easy to run.** One install script, one Docker container, automatic HTTPS, nightly backups, scanner bans with fail2ban, and versioned releases: the Admin page tells you when one is out, and `cubby-server upgrade` installs it after a backup. Admins see where the disk goes on the Admin page's **Storage** tab (a bar of database, uploads, live and old deploys, backups, snapshots and free space; every app's size; backups to take, delete or copy the restore command for), and their agent can do the same with `cubby admin storage`, `cubby admin backups` and `cubby admin deploys`.
 
 <table>
 <tr>
@@ -170,7 +170,8 @@ curl -fsSL https://raw.githubusercontent.com/chaitanyadukkipaty/cubby/main/insta
 
 `--domain`, `--no-domain`, `--admin-email`, `--admin-password-file` and `--name` answer the questions up front, for an
 install with no prompts. `--http-port <port>` (IP mode) and `--pb-port <port>` (PocketBase admin, loopback only,
-default 8090) pick the host ports; without a terminal, a busy port stops the install with the option to pass.
+default 8090) pick the host ports; without a terminal, a busy port stops the install with the option to pass. `--no-fail2ban` skips
+the scanner bans described [below](#scanners-and-brute-force).
 
 When a new release is out, the Admin page says so, with the release notes. On the server:
 
@@ -223,6 +224,35 @@ delete always removes both. Deleting the newest backup prints a warning; deletin
 add `--leave-none`. The storage numbers are measured when you ask and reused for 5 minutes. Restoring stays on the
 server, on purpose: `sudo cubby-server restore <date>`. Anyone who isn't an admin gets a clear "needs an admin
 account" error.
+
+### Scanners and brute force
+
+Every new app gets its own HTTPS certificate, and certificates are published in public logs that vulnerability
+scanners watch. So soon after you deploy, bots sweep every app for secret files: `/.env`, `/.git/config`,
+`/.aws/credentials`, `/wp-login.php` and the like. Cubby never serves any of those (a path with a part starting with a
+dot is a plain 404, except `/.well-known/`), and they don't count as page views.
+
+To stop them coming back, the installer sets up [fail2ban](https://github.com/fail2ban/fail2ban) on the host, with
+two jails of Cubby's own:
+
+| Jail | Bans an IP that | For |
+| --- | --- | --- |
+| `cubby-probe` | asks for scanner paths (dotfiles, `*.php`, `/wp-*`, `/cgi-bin/`, `../` …) 5 times in 10 minutes | 10 minutes, doubling for each new ban |
+| `cubby-ratelimit` | hits the login/signup limit (10 a minute) 30 times in 10 minutes | 10 minutes, doubling |
+
+A ban blocks Cubby's web ports only; SSH keeps fail2ban's own `sshd` jail. Bans live in Docker's `DOCKER-USER` chain,
+because ports Docker publishes skip the host's normal firewall chain. For fail2ban to see requests, Caddy writes an access log
+to `/var/log/cubby/` (root only): no headers or cookies, no `?token=`, kept 7 days.
+
+See and lift bans on **Admin → Security** (current bans with the hosts and paths each IP swept, and 90 days of
+history), with `cubby admin bans` from your agent, or on the server:
+
+| Command | Does |
+| --- | --- |
+| `sudo cubby-server fail2ban status` | What each of Cubby's jails has banned |
+| `sudo cubby-server fail2ban unban <ip>` | Lift a ban (works even when Cubby is down) |
+| `sudo cubby-server fail2ban enable` | Install fail2ban and the jails. Servers installed before it existed run this once after upgrading |
+| `sudo cubby-server fail2ban disable` | Remove Cubby's jails and delete the access log; fail2ban and its `sshd` jail stay |
 
 ## Connect your agent and build
 
@@ -550,5 +580,8 @@ for groups who trust each other, not as a hostile multi-tenant cloud.
   deleting it) are in the admin's log, not yours, except data clears and deleted deploys, which are in both and show
   the admin as who did it. An app's history stays after the app is deleted, until it ages
   out; deleting a user deletes their history.
+- Scanner bans are per IP: a scan spread over many addresses gets a few requests through from each (all 404s).
+  IPv6 visitors reach Cubby through Docker's proxy, so they can't be banned, and fail2ban is set up only where `apt-get` or
+  `dnf` can install it.
 - Not yet supported: server code that runs per request (API endpoints, hooks), custom domains per app, single sign-on
   across apps, app emails.

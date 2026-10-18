@@ -42,6 +42,25 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   minutes are skipped on purpose, and `cubby jobs run` waits on the HTTP response, which is why the time limit is
   capped under fetch's 300s headers timeout.
 
+## fail2ban (docker/fail2ban, `cubby-server fail2ban`)
+
+- The container never gets fail2ban's socket: anything that can talk to it can run commands as root on the host
+  (`set <jail> addaction`). Cubby and the host share only files in `/var/lib/cubby/fail2ban`: `events/` (written by the
+  `cubby-events` action), `requests/` (unban requests from Cubby, answered in `results/` by `process-requests`, run by
+  the `cubby-fail2ban.path` unit). Every file goes through `tmp/` then a rename, and requests are untrusted: they can
+  only lift a ban in Cubby's own jails. A leftover file in `requests/` re-triggers the path unit, so never write
+  temp files there.
+- Bans are in `DOCKER-USER` on ports 80,443: after DNAT the port is the container's, whatever host port Cubby uses.
+  Don't move them to INPUT (published ports skip it) or add Cubby's jails to `recidive`/allports (that bans SSH too).
+- fail2ban and systemd run the hooks with no environment: `CUBBY_HOME` goes in the jail (`cubby_home`) and the
+  service (`Environment=`). `systemctl restart fail2ban` (not `reload`) is needed to add actions, and a restart
+  re-issues every active ban, so Cubby must treat repeated `ban` events as the same ban.
+- Filter regexes run in fail2ban (Python, configparser: `%` is written `%%`) and in tests/unit/fail2ban-filters.test.js
+  (JavaScript). Keep to syntax both read the same; a leading `(?i)` is the only flag. Check changes with real
+  `fail2ban-regex` against real Caddy lines, not only the unit test.
+- Caddy writes the access log only when `CUBBY_ACCESS_LOG` is set (fail2ban on), without headers or `?token=`, kept
+  7 days; `disable` deletes it. Don't log more fields or keep it longer: it's the only raw-IP log Cubby has.
+
 ## Schema changes must never lose data
 
 - Push is non-destructive on purpose: fields/collections missing from `schema.json` are kept and reported as `kept`.
