@@ -74,6 +74,7 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   before each metrics read, and on SIGTERM via `onShutdown`). Flushes must stay serialized, or two can create the
   same bucket. The visitor salt lives only in memory and rotates per UTC day; never persist it or store raw IPs.
   Hourly `peak_active` merges as a max (`MAXES`), everything else adds up (`COUNTERS`): a new field must go in one.
+  `restored_accounts` counts accounts a data restore created, so the metrics route can subtract them from signups.
   `/pb` traffic is counted in `handleApp` around `proxyPocketBase`, never inside its checks.
   `CUBBY_TEST_CLOCK_FILE` shifts the metrics clock for integration tests only; don't set it anywhere else.
 - `/cli.tgz` is packed once at boot from `cli/` (src, template, skill) and stamped with the version the server
