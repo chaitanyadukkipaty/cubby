@@ -19,19 +19,29 @@ import {
 } from './servers.js';
 import { helpJson, helpText } from './commands.js';
 
-const { values: flags, positionals } = parseArgs({
-  allowPositionals: true,
-  options: {
-    email: { type: 'string' }, password: { type: 'string' }, server: { type: 'string' },
-    dir: { type: 'string' }, name: { type: 'string' }, file: { type: 'string' }, message: { type: 'string', short: 'm' },
-    token: { type: 'string' }, code: { type: 'string' }, client: { type: 'string' }, 'no-skill': { type: 'boolean' }, wait: { type: 'boolean' }, 'no-wait': { type: 'boolean' },
-    'no-install': { type: 'boolean' }, 'no-build': { type: 'boolean' }, unlisted: { type: 'boolean' }, listed: { type: 'boolean' },
-    yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
-    run: { type: 'string' }, limit: { type: 'string' }, agent: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
-    keep: { type: 'string' }, range: { type: 'string' },
-    collections: { type: 'string' }, drop: { type: 'boolean' }, reason: { type: 'string' },
-    collection: { type: 'string' }, filter: { type: 'string' }, ids: { type: 'string' }, 'dry-run': { type: 'boolean' }, 'all-matching': { type: 'boolean' }, overwrite: { type: 'boolean' }, wipe: { type: 'boolean' },
-  },
+// A bad flag is a usage error like any other: one line (JSON with --json) and exit 1, not parseArgs' stack trace.
+function parseFlags(options) {
+  try {
+    return parseArgs({ allowPositionals: true, options });
+  } catch (err) {
+    if (!err.code?.startsWith('ERR_PARSE_ARGS')) throw err;
+    const message = err.message.replace(/\s*\n\s*/g, ' ');
+    if (process.argv.includes('--json')) console.log(JSON.stringify({ error: message }, null, 2));
+    else console.error(formatError({ message }));
+    process.exit(1);
+  }
+}
+
+const { values: flags, positionals } = parseFlags({
+  email: { type: 'string' }, password: { type: 'string' }, server: { type: 'string' },
+  dir: { type: 'string' }, name: { type: 'string' }, file: { type: 'string' }, message: { type: 'string', short: 'm' },
+  token: { type: 'string' }, code: { type: 'string' }, client: { type: 'string' }, 'no-skill': { type: 'boolean' }, wait: { type: 'boolean' }, 'no-wait': { type: 'boolean' },
+  'no-install': { type: 'boolean' }, 'no-build': { type: 'boolean' }, unlisted: { type: 'boolean' }, listed: { type: 'boolean' },
+  yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
+  run: { type: 'string' }, limit: { type: 'string' }, agent: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
+  keep: { type: 'string' }, range: { type: 'string' },
+  collections: { type: 'string' }, drop: { type: 'boolean' }, reason: { type: 'string' },
+  collection: { type: 'string' }, filter: { type: 'string' }, ids: { type: 'string' }, 'dry-run': { type: 'boolean' }, 'all-matching': { type: 'boolean' }, overwrite: { type: 'boolean' }, wipe: { type: 'boolean' },
 });
 
 const CLI_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;

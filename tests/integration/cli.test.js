@@ -77,6 +77,18 @@ describe('basics', () => {
     const j = await cubby(['projects', '--json']);
     assert.match(j.json.error, /Not logged in/);
   });
+  test('bad flags give one error line (or JSON with --json) and exit 1, never a stack trace', async () => {
+    for (const args of [['whoami', '--bogus'], ['activity', '--limit', '-1'], ['rollback', '-x']]) {
+      const r = await cubby(args);
+      assert.equal(r.code, 1, args.join(' '));
+      assert.match(r.stderr, /^error: \S.*\n$/, `one line: ${r.stderr}`);
+      assert.doesNotMatch(r.stderr, /\n\s+at |ERR_PARSE_ARGS/);
+      const j = await cubby([...args, '--json']);
+      assert.equal(j.code, 1);
+      assert.equal(typeof j.json?.error, 'string', `JSON on stdout: ${j.stdout}${j.stderr}`);
+    }
+    assert.match((await cubby(['whoami', '--bogus', '--json'])).json.error, /Unknown option '--bogus'/);
+  });
   test('unreachable servers produce a readable error', async () => {
     const r = await cubby(['whoami'], { env: { CUBBY_TOKEN: 'hk_x', CUBBY_SERVER: 'http://127.0.0.1:1' } });
     assert.equal(r.code, 1);
