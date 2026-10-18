@@ -23,6 +23,7 @@ All notable changes to Cubby are documented here. The format follows
 - Paths with a part starting with a dot (`/.env`, `/.aws/credentials`, `/admin/.env`) are a 404 instead of the app's
   page, so vulnerability scans no longer show up as page views or tell scanners a file exists. `/.well-known/` is
   still served.
+- **Admin → Apps** no longer shows a stray "null" when an admin opens the data panel of an app they own.
 
 ## [0.1.5] - 2026-10-18
 
