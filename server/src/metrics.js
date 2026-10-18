@@ -155,15 +155,15 @@ export async function rollupMetrics({ store, now = Date.now, batch = 500 }) {
 export function summarizeMetrics(projects, report) {
   const apps = projects.map((p) => {
     const r = report[p.id];
-    return { app: p.slug, owner: p.expand?.owner?.email ?? null, views: r.views, visitors: r.visitors, api_requests: r.api_requests, api_errors: r.api_errors, active_now: r.active_now, from: r.from, to: r.to };
+    return { app: p.slug, owner: p.expand?.owner?.email ?? null, views: r.views, visitors: r.visitors, api_requests: r.api_requests, api_errors: r.api_errors, active_now: r.active_now, from: r.from, to: r.to, days_from: r.days_from };
   });
   const total = (f) => apps.reduce((n, a) => n + a[f], 0);
   const requests = total('api_requests');
   return {
-    from: apps[0]?.from ?? null, to: apps[0]?.to ?? null, apps: apps.length,
+    from: apps[0]?.from ?? null, to: apps[0]?.to ?? null, days_from: apps[0]?.days_from ?? null, apps: apps.length,
     views: total('views'), visitors: total('visitors'), active_now: total('active_now'),
     api_requests: requests, api_errors: total('api_errors'), api_error_rate: requests ? total('api_errors') / requests : 0,
-    top_apps: apps.sort((a, b) => b.views - a.views || a.app.localeCompare(b.app)).slice(0, 10).map(({ from, to, ...a }) => a),
+    top_apps: apps.sort((a, b) => b.views - a.views || a.app.localeCompare(b.app)).slice(0, 10).map(({ from, to, days_from, ...a }) => a),
     hours: sumBuckets(projects.map((p) => report[p.id].hours)),
     days: sumBuckets(projects.map((p) => report[p.id].days)),
   };
@@ -357,7 +357,9 @@ export function createMetrics({ store, now = Date.now, newSalt = () => randomByt
         const [requests, errors] = [sum(totals, 'api_requests'), sum(totals, 'api_errors')];
         const { other, ...named } = topPaths(...byDay.map((d) => rows.get(`${p}\tday\t${Date.parse(d.start)}`)?.paths));
         return [p, {
-          from: iso(from), to: iso(t), views: sum(totals, 'views'), visitors: sum(byDay, 'visitors'),
+          // Visitors and top paths are kept per UTC day only, so they cover the whole days the range touches: from
+          // `days_from`, before `from` when the range starts mid-day (a 1h range counts today's visitors).
+          from: iso(from), to: iso(t), days_from: iso(dayStart(from)), views: sum(totals, 'views'), visitors: sum(byDay, 'visitors'),
           top_paths: [...Object.entries(named), ...(other ? [['other', other]] : [])].map(([path, views]) => ({ path, views })),
           active_now: this.activeNow(p), peak_active: Math.max(0, ...totals.map((h) => h.peak_active)),
           api_requests: requests, api_errors: errors, api_error_rate: requests ? errors / requests : 0,

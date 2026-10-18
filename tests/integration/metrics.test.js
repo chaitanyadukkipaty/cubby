@@ -78,7 +78,7 @@ describe('cubby metrics', () => {
     assert.deepEqual(r.json.map((a) => [a.app, a.views, a.visitors]), [['counted', 4, 2]]);
     assert.match((await cubby(['metrics'])).stdout, /counted\s+4 views\s+2 visitors/);
     const text = (await cubby(['metrics', 'counted'])).stdout;
-    assert.match(text, /^counted: 4 views, 2 visitors in the last 24h\n {2}Active now 2, peak 2\n {2}API: 0 requests, 0 errors \(0\.0%\)\n {2}Accounts: 0, 0 new\n/);
+    assert.match(text, /^counted: 4 views in the last 24h; 2 visitors since \d{4}-\d\d-\d\d 00:00 UTC \(unique per UTC day\)\n {2}Active now 2, peak 2\n {2}API: 0 requests, 0 errors \(0\.0%\)\n {2}Accounts: 0, 0 new\n/);
   });
   test('`--all` is for admins: totals across every app and the busiest apps', async () => {
     const refused = await cubby(['metrics', '--all', '--json']);
@@ -89,7 +89,7 @@ describe('cubby metrics', () => {
     assert.equal(r.code, 0, r.stderr);
     assert.deepEqual([r.json.range, r.json.views, r.json.visitors, r.json.apps], ['24h', 4, 2, 1]);
     assert.deepEqual(r.json.top_apps.map((a) => [a.app, a.owner, a.views]), [['counted', 'alice-metrics@test.dev', 4]]);
-    assert.match((await cubby(['metrics', '--all'], token)).stdout, /All apps: 4 views, 2 visitors in the last 24h[\s\S]*counted\s+4 views/);
+    assert.match((await cubby(['metrics', '--all'], token)).stdout, /All apps: 4 views in the last 24h; 2 visitors since \d{4}-\d\d-\d\d 00:00 UTC \(unique per app and UTC day\), 1 app\n[\s\S]*counted\s+4 views/);
   });
   test('errors are clear: someone else\'s app, a bad range', async () => {
     const r = await cubby(['metrics', 'bobs-app', '--json']);

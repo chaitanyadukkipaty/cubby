@@ -199,10 +199,18 @@ describe('reports', () => {
     // Views in the range; visitors are unique per day, summed over the days the range touches.
     assert.deepEqual([p1.views, p1.visitors], [4, 3]);
   });
+  test('visitors and top paths are kept per UTC day, so the report says which days they cover (from the start of the first)', async () => {
+    const { m, clock } = setup({ at: Date.parse('2026-10-17T08:00:00Z') });
+    for (const ip of ['10.0.0.1', '10.0.0.2']) m.record('p1', { ...visit(ip), path: '/old' });
+    clock.t = Date.parse('2026-10-17T12:00:00Z');
+    const { p1 } = await m.report(['p1'], 1);
+    assert.deepEqual([p1.from, p1.views, p1.visitors, p1.days_from], ['2026-10-17T12:00:00.000Z', 0, 2, '2026-10-17T00:00:00.000Z']);
+    assert.deepEqual(p1.top_paths, [{ path: '/old', views: 2 }]);
+  });
   test('an app with no traffic reports zeros', async () => {
     const { m } = setup();
     const { p9 } = await m.report(['p9'], 1);
-    assert.deepEqual(p9, { from: '2026-10-17T10:00:00.000Z', to: new Date(T0).toISOString(), views: 0, visitors: 0,
+    assert.deepEqual(p9, { from: '2026-10-17T10:00:00.000Z', to: new Date(T0).toISOString(), days_from: '2026-10-17T00:00:00.000Z', views: 0, visitors: 0,
       active_now: 0, peak_active: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_paths: [],
       hours: [{ start: '2026-10-17T10:00:00.000Z', views: 0, peak_active: 0, api_requests: 0, api_errors: 0 }],
       days: [{ start: '2026-10-17T00:00:00.000Z', views: 0, visitors: 0, api_requests: 0, api_errors: 0, peak_active: 0 }] });
@@ -589,12 +597,12 @@ describe('rollup (nightly maintenance)', () => {
 });
 
 describe('admin totals', () => {
-  const rep = (views, visitors, api_requests, api_errors, active_now = 0) => ({ from: 'F', to: 'T', views, visitors, api_requests, api_errors, active_now });
+  const rep = (views, visitors, api_requests, api_errors, active_now = 0) => ({ from: 'F', to: 'T', days_from: 'D', views, visitors, api_requests, api_errors, active_now });
   test('sums every app and lists the busiest 10 by views, with their owners', () => {
     const projects = Array.from({ length: 12 }, (_, i) => ({ id: `p${i}`, slug: `app-${i}`, expand: { owner: { email: `o${i}@x.dev` } } }));
     const report = Object.fromEntries(projects.map((p, i) => [p.id, rep(i, 1, 10, i === 11 ? 5 : 0, 1)]));
     const s = summarizeMetrics(projects, report);
-    assert.deepEqual([s.from, s.to, s.apps, s.views, s.visitors, s.active_now, s.api_requests, s.api_errors], ['F', 'T', 12, 66, 12, 12, 120, 5]);
+    assert.deepEqual([s.from, s.to, s.days_from, s.apps, s.views, s.visitors, s.active_now, s.api_requests, s.api_errors], ['F', 'T', 'D', 12, 66, 12, 12, 120, 5]);
     assert.ok(Math.abs(s.api_error_rate - 5 / 120) < 1e-9);
     assert.equal(s.top_apps.length, 10);
     assert.deepEqual(s.top_apps[0], { app: 'app-11', owner: 'o11@x.dev', views: 11, visitors: 1, api_requests: 10, api_errors: 5, active_now: 1 });
@@ -607,7 +615,7 @@ describe('admin totals', () => {
     assert.equal(s.api_error_rate, 0);
   });
   test('no apps: zeros', () => {
-    assert.deepEqual(summarizeMetrics([], {}), { from: null, to: null, apps: 0, views: 0, visitors: 0, active_now: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_apps: [], hours: [], days: [] });
+    assert.deepEqual(summarizeMetrics([], {}), { from: null, to: null, days_from: null, apps: 0, views: 0, visitors: 0, active_now: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_apps: [], hours: [], days: [] });
   });
   test("every app's hours and days added up by bucket, for the server-wide chart", () => {
     const projects = [{ id: 'a', slug: 'ant' }, { id: 'b', slug: 'bee' }];
