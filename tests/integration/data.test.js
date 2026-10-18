@@ -366,3 +366,180 @@ describe('snapshot lifetime', () => {
     assert.ok(!existsSync(join(srv.dataDir, 'snapshots', 'goner')));
   });
 });
+
+// Each scenario builds a small app, dumps every record, clears, restores, and compares: nothing may be lost.
+describe('whatever a clear deletes, a restore brings back (real PocketBase cascades)', () => {
+  const make = async (slug, collections) => {
+    assert.equal((await owner('POST', '/api/projects', { body: { slug } })).status, 200);
+    const r = await owner('PUT', `/api/projects/${slug}/schema`, { body: { collections } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+  };
+  const C = (slug, name) => pb.collection(`${slug}__${name}`);
+  // Records without what a restore can't keep: created/updated, and upload names (the bytes are compared instead).
+  const dump = async (slug) => {
+    const out = {};
+    for (const col of (await pb.collections.getFullList()).filter((c) => c.name.startsWith(`${slug}__`)).sort((a, b) => a.name.localeCompare(b.name))) {
+      const files = col.fields.filter((f) => f.type === 'file').map((f) => f.name);
+      out[col.name.slice(slug.length + 2)] = await Promise.all((await pb.collection(col.name).getFullList({ sort: 'id' })).map(async ({ created, updated, ...r }) => {
+        for (const f of files) r[f] = await Promise.all([].concat(r[f]).filter(Boolean).map(async (name) => (await (await fetch(pb.files.getURL(r, name))).arrayBuffer()).byteLength));
+        return r;
+      }));
+    }
+    return out;
+  };
+  const clearAndRestore = async (slug, body) => {
+    const before = await dump(slug);
+    const cleared = await owner('POST', `/api/projects/${slug}/data/clear`, { body });
+    assert.equal(cleared.status, 200, JSON.stringify(cleared.data));
+    assert.notDeepEqual(await dump(slug), before, 'the clear deleted something');
+    const restored = await owner('POST', `/api/snapshots/${cleared.data.snapshot.id}/restore`, { body: {} });
+    assert.equal(restored.status, 200, JSON.stringify(restored.data));
+    assert.deepEqual(restored.data.failures, []);
+    assert.deepEqual(await dump(slug), before, 'everything the clear took is back');
+    return { cleared: cleared.data, restored: restored.data };
+  };
+
+  test('a thread on a cascading self-relation', async () => {
+    await make('thread', [{ name: 'comments', fields: [{ name: 'body', type: 'text' }, { name: 'parent', type: 'relation', collection: 'comments', cascadeDelete: true }] }]);
+    await C('thread', 'comments').create({ id: 'top000000000001', body: 'top' });
+    await C('thread', 'comments').create({ id: 'rep000000000001', body: 'r1', parent: 'top000000000001' });
+    await C('thread', 'comments').create({ id: 'rep000000000002', body: 'r2', parent: 'rep000000000001' });
+    await C('thread', 'comments').create({ id: 'other0000000001', body: 'other' });
+    const dry = await owner('POST', '/api/projects/thread/data/clear', { body: { collection: 'comments', ids: ['top000000000001'], dry_run: true } });
+    assert.deepEqual(dry.data.cascade, [{ collection: 'comments', field: 'parent', records: 2, deletes: true }]);
+    await clearAndRestore('thread', { collection: 'comments', ids: ['top000000000001'] });
+  });
+  test('a chain a <- b <- c, cleared by id and emptied whole', async () => {
+    await make('chain', [
+      { name: 'a', fields: [{ name: 't', type: 'text' }] },
+      { name: 'b', fields: [{ name: 'a', type: 'relation', collection: 'a', cascadeDelete: true }] },
+      { name: 'c', fields: [{ name: 'b', type: 'relation', collection: 'b', cascadeDelete: true }] },
+    ]);
+    await C('chain', 'a').create({ id: 'aaaaaaaaaaaaaa1', t: 'x' });
+    await C('chain', 'a').create({ id: 'aaaaaaaaaaaaaa2', t: 'y' });
+    await C('chain', 'b').create({ id: 'bbbbbbbbbbbbbb1', a: 'aaaaaaaaaaaaaa1' });
+    for (const id of ['ccccccccccccc01', 'ccccccccccccc02']) await C('chain', 'c').create({ id, b: 'bbbbbbbbbbbbbb1' });
+    const both = [{ collection: 'b', field: 'a', records: 1, deletes: true }, { collection: 'c', field: 'b', records: 2, deletes: true }];
+    assert.deepEqual((await clearAndRestore('chain', { collection: 'a', ids: ['aaaaaaaaaaaaaa1'] })).cleared.cascade, both);
+    assert.deepEqual((await clearAndRestore('chain', { collections: ['a'] })).cleared.cascade, both);
+  });
+  test('uploads of records deleted by cascade are snapshotted and come back', async () => {
+    await make('attach', [
+      { name: 'posts', fields: [{ name: 't', type: 'text' }] },
+      { name: 'attachments', fields: [{ name: 'post', type: 'relation', collection: 'posts', cascadeDelete: true }, { name: 'file', type: 'file', maxSelect: 1, maxSize: 10_000_000 }] },
+    ]);
+    await C('attach', 'posts').create({ id: 'post00000000001', t: 'p' });
+    await C('attach', 'attachments').create({ id: 'att000000000001', post: 'post00000000001', file: new File([new Uint8Array(5000).fill(7)], 'doc.bin') });
+    const dry = await owner('POST', '/api/projects/attach/data/clear', { body: { collection: 'posts', ids: ['post00000000001'], dry_run: true } });
+    assert.ok(dry.data.files_bytes >= 5000, `the cascaded upload counts toward the cap: ${dry.data.files_bytes}`);
+    const { cleared } = await clearAndRestore('attach', { collection: 'posts', ids: ['post00000000001'] });
+    assert.ok(existsSync(join(srv.dataDir, 'snapshots', 'attach', cleared.snapshot.id, 'files', 'attachments', 'att000000000001')));
+  });
+  test('relations holding several ids: matched by `field.id ?=`, so counts and snapshots see them', async () => {
+    await make('multi', [
+      { name: 'tags', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'posts', fields: [{ name: 't', type: 'text' }, { name: 'tags', type: 'relation', collection: 'tags', maxSelect: 5 }] },
+      { name: 'bundles', fields: [{ name: 'items', type: 'relation', collection: 'posts', maxSelect: 10, cascadeDelete: true }] },
+    ]);
+    await C('multi', 'tags').create({ id: 'tag000000000001', n: 'x' });
+    await C('multi', 'tags').create({ id: 'tag000000000002', n: 'y' });
+    await C('multi', 'posts').create({ id: 'posta0000000001', t: 'A', tags: ['tag000000000001', 'tag000000000002'] });
+    await C('multi', 'posts').create({ id: 'postb0000000001', t: 'B', tags: ['tag000000000001'] });
+    await C('multi', 'bundles').create({ id: 'bund00000000001', items: ['posta0000000001'] });
+    await C('multi', 'bundles').create({ id: 'bund00000000002', items: ['posta0000000001', 'postb0000000001'] });
+    const dry = await owner('POST', '/api/projects/multi/data/clear', { body: { collection: 'posts', ids: ['posta0000000001'], dry_run: true } });
+    assert.deepEqual(dry.data.cascade, [{ collection: 'bundles', field: 'items', records: 1, deletes: true }, { collection: 'bundles', field: 'items', records: 1, deletes: false }]);
+    const tag = await owner('POST', '/api/projects/multi/data/clear', { body: { collection: 'tags', filter: 'n = "x"', dry_run: true } });
+    assert.deepEqual(tag.data.cascade, [{ collection: 'posts', field: 'tags', records: 2, deletes: false }]);
+    // Deleted bundles come back, and the ids PocketBase took out of the others go back in place.
+    await clearAndRestore('multi', { collection: 'posts', ids: ['posta0000000001'] });
+    await clearAndRestore('multi', { collection: 'tags', ids: ['tag000000000001'] });
+    await clearAndRestore('multi', { collections: ['tags'] });
+  });
+  test('a required relation that doesn\'t cascade: previewed as blocking, refused (409) with nothing deleted or kept', async () => {
+    await make('required', [
+      { name: 'products', fields: [{ name: 'price', type: 'number' }] },
+      { name: 'orders', fields: [{ name: 'product', type: 'relation', collection: 'products', required: true }] },
+    ]);
+    await C('required', 'products').create({ id: '0000000000000aa', price: 1 });
+    await C('required', 'products').create({ id: 'prod00000000002', price: 2 });
+    await C('required', 'orders').create({ id: 'ordr00000000001', product: 'prod00000000002' });
+    const before = await dump('required');
+    const dry = await owner('POST', '/api/projects/required/data/clear', { body: { collection: 'products', ids: ['prod00000000002'], dry_run: true } });
+    assert.match(dry.data.blocked.join('\n'), /^orders\.product must point at a products record and doesn't cascade: 1 record \(ordr00000000001\)/);
+    for (const body of [{ collection: 'products', ids: ['prod00000000002'] }, { collection: 'products', filter: 'price > 0' }, { collections: ['products'] }]) {
+      const r = await owner('POST', '/api/projects/required/data/clear', { body });
+      assert.equal(r.status, 409, JSON.stringify(r.data));
+      assert.match(r.data.details.join('\n'), /orders\.product/);
+    }
+    const cli = await cubby(['data', 'clear', 'required', '--collection', 'products', '--ids', 'prod00000000002', '--dry-run']);
+    assert.match(cli.stdout, /\nblocked: orders\.product must point at a products record/);
+    assert.deepEqual(await dump('required'), before, 'nothing deleted');
+    assert.ok(!existsSync(join(srv.dataDir, 'snapshots', 'required')) || !readdirSync(join(srv.dataDir, 'snapshots', 'required')).length, 'no snapshot left');
+    assert.ok(!(await owner('GET', '/api/activity?app=required')).data.some((a) => a.action === 'data.clear'));
+  });
+  test('a dropped collection pointing at one with relations of its own is recreated; the dry run checks the same', async () => {
+    await make('regrow', [
+      { name: 'tags', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'posts', fields: [{ name: 'tags', type: 'relation', collection: 'tags', maxSelect: 5 }] },
+      { name: 'comments', fields: [{ name: 'post', type: 'relation', collection: 'posts' }, { name: 'b', type: 'text' }] },
+    ]);
+    await C('regrow', 'tags').create({ id: 'tag000000000001' });
+    await C('regrow', 'posts').create({ id: 'post00000000001', tags: ['tag000000000001'] });
+    await C('regrow', 'comments').create({ id: 'comm00000000001', post: 'post00000000001', b: 'x' });
+    const before = await dump('regrow');
+    const cleared = await owner('POST', '/api/projects/regrow/data/clear', { body: { collections: ['comments'], drop: true } });
+    const dry = await owner('POST', `/api/snapshots/${cleared.data.snapshot.id}/restore`, { body: { dry_run: true } });
+    assert.deepEqual([dry.status, dry.data.recreated, dry.data.skipped_fields], [200, ['comments'], []]);
+    const r = await owner('POST', `/api/snapshots/${cleared.data.snapshot.id}/restore`, { body: {} });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.deepEqual(await dump('regrow'), before);
+  });
+  test('wipe and restore brings back every collection, with records or not, accounts included', async () => {
+    await make('rewipe', [
+      { name: 'full', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'empty', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'members', type: 'auth', fields: [{ name: 'nick', type: 'text' }] },
+    ]);
+    await C('rewipe', 'full').create({ id: 'full00000000001', n: 'x' });
+    const schemaBefore = (await owner('GET', '/api/projects/rewipe/schema')).data;
+    const before = await dump('rewipe');
+    const r = await clearAndRestore('rewipe', { wipe: true });
+    assert.deepEqual(r.restored.recreated.sort(), ['empty', 'full', 'members']);
+    assert.deepEqual((await owner('GET', '/api/projects/rewipe/schema')).data, schemaBefore);
+    assert.deepEqual(await dump('rewipe'), before);
+  });
+  test('snapshots count each deleted record once; emptying collections with no records is a no-op', async () => {
+    await make('tally', [
+      { name: 'products', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'orders', fields: [{ name: 'p', type: 'relation', collection: 'products', cascadeDelete: true }, { name: 'p2', type: 'relation', collection: 'products' }] },
+      { name: 'nothing', fields: [{ name: 'n', type: 'text' }] },
+    ]);
+    for (let i = 1; i <= 3; i++) {
+      await C('tally', 'products').create({ id: `prod0000000000${i}`, n: 'x' });
+      await C('tally', 'orders').create({ id: `ordr0000000000${i}`, p: `prod0000000000${i}`, p2: `prod0000000000${i}` });
+    }
+    await clearAndRestore('tally', { collections: ['products'] });
+    const [snap] = (await owner('GET', '/api/snapshots?app=tally')).data;
+    assert.equal(snap.records, 6);
+    const none = await owner('POST', '/api/projects/tally/data/clear', { body: { collections: ['nothing'] } });
+    assert.deepEqual([none.status, none.data.snapshot, none.data.matches], [200, null, 0]);
+    assert.equal((await owner('GET', '/api/snapshots?app=tally')).data.length, 1);
+    assert.equal((await owner('GET', '/api/activity?app=tally')).data.filter((a) => a.action === 'data.clear').length, 1);
+  });
+  test('a link the clear removed from a record that stays comes back; edits made since stay', async () => {
+    await make('relink', [
+      { name: 'people', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'notes', fields: [{ name: 't', type: 'text' }, { name: 'author', type: 'relation', collection: 'people' }] },
+    ]);
+    await C('relink', 'people').create({ id: 'pers00000000001', n: 'ann' });
+    await C('relink', 'notes').create({ id: 'note00000000001', t: 'hi', author: 'pers00000000001' });
+    const { restored } = await clearAndRestore('relink', { collection: 'people', ids: ['pers00000000001'] });
+    assert.deepEqual(restored.links, [{ name: 'notes', records: 1, relinked: 1 }]);
+    const cleared = await owner('POST', '/api/projects/relink/data/clear', { body: { collections: ['people'] } });
+    await C('relink', 'notes').update('note00000000001', { t: 'edited' });
+    assert.equal((await owner('POST', `/api/snapshots/${cleared.data.snapshot.id}/restore`, { body: {} })).status, 200);
+    const note = await C('relink', 'notes').getOne('note00000000001');
+    assert.deepEqual([note.t, note.author], ['edited', 'pers00000000001']);
+  });
+});

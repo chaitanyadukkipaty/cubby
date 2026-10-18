@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync, mkdirSync, utimesSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync, utimesSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startSnapshot, newSnapshotId, listSnapshots, findSnapshot, pruneSnapshots, removeAppSnapshots, SNAPSHOT_ID_RE } from '../../server/src/snapshots.js';
@@ -22,6 +22,19 @@ describe('snapshot ids', () => {
     assert.equal(id, '20261017T101500-a1b2c3');
     assert.match(newSnapshotId(T), SNAPSHOT_ID_RE);
     for (const bad of ['../etc', '20261017T101500-a1b2c3/..', '20261017T101500', '']) assert.doesNotMatch(bad, SNAPSHOT_ID_RE);
+  });
+});
+
+describe('writing', () => {
+  test('records and links go in their own folders, one JSON line each; an empty list writes nothing', async () => {
+    const s = await startSnapshot(dataDir, 'shop', '20261017T101500-a1b2c3');
+    await s.records('polls', [{ id: 'p1' }]);
+    await s.records('polls', [{ id: 'p2' }]);
+    await s.links('votes', []);
+    assert.equal(readFileSync(join(s.dir, 'records', 'polls.jsonl'), 'utf8'), '{"id":"p1"}\n{"id":"p2"}\n');
+    assert.ok(!existsSync(join(s.dir, 'links')));
+    await s.links('votes', [{ id: 'v1' }]);
+    assert.equal(readFileSync(join(s.dir, 'links', 'votes.jsonl'), 'utf8'), '{"id":"v1"}\n');
   });
 });
 

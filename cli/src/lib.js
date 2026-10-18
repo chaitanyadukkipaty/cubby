@@ -373,7 +373,7 @@ const cascadeLine = (c, would = false) => (c.deletes
 // `cubby data clear`: what went, what went with it, and the snapshot to undo it.
 export function formatClear(app, r) {
   const [first] = r.collections;
-  if (!r.snapshot) return `Nothing in ${first.name} matches: nothing was deleted.`;
+  if (!r.snapshot) return r.mode === 'empty' ? `${r.collections.map((c) => c.name).join(', ')} had no records: nothing was deleted.` : `Nothing in ${first.name} matches: nothing was deleted.`;
   const head = r.mode === 'filter' || r.mode === 'ids'
     ? `Deleted ${plural(first.records, 'record')} from ${first.name} in ${app}${r.mode === 'filter' ? ` (matching ${r.filter})` : ''}.${r.missing?.length ? ` Not found: ${r.missing.join(', ')}` : ''}`
     : r.wipe ? `Wiped the database of ${app}: dropped ${r.collections.map((c) => `${c.name} (${plural(c.records, 'record')})`).join(', ')}.`
@@ -401,6 +401,7 @@ export function formatClearPreview(app, r) {
     ...r.samples.map(sample),
     ...r.cascade.map((c) => cascadeLine(c, true)),
     ...r.warnings.map((w) => `warning: ${w}`),
+    ...(r.blocked ?? []).map((b) => `blocked: ${b}`),
   ].join('\n');
 }
 
@@ -426,6 +427,8 @@ export function formatRestore(r) {
   return [
     r.dry_run ? `Dry run of snapshot ${r.snapshot} (nothing changed):` : `Restored snapshot ${r.snapshot}:`,
     ...r.collections.map((c) => `  ${c.name}: ${counts(c).join(', ')}`),
+    ...(r.links ?? []).map((l) => (r.dry_run ? `  ${l.name}: ${plural(l.records, 'record')} lost links, put back where still missing`
+      : `  ${l.name}: links put back on ${l.relinked} of ${plural(l.records, 'record')} that lost them`)),
     ...(r.recreated.length ? [`${r.dry_run ? 'Would recreate' : 'Recreated'}: ${r.recreated.join(', ')}`] : []),
     ...(r.skipped_fields.length ? [`Skipped fields (removed since): ${r.skipped_fields.join(', ')}`] : []),
     ...(r.refused_fields.length ? [`Refused (type changed): ${r.refused_fields.join('; ')}`] : []),

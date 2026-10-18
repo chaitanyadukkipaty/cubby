@@ -35,6 +35,30 @@ afterEach(() => rmSync(dataDir, { recursive: true, force: true }));
 const clear = (body) => clearData('shop', body, deps());
 const restore = async (id, opts = {}, extra) => restoreSnapshot(await findSnapshot(dataDir, id), opts, deps(extra));
 
+// Every record of the app, by collection, without what a restore can't keep (created/updated, upload names: an upload
+// is its size instead). Comparing this before a clear and after its restore shows anything lost.
+function dump() {
+  const out = {};
+  for (const col of [...pb.collections.cols.values()].filter((c) => c.name.startsWith('shop__')).sort((a, b) => a.name.localeCompare(b.name))) {
+    const files = col.fields.filter((f) => f.type === 'file').map((f) => f.name);
+    out[col.name.slice(6)] = pb.records(col.name).map(({ created, updated, password, ...r }) => {
+      for (const f of files) r[f] = [].concat(r[f]).filter(Boolean).map((name) => readFileSync(join(dataDir, 'pb_data', 'storage', col.id, r.id, name)).length);
+      return r;
+    }).sort((a, b) => a.id.localeCompare(b.id));
+  }
+  return out;
+}
+// Clears with `body`, checks it lost something, restores and checks everything is back as it was.
+async function clearAndRestore(body) {
+  const before = dump();
+  const cleared = await clear(body);
+  assert.notDeepEqual(dump(), before, 'the clear deleted something');
+  const restored = await restore(cleared.snapshot.id);
+  assert.deepEqual(restored.failures, []);
+  assert.deepEqual(dump(), before, 'the restore brings back everything the clear took');
+  return { cleared, restored };
+}
+
 describe('restoring a snapshot', () => {
   test('brings back the records with their ids, the ones lost by cascade, and the uploaded files', async () => {
     const { snapshot } = await clear({ collections: ['products'] });
@@ -70,6 +94,33 @@ describe('schema drift', () => {
     const orders = (await readSchema('shop', pb.collections)).collections.find((c) => c.name === 'orders');
     assert.deepEqual(orders.fields.map((f) => [f.name, f.type, f.collection]), [['product', 'relation', 'products'], ['qty', 'number', undefined], ['created', 'autodate', undefined], ['updated', 'autodate', undefined]]);
     assert.deepEqual(ids('shop__orders'), ['o1']);
+  });
+  test('a dropped collection pointing at one that points at a third is recreated (and the dry run checks the same)', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'tags', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'posts', fields: [{ name: 'tags', type: 'relation', collection: 'tags', maxSelect: 5 }] },
+      { name: 'comments', fields: [{ name: 'post', type: 'relation', collection: 'posts' }, { name: 'b', type: 'text' }] },
+    ] }, pb.collections);
+    await pb.collection('shop__tags').create({ id: 't1' });
+    await pb.collection('shop__posts').create({ id: 'po1', tags: ['t1'] });
+    await pb.collection('shop__comments').create({ id: 'co1', post: 'po1', b: 'x' });
+    const before = dump();
+    const { snapshot } = await clear({ collections: ['comments'], drop: true });
+    const dry = await restore(snapshot.id, { dry_run: true });
+    assert.deepEqual([dry.recreated, dry.skipped_fields], [['comments'], []]);
+    const r = await restore(snapshot.id);
+    assert.deepEqual(r.recreated, ['comments']);
+    assert.deepEqual(dump(), before);
+  });
+  test('wiping and restoring brings back every collection, also those that had no records (accounts included)', async () => {
+    const { snapshot } = await clear({ wipe: true });
+    const r = await restore(snapshot.id);
+    assert.deepEqual(r.recreated.sort(), ['customers', 'orders', 'products']);
+    await pb.collections.truncate('shop__customers');
+    const empty = await clear({ wipe: true });
+    const again = await restore(empty.snapshot.id);
+    assert.deepEqual(again.recreated.sort(), ['customers', 'orders', 'products'], 'a collection with no records comes back too');
+    assert.deepEqual(again.collections.find((c) => c.name === 'customers'), { name: 'customers', records: 0, existing: 0, restored: 0, replaced: 0, failed: 0 });
   });
   test('a recreated collection loses relations to collections that are gone too', async () => {
     const { snapshot } = await clear({ collections: ['orders'], drop: true });
@@ -108,6 +159,132 @@ describe('relations', () => {
     const r = await restore(snapshot.id);
     assert.deepEqual(r.collections.map((c) => [c.name, c.restored, c.failed]), [['folders', 2, 0]]);
     assert.equal(pb.records('shop__folders').find((x) => x.id === 'fa').parent, 'fb');
+  });
+});
+
+describe('everything a clear deletes comes back', () => {
+  test('a thread on a cascading self-relation: replies of replies of the deleted comment too', async () => {
+    await applySchema('shop', { collections: [{ name: 'comments', fields: [{ name: 'body', type: 'text' }, { name: 'parent', type: 'relation', collection: 'comments', cascadeDelete: true }] }] }, pb.collections);
+    await pb.collection('shop__comments').create({ id: 'top', body: 'top' });
+    await pb.collection('shop__comments').create({ id: 'rep1', body: 'r1', parent: 'top' });
+    await pb.collection('shop__comments').create({ id: 'rep2', body: 'r2', parent: 'rep1' });
+    await pb.collection('shop__comments').create({ id: 'other', body: 'other' });
+    const { cleared } = await clearAndRestore({ collection: 'comments', ids: ['top'] });
+    assert.deepEqual(cleared.cascade, [{ collection: 'comments', field: 'parent', records: 2, deletes: true }]);
+  });
+  async function chain() {
+    await applySchema('shop', { collections: [
+      { name: 'a', fields: [{ name: 't', type: 'text' }] },
+      { name: 'b', fields: [{ name: 'a', type: 'relation', collection: 'a', cascadeDelete: true }] },
+      { name: 'c', fields: [{ name: 'b', type: 'relation', collection: 'b', cascadeDelete: true }] },
+    ] }, pb.collections);
+    await pb.collection('shop__a').create({ id: 'a1', t: 'x' });
+    await pb.collection('shop__a').create({ id: 'a2', t: 'y' });
+    await pb.collection('shop__b').create({ id: 'b1', a: 'a1' });
+    await pb.collection('shop__c').create({ id: 'c1', b: 'b1' });
+    await pb.collection('shop__c').create({ id: 'c2', b: 'b1' });
+  }
+  test('a chain a <- b <- c cleared by id: what cascades two hops away too, in the preview and the snapshot', async () => {
+    await chain();
+    const dry = await clear({ collection: 'a', ids: ['a1'], dry_run: true });
+    assert.deepEqual(dry.cascade, [{ collection: 'b', field: 'a', records: 1, deletes: true }, { collection: 'c', field: 'b', records: 2, deletes: true }]);
+    await clearAndRestore({ collection: 'a', ids: ['a1'] });
+  });
+  test('uploads of records deleted by cascade are snapshotted, and count toward the files cap', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'posts', fields: [{ name: 't', type: 'text' }] },
+      { name: 'attachments', fields: [{ name: 'post', type: 'relation', collection: 'posts', cascadeDelete: true }, { name: 'file', type: 'file', maxSelect: 1 }] },
+    ] }, pb.collections);
+    await pb.collection('shop__posts').create({ id: 'post1', t: 'p' });
+    await pb.collection('shop__attachments').create({ id: 'att1', post: 'post1', file: file('doc.bin', 5000) });
+    const dry = await clear({ collection: 'posts', ids: ['post1'], dry_run: true });
+    assert.equal(dry.files_bytes, 5000);
+    const capped = await clearData('shop', { collection: 'posts', ids: ['post1'], dry_run: true }, deps({ filesCap: 4000 }));
+    assert.match(capped.warnings.join('\n'), /uploaded files \(4\.9 KB\) are over the 3\.9 KB snapshot cap/);
+    const { cleared } = await clearAndRestore({ collection: 'posts', ids: ['post1'] });
+    assert.deepEqual([cleared.snapshot.files, cleared.snapshot.files_bytes], [true, 5000]);
+  });
+  test('links the clear removed from records that stay are put back, without touching their other fields', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'people', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'notes', fields: [{ name: 't', type: 'text' }, { name: 'author', type: 'relation', collection: 'people' }] },
+    ] }, pb.collections);
+    await pb.collection('shop__people').create({ id: 'ann', n: 'ann' });
+    await pb.collection('shop__notes').create({ id: 'n1', t: 'hi', author: 'ann' });
+    await clearAndRestore({ collection: 'people', ids: ['ann'] });
+    await clearAndRestore({ collections: ['people'] });
+    // Edited since the clear: the edit stays, the link comes back.
+    const { snapshot } = await clear({ collections: ['people'] });
+    await pb.collection('shop__notes').update('n1', { t: 'edited' });
+    const r = await restore(snapshot.id);
+    assert.deepEqual(pb.records('shop__notes').map((x) => [x.t, x.author]), [['edited', 'ann']]);
+    assert.deepEqual(r.links, [{ name: 'notes', records: 1, relinked: 1 }]);
+  });
+  test('a link PocketBase won\'t put back is reported; a record deleted since is skipped', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'people', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'notes', fields: [{ name: 'author', type: 'relation', collection: 'people' }] },
+    ] }, pb.collections);
+    await pb.collection('shop__people').create({ id: 'ann' });
+    await pb.collection('shop__notes').create({ id: 'n1', author: 'ann' });
+    await pb.collection('shop__notes').create({ id: 'n2', author: 'ann' });
+    const { snapshot } = await clear({ collection: 'people', ids: ['ann'] });
+    await pb.collection('shop__notes').delete('n2');
+    pb.collection = ((real) => (name) => ({ ...real(name), update: async () => { throw new Error('locked'); } }))(pb.collection.bind(pb));
+    const r = await restore(snapshot.id);
+    assert.deepEqual(r.failures, [{ collection: 'notes', id: 'n1', error: 'links not put back: locked' }]);
+    assert.deepEqual(r.links, [{ name: 'notes', records: 2, relinked: 0 }]);
+  });
+  test('only the relations that lost links change; a collection dropped since is skipped', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'people', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'notes', fields: [{ name: 'author', type: 'relation', collection: 'people' }, { name: 'editor', type: 'relation', collection: 'people' }] },
+    ] }, pb.collections);
+    await pb.collection('shop__people').create({ id: 'ann' });
+    await pb.collection('shop__people').create({ id: 'bob' });
+    await pb.collection('shop__notes').create({ id: 'n1', author: 'ann', editor: 'bob' });
+    await clearAndRestore({ collection: 'people', ids: ['ann'] });
+    const { snapshot } = await clear({ collection: 'people', ids: ['ann'] });
+    await clear({ collections: ['notes'], drop: true });
+    const r = await restore(snapshot.id);
+    assert.deepEqual([r.failures, r.links], [[], [{ name: 'notes', records: 1, relinked: 0 }]]);
+  });
+  test('a single relation set to something else since is left alone', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'people', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'notes', fields: [{ name: 'author', type: 'relation', collection: 'people' }] },
+    ] }, pb.collections);
+    await pb.collection('shop__people').create({ id: 'ann' });
+    await pb.collection('shop__people').create({ id: 'bob' });
+    await pb.collection('shop__notes').create({ id: 'n1', author: 'ann' });
+    const { snapshot } = await clear({ collection: 'people', ids: ['ann'] });
+    await pb.collection('shop__notes').update('n1', { author: 'bob' });
+    const r = await restore(snapshot.id);
+    assert.equal(pb.records('shop__notes')[0].author, 'bob');
+    assert.deepEqual(r.links, [{ name: 'notes', records: 1, relinked: 0 }]);
+  });
+  test('relations holding several ids get back the ids the clear removed, in place, keeping ones added since', async () => {
+    await applySchema('shop', { collections: [
+      { name: 'tags', fields: [{ name: 'n', type: 'text' }] },
+      { name: 'posts', fields: [{ name: 't', type: 'text' }, { name: 'tags', type: 'relation', collection: 'tags', maxSelect: 5 }] },
+      { name: 'bundles', fields: [{ name: 'items', type: 'relation', collection: 'posts', maxSelect: 10, cascadeDelete: true }] },
+    ] }, pb.collections);
+    for (const id of ['t1', 't2', 't3']) await pb.collection('shop__tags').create({ id, n: id });
+    await pb.collection('shop__posts').create({ id: 'pa', t: 'A', tags: ['t1', 't2'] });
+    await pb.collection('shop__posts').create({ id: 'pb', t: 'B', tags: ['t1'] });
+    await pb.collection('shop__bundles').create({ id: 'bu1', items: ['pa'] });
+    await pb.collection('shop__bundles').create({ id: 'bu2', items: ['pa', 'pb'] });
+    await clearAndRestore({ collection: 'posts', ids: ['pa'] });
+    await clearAndRestore({ collection: 'tags', ids: ['t1'] });
+    const { snapshot } = await clear({ collection: 'tags', ids: ['t1'] });
+    await pb.collection('shop__posts').update('pb', { tags: ['t3'] });
+    await restore(snapshot.id);
+    assert.deepEqual(pb.records('shop__posts').map((x) => [x.id, x.tags]).sort(), [['pa', ['t1', 't2']], ['pb', ['t1', 't3']]]);
+  });
+  test('the same chain when a is emptied whole', async () => {
+    await chain();
+    const { cleared } = await clearAndRestore({ collections: ['a'] });
+    assert.deepEqual(cleared.cascade, [{ collection: 'b', field: 'a', records: 1, deletes: true }, { collection: 'c', field: 'b', records: 2, deletes: true }]);
   });
 });
 

@@ -259,6 +259,7 @@ describe('jobs and env helpers', () => {
     assert.match(lib.formatClear('shop', { ...base, mode: 'filter', filter: 'closed = true' }), /^Deleted 3 records from polls in shop \(matching closed = true\)\.\n/);
     assert.match(lib.formatClear('shop', { ...base, mode: 'ids', missing: ['zz'] }), /^Deleted 3 records from polls in shop\. Not found: zz\n/);
     assert.equal(lib.formatClear('shop', { ...base, mode: 'filter', filter: 'x = 1', collections: [{ name: 'polls', records: 0 }], snapshot: null }), 'Nothing in polls matches: nothing was deleted.');
+    assert.equal(lib.formatClear('shop', { ...base, mode: 'empty', collections: [{ name: 'a', records: 0 }, { name: 'b', records: 0 }], snapshot: null }), 'a, b had no records: nothing was deleted.');
   });
   test('formatClear: a wipe says the whole database went, and so does its preview', () => {
     const r = { mode: 'drop', wipe: true, collections: [{ name: 'a', records: 1 }, { name: 'b', records: 2 }], cascade: [], warnings: [], snapshot: { id: 's', expires: '2026-10-24T00:00:00.000Z' } };
@@ -275,6 +276,9 @@ describe('jobs and env helpers', () => {
     assert.equal(lib.formatRestore({ ...base, dry_run: true, overwrite: true, collections: [{ name: 'p', records: 2, existing: 1 }, { name: 'q', records: 1, existing: 0 }], recreated: ['q'] }),
       'Dry run of snapshot s (nothing changed):\n  p: 2 records, 1 already there (replaced)\n  q: 1 record\nWould recreate: q');
     assert.equal(lib.formatRestore({ ...base, overwrite: true, collections: [{ name: 'p', records: 2, existing: 1, restored: 1, replaced: 1, failed: 0 }] }), 'Restored snapshot s:\n  p: 1 restored, 1 replaced');
+    const links = [{ name: 'notes', records: 3, relinked: 2 }];
+    assert.equal(lib.formatRestore({ ...base, collections: [], links }), 'Restored snapshot s:\n  notes: links put back on 2 of 3 records that lost them');
+    assert.equal(lib.formatRestore({ ...base, dry_run: true, collections: [], links }), 'Dry run of snapshot s (nothing changed):\n  notes: 3 records lost links, put back where still missing');
   });
   test('formatClearPreview: matches N of M, samples, cascades and warnings, deleting nothing', () => {
     const text = lib.formatClearPreview('shop', {
@@ -288,6 +292,8 @@ describe('jobs and env helpers', () => {
     assert.ok(lines[2].length <= 122 && lines[2].endsWith('…'));
     assert.equal(lines[3], '  votes: 31 records pointing at them would be deleted too (cascade on votes.poll)');
     assert.equal(lines[4], 'warning: careful');
+    const blocked = lib.formatClearPreview('shop', { dry_run: true, mode: 'ids', matches: 1, total: 2, collections: [{ name: 'items', records: 1 }], samples: [], cascade: [], blocked: ['lines.item must point at an items record'], warnings: [] });
+    assert.match(blocked, /\nblocked: lines\.item must point at an items record$/);
     const whole = lib.formatClearPreview('shop', { dry_run: true, mode: 'empty', matches: 5, total: 5, collections: [{ name: 'a', records: 2 }, { name: 'b', records: 3 }], samples: [], cascade: [{ collection: 'c', field: 'a', records: 1, deletes: false }], warnings: [] });
     assert.match(whole, /^Dry run: emptying a, b deletes 5 records\. Nothing was deleted\.\n {2}c: 1 record would lose their link \(c\.a\)$/);
   });

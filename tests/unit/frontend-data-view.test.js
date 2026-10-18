@@ -55,6 +55,11 @@ describe('previewModel()', () => {
     assert.equal(p.headline, 'Matches 12 of 40 records in tasks.');
     assert.equal(p.nothing, false);
   });
+  test('a required relation that would point at nothing blocks the clear', () => {
+    const p = v.previewModel({ ...base, mode: 'ids', collections: [{ name: 'items', records: 1 }], matches: 1, total: 2, blocked: ['lines.item must point at an items record'] });
+    assert.deepEqual(p.blocked, ['lines.item must point at an items record']);
+    assert.deepEqual(v.previewModel({ ...base, mode: 'ids', collections: [{ name: 'items', records: 1 }], matches: 1, total: 2 }).blocked, []);
+  });
   test('ids that are gone already are counted', () => {
     const p = v.previewModel({ ...base, mode: 'ids', collections: [{ name: 'tasks', records: 2 }], matches: 2, total: 40, missing: ['zz'] });
     assert.equal(p.headline, 'Matches 2 of 40 records in tasks. 1 of the ticked records is gone already.');
@@ -110,6 +115,9 @@ describe('clearGate()', () => {
     assert.match(v.clearGate({ ...ready, preview: null }).why, /^Preview first/);
     assert.match(v.clearGate({ ...ready, key: 'other' }).why, /^Preview first/);
   });
+  test('blocked by a required relation: nothing can be deleted until it is dealt with', () => {
+    assert.equal(v.clearGate({ ...ready, preview: { ...preview, blocked: ['x'] } }).why, "PocketBase would refuse this: see what blocks it above.");
+  });
   test('nothing matching: nothing to delete', () => {
     assert.equal(v.clearGate({ ...ready, preview: { ...preview, nothing: true } }).why, 'Nothing matches, so there is nothing to delete.');
   });
@@ -162,12 +170,21 @@ describe('restoreModel()', () => {
   });
 });
 
+describe('snapshotCounts()', () => {
+  test('records, and the uploads only when the snapshot kept them', () => {
+    assert.equal(v.snapshotCounts({ records: 3, files: true, files_bytes: 2048 }), '3 records · 2 KB files');
+    assert.equal(v.snapshotCounts({ records: 1, files: true, files_bytes: 0 }), '1 record');
+    assert.equal(v.snapshotCounts({ records: 3, files: false, files_bytes: 200 * 1024 * 1024 }), '3 records · files not kept (200.0 MB, over the cap)');
+  });
+});
+
 describe('restoreResultText()', () => {
   test('what came back, what was there already, replaced or failed, and accounts with new passwords', () => {
     const r = { snapshot: 's1', collections: [{ name: 'tasks', records: 40, existing: 2, restored: 38, replaced: 0, failed: 0 }], accounts: [] };
     assert.equal(v.restoreResultText(r), 'Restored 38 records from s1 (2 already there).');
     assert.equal(v.restoreResultText({ ...r, collections: [{ name: 'u', records: 3, existing: 1, restored: 1, replaced: 1, failed: 1 }], accounts: [{}] }),
       'Restored 1 record from s1 (1 replaced, 1 failed, 1 account with a new password).');
+    assert.equal(v.restoreResultText({ ...r, links: [{ name: 'notes', records: 2, relinked: 2 }] }), 'Restored 38 records from s1 (2 already there, 2 records relinked).');
   });
 });
 

@@ -3,7 +3,7 @@
 import http from 'node:http';
 import { config, prefixFor } from './config.js';
 import { collectionIndex } from './schema.js';
-import { sendJson, readBody } from './http.js';
+import { sendJson, readBody, HttpError } from './http.js';
 
 const pbUrl = new URL(config.pb.url);
 
@@ -19,7 +19,9 @@ export function tokenCollectionId(token) {
 // `index` resolves a project's collection ids (injectable for tests).
 export async function isAllowed(slug, method, path, index = collectionIndex) {
   const prefix = prefixFor(slug);
-  if (path === '/api/health' || path === '/api/realtime') return true;
+  if (path === '/api/health') return true;
+  // Subscribe bodies are checked topic by topic in checkRealtimeSubscribe.
+  if (path === '/api/realtime') return method === 'GET' || method === 'POST';
 
   let m = path.match(/^\/api\/collections\/([^/]+)\/(.+)$/);
   if (m) return m[1].startsWith(prefix) && !m[2].startsWith('..');
@@ -59,6 +61,47 @@ export function checkForeignRefs(search, body, prefix) {
   return { foreign };
 }
 
+// PocketBase (0.40) delivers record events to topics `<collection>`, `<collection>/*` and
+// `<collection>/<recordId>`, each optionally followed by `?<query>` (`options=` carries filters and
+// headers), where <collection> is the exact collection name or id. The collection part is matched
+// literally (no decoding), so anything outside [A-Za-z0-9_] can't be a collection and is refused.
+const TOPIC_RE = /^([A-Za-z0-9_]+)(?:\/[^?]*)?(?:\?.*)?$/s;
+export const topicCollection = (topic) => (typeof topic === 'string' ? (TOPIC_RE.exec(topic)?.[1] ?? null) : null);
+
+// Checks a realtime subscribe body (POST /api/realtime): every topic must name one of this project's
+// existing collections (by name or id) and its options must not reference other projects. Returns
+// { body } to forward (re-serialized, so PocketBase reads exactly what was checked) or a refusal
+// { status, message }.
+export async function checkRealtimeSubscribe(slug, body, index = collectionIndex) {
+  const invalid = { status: 400, message: 'Invalid realtime request' };
+  const prefix = prefixFor(slug);
+  let parsed;
+  try { parsed = JSON.parse(body.toString('utf8')); } catch { return invalid; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return invalid;
+  const { clientId, subscriptions = [] } = parsed;
+  if (typeof clientId !== 'string' || !Array.isArray(subscriptions) || !subscriptions.every((t) => typeof t === 'string')) return invalid;
+
+  let idx = null;
+  let refreshed = false;
+  const owned = (col) => (col.startsWith(prefix) ? idx.names.has(col) : idx.ids.has(col));
+  for (const topic of subscriptions) {
+    const col = topicCollection(topic);
+    if (col) {
+      idx ??= await index(slug);
+      if (!owned(col) && !refreshed) {
+        idx = await index(slug, { refresh: true });
+        refreshed = true;
+      }
+    }
+    if (!col || !owned(col)) {
+      return { status: 403, message: `Realtime topic "${topic.slice(0, 100)}" doesn't name one of this project's collections (names start with "${prefix}").` };
+    }
+    const foreign = foreignCollectionRef(decode(topic), prefix);
+    if (foreign) return { status: 403, message: `Cannot reference collection "${foreign}" from this project.` };
+  }
+  return { body: Buffer.from(JSON.stringify({ clientId, subscriptions })) };
+}
+
 export async function tokenAllowed(slug, token, index = collectionIndex) {
   if (!token) return true;
   const collectionId = tokenCollectionId(token);
@@ -78,14 +121,27 @@ export async function proxyPocketBase(req, res, slug, url) {
     return sendJson(res, 401, { status: 401, message: 'Auth token was not issued by this project.' });
   }
 
-  let body = null;
-  if (path === '/api/realtime' && req.method === 'POST') body = await readBody(req, 256 * 1024);
-  const check = checkForeignRefs(url.search, body, prefixFor(slug));
-  if (check.invalid) return sendJson(res, 400, { status: 400, message: 'Invalid realtime request' });
-  if (check.foreign) return sendJson(res, 403, { status: 403, message: `Cannot reference collection "${check.foreign}" from this project.` });
+  const { foreign } = checkForeignRefs(url.search, null, prefixFor(slug));
+  if (foreign) return sendJson(res, 403, { status: 403, message: `Cannot reference collection "${foreign}" from this project.` });
 
   const headers = { ...req.headers, host: pbUrl.host };
   delete headers.cookie;
+  let body = null;
+  if (path === '/api/realtime' && req.method === 'POST') {
+    let raw;
+    try {
+      raw = await readBody(req, 256 * 1024);
+    } catch (err) {
+      const status = err instanceof HttpError ? err.status : 400;
+      return sendJson(res, status, { status, message: status === 413 ? 'Realtime request too large' : 'Invalid realtime request' });
+    }
+    const check = await checkRealtimeSubscribe(slug, raw);
+    if (!check.body) return sendJson(res, check.status, { status: check.status, message: check.message });
+    // PocketBase also binds form bodies; forward exactly the JSON that was checked.
+    body = check.body;
+    for (const k of Object.keys(headers)) if (/^(content-type|content-length|content-encoding|transfer-encoding)$/i.test(k)) delete headers[k];
+    Object.assign(headers, { 'content-type': 'application/json', 'content-length': String(body.length) });
+  }
   const upstream = http.request(
     { hostname: pbUrl.hostname, port: pbUrl.port, method: req.method, path: path + url.search, headers },
     (pbRes) => {
