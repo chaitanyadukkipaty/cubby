@@ -152,7 +152,7 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     // A filter is counted before its ids are read; ids given are looked up first (the limit is on what matches).
     if (req.mode === 'filter') {
       tooMany('The filter matches', await count(c.name, req.filter).catch((err) => {
-        if (err.status === 400) throw new HttpError(400, `PocketBase rejected the filter: ${err.response?.message ?? err.message}`);
+        if (err.status === 400) throw new HttpError(400, `PocketBase rejected the filter: ${filterHint(req.filter, c, short(c))}`);
         throw err;
       }));
     }
@@ -290,6 +290,20 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     throw out;
   }
   return done;
+}
+
+// Why PocketBase may have refused `filter` on collection `col` (named `name`): it only ever answers "Something went
+// wrong while processing your request.". Names that aren't fields of the collection (the first part of a path like
+// `owner.email`; @macros and back-relations aside), or else a reminder of the syntax.
+function filterHint(filter, col, name) {
+  const fields = [...new Set(['id', ...col.fields.map((f) => f.name)])].filter((f) => !['password', 'tokenKey'].includes(f));
+  const code = filter.replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g, '""');
+  const names = [...code.matchAll(/(?<![\w@.:])[A-Za-z_]\w*(?!\w|\s*\()/g)].map((m) => m[0])
+    .filter((w) => !['true', 'false', 'null'].includes(w) && !w.includes('_via_'));
+  const unknown = [...new Set(names)].filter((w) => !fields.includes(w));
+  const example = 'A filter looks like done = false && title ~ "milk".';
+  if (unknown.length) return `${name} has no field ${unknown.slice(0, 3).map((w) => `"${clip(w)}"`).join(', ')} (its fields: ${fields.join(', ')}). ${example}`;
+  return `check its operators (=, !=, >, <, ~, ?=, &&, ||) and that text is in quotes. ${example}`;
 }
 
 // "lines.item must point at an items record and doesn't cascade: 2 records (l1, l2) would point at nothing. …"

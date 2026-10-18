@@ -241,6 +241,14 @@ describe('deleting by filter or ids', () => {
   test('a filter PocketBase can\'t read is a 400 with its message', async () => {
     await assert.rejects(clearData('shop', { collection: 'products', filter: 'title = ' }, deps()), (e) => e.status === 400 && /PocketBase rejected the filter/.test(e.message));
   });
+  test("a rejected filter says which names aren't fields of the collection, or how a filter looks", async () => {
+    // PocketBase only answers "Something went wrong while processing your request." for any filter it can't use.
+    const vague = (filter) => clearData('shop', { collection: 'products', filter }, deps());
+    await assert.rejects(vague('nope = 1 && title.x = "nope" && @now > created && strftime(\'%Y\', created) = "2026"'), (e) => e.status === 400
+      && e.message === 'PocketBase rejected the filter: products has no field "nope" (its fields: id, title, photo, created, updated). A filter looks like done = false && title ~ "milk".');
+    await assert.rejects(vague('title = '), (e) => e.status === 400
+      && e.message === 'PocketBase rejected the filter: check its operators (=, !=, >, <, ~, ?=, &&, ||) and that text is in quotes. A filter looks like done = false && title ~ "milk".');
+  });
   test('PocketBase being down while matching is passed on as it is', async () => {
     const real = pb.collection.bind(pb);
     pb.collection = (name) => ({ ...real(name), getList: async () => { throw Object.assign(new Error('down'), { status: 0 }); } });

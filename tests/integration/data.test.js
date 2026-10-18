@@ -151,6 +151,10 @@ describe('deleting by filter or ids', () => {
       assert.equal(r.status, 403, filter);
     }
     assert.equal((await owner('POST', '/api/projects/picky/data/clear', { body: { collection: 'products', filter: 'nope ===' } })).status, 400);
+    const unknown = await owner('POST', '/api/projects/picky/data/clear', { body: { collection: 'products', filter: 'titel = "Mug"', dry_run: true } });
+    assert.deepEqual([unknown.status, unknown.data.error], [400, 'PocketBase rejected the filter: products has no field "titel" (its fields: id, title, photo, created, updated). A filter looks like done = false && title ~ "milk".']);
+    const hidden = await owner('POST', '/api/projects/picky/data/clear', { body: { collection: 'orders', filter: 'product.title != "" && @request.auth.password != ""', dry_run: true } });
+    assert.equal(hidden.status, 403, 'a password hash is never matched on');
     assert.equal((await pb.collection('picky__products').getList(1, 1)).totalItems, 2);
   });
   test('a filter deletes only the matching records, snapshotting just those and their files', async () => {
