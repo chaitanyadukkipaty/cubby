@@ -5,6 +5,8 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-18
+
 ### Added
 
 - Dashboard Home is now your agents' activity timeline: one line per change, grouped by day, with the agent's badge
