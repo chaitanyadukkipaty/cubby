@@ -122,6 +122,14 @@ describe('schema drift', () => {
     assert.deepEqual(again.recreated.sort(), ['customers', 'orders', 'products'], 'a collection with no records comes back too');
     assert.deepEqual(again.collections.find((c) => c.name === 'customers'), { name: 'customers', records: 0, existing: 0, restored: 0, replaced: 0, failed: 0 });
   });
+  test('dropping a collection with no records and restoring it brings it back', async () => {
+    await applySchema('shop', { collections: [{ name: 'bundles', fields: [{ name: 'label', type: 'text' }] }] }, pb.collections);
+    const { snapshot } = await clear({ collections: ['bundles'], drop: true });
+    assert.ok(snapshot, 'a drop always leaves a snapshot, records or not');
+    const r = await restore(snapshot.id);
+    assert.deepEqual(r.recreated, ['bundles']);
+    assert.ok(pb.collections.byName('shop__bundles'));
+  });
   test('a recreated collection loses relations to collections that are gone too', async () => {
     const { snapshot } = await clear({ collections: ['orders'], drop: true });
     await pb.collections.truncate('shop__products');
