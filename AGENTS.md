@@ -188,6 +188,9 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   tests set both to `''` (= unknown, plain version) in tests/helpers/server.js.
 - The daily release check (server/src/updates.js) is the only outbound request Cubby itself makes (app jobs make
   their own). Tests must never reach GitHub: the helper sets `CUBBY_UPDATE_CHECK=0`; tests that need it point `CUBBY_UPDATE_URL` at a local stub.
+- `cubby-server` and install.sh check the server with `docker exec cubby curl http://127.0.0.1:8080/api/info`, like the
+  image's HEALTHCHECK. Never through the published port: with a domain, port 80 only redirects to HTTPS (a 308 with an
+  empty body that `curl -f` accepts), which made every domain-mode upgrade report failure from 0.1.0 to 0.1.6.
 - docker/ref.sh is sourced by both install.sh (downloaded from main when piped) and cubby-server, so it must stay
   compatible with older checkouts' callers. cubby-server runs everything inside `main()` and replaces itself by
   rename at the end of `upgrade`; keep both, or an upgrade can edit the script bash is executing.

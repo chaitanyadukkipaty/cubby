@@ -5,6 +5,15 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `cubby-server upgrade`, `cubby-server version` and the installer now ask the server inside its container whether it's
+  up. On servers with a domain they asked port 80, which only redirects to HTTPS, so every upgrade ended with "Cubby
+  didn't come back up" although it had worked, `version` said the server wasn't answering, and the new `cubby-server`
+  was never installed. **Servers with a domain:** the upgrade to this release still runs your old `cubby-server`, so
+  after it, install the new one once with
+  `sudo install -m 755 /opt/cubby/src/docker/cubby-server /usr/local/bin/cubby-server`.
+
 ## [0.1.6] - 2026-10-18
 
 ### Added
