@@ -255,6 +255,8 @@ describe('restoring', () => {
       headers: { 'content-type': 'application/json' }, body: { identity: 'ann@shop.test', password: 'ann-pass-1234' },
     });
     assert.equal(old.status, 400, 'the old password is gone');
+    const { accounts, restored_accounts } = (await owner('GET', '/api/projects/accounts/metrics')).data;
+    assert.deepEqual([accounts.total, accounts.new, accounts.days.at(-1).signups, restored_accounts], [1, 0, 0, undefined], 'a restored account is no signup');
   });
   test('--overwrite needs --yes, replaces records and saves what it replaced', async () => {
     await newApp('over');

@@ -212,6 +212,7 @@ async function ensurePlatformCollections() {
       { name: 'peak_active', type: 'number', onlyInt: true },
       { name: 'api_requests', type: 'number', onlyInt: true },
       { name: 'api_errors', type: 'number', onlyInt: true },
+      { name: 'restored_accounts', type: 'number', onlyInt: true },
       { name: 'paths', type: 'json', maxSize: 10_000 },
       ...autodates,
     ],

@@ -212,8 +212,8 @@ const routes = [
     const range = url.searchParams.get('range') || '24h';
     const hours = parseRange(range);
     const project = await appForOwnerOrAdmin(user, slug);
-    const report = (await metrics.report([project.id], hours))[project.id];
-    const accounts = await appAccounts(admin, prefixFor(project.slug), Date.parse(report.from), Date.parse(report.to));
+    const { restored_accounts: restored, ...report } = (await metrics.report([project.id], hours))[project.id];
+    const accounts = await appAccounts(admin, prefixFor(project.slug), Date.parse(report.from), Date.parse(report.to), restored);
     // Deploy markers: the deploys still kept (the last 10) that went out in the range.
     const deploys = (await admin.collection('cubby_deploys').getFullList({
       filter: admin.filter('project = {:p} && created >= {:from}', { p: project.id, from: new Date(report.from) }), sort: 'created',
@@ -272,6 +272,7 @@ const routes = [
     const result = await oneAtATime(project.slug, () => restoreSnapshot(snap, { overwrite: Boolean(overwrite), dry_run: Boolean(dry_run) }, { pb: admin, dataDir: config.dataDir, project, actor }));
     if (dry_run) return result;
     storageCache.clear();
+    metrics.accountsRestored(project.id, result.accounts.length); // not signups
     await recordActivity(user, { action: 'data.restore', app: project.slug, summary: logic.restoreSummary(result) });
     return result;
   }],
