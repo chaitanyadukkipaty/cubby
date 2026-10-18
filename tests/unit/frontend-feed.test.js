@@ -177,6 +177,11 @@ describe('feedEntry()', () => {
     const e = feed.feedEntry(row({ via: 'dashboard', agent: null }), { apps, agents });
     assert.deepEqual(e.actor, { name: 'Dashboard', mono: 'DB', href: null });
   });
+  test("an admin's action on your app (your copy of it) is the admin's, not your dashboard's", () => {
+    const e = feed.feedEntry(row({ via: 'admin', agent: null, admin: 'boss@x.dev', action: 'admin.data.clear' }), { apps, agents });
+    assert.deepEqual(e.actor, { name: 'Admin', mono: 'AD', href: null });
+    assert.deepEqual(feed.appsByAgent([row({ via: 'admin', agent: null })]), {}, 'nor one of the apps your manual token touched');
+  });
   test("an app that's gone (or isn't yours) is named by its slug, without a link; account-wide actions have no app", () => {
     assert.deepEqual(feed.feedEntry(row({ app: 'old-app' }), { apps, agents }).app, { slug: 'old-app', name: 'old-app', href: null });
     assert.equal(feed.feedEntry(row({ app: null, action: 'agent.rename' }), { apps, agents }).app, null);

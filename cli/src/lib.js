@@ -98,7 +98,7 @@ export function formatActivity(list, { users = false } = {}) {
     (r) => String(r.at).replace('T', ' ').slice(0, 16),
     ...(users ? [(r) => r.user ?? '-'] : []),
     (r) => r.app ?? '-',
-    (r) => r.agent?.name ?? 'dashboard',
+    (r) => r.agent?.name ?? (r.via === 'admin' ? 'admin' : 'dashboard'),
   ];
   const widths = cols.map((get) => Math.max(...list.map((r) => get(r).length)) + 2);
   return list.map((r) => cols.map((get, i) => get(r).padEnd(widths[i])).join('') + r.summary).join('\n');

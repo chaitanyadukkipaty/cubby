@@ -291,6 +291,8 @@ describe('admin clears are never silent', () => {
     assert.equal(r.code, 0, r.stderr);
     const mine = (await owner('GET', '/api/activity?app=watched')).data[0];
     assert.equal(mine.action, 'admin.data.clear');
+    assert.deepEqual([mine.via, mine.agent, mine.admin], ['admin', null, 'admin@test.dev'], "the admin's, not the owner's dashboard");
+    assert.ok(!(await owner('GET', '/api/activity?app=watched&agent=dashboard')).data.some((x) => x.action === 'admin.data.clear'));
     assert.match(mine.summary, /^Admin \(admin@test\.dev\) emptied orders — 1 record · snapshot \S+ until \S+\. Reason: spam flood$/);
     const flag = (await owner('GET', '/api/projects/watched')).data.admin_clear;
     assert.deepEqual([flag.by, flag.reason, flag.snapshot], ['admin@test.dev', 'spam flood', r.json.snapshot.id]);

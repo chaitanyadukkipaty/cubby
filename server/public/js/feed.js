@@ -44,6 +44,7 @@ export function rollbackTarget(deploys, deployId) {
 }
 
 function actorOf(row, agents) {
+  if (row.via === 'admin') return { name: 'Admin', mono: 'AD', href: null };
   if (row.via !== 'agent' || !row.agent) return { name: 'Dashboard', mono: 'DB', href: null };
   const known = agents.find((a) => a.id === row.agent.id);
   if (!known) return { name: row.agent.name, mono: monogram(row.agent.name), href: null };
@@ -117,7 +118,7 @@ export function lastDeployers(rows, agents = []) {
 export function appsByAgent(rows) {
   const out = {};
   for (const r of rows) {
-    if (!r.app) continue;
+    if (!r.app || r.via === 'admin') continue;
     const key = r.via === 'agent' && r.agent ? r.agent.id : 'dashboard';
     const list = (out[key] ??= []);
     if (!list.includes(r.app)) list.push(r.app);

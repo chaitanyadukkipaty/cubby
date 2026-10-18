@@ -26,6 +26,12 @@ describe('activity rows', () => {
     assert.deepEqual(logic.activityRow(alice, { action: 'deploy', meta: { deploy: 'd1', files: 3 } }).meta, { deploy: 'd1', files: 3 });
     assert.equal(logic.activityRow(alice, { action: 'deploy', meta: {} }).meta, null, 'empty meta is not stored');
   });
+  test("the owner's copy of an admin's action names the admin, not the owner's dashboard", () => {
+    const row = logic.activityRow({ id: 'owner1', byAdmin: 'boss@x.dev' }, { action: 'admin.data.clear', app: 'todo', summary: 's' });
+    assert.deepEqual([row.user, row.agent, row.agent_name], ['owner1', '', 'boss@x.dev']);
+    const view = logic.activityView({ id: 'r1', at: 't', ...row, expand: { user: { email: 'o@x.dev' } } });
+    assert.deepEqual([view.user, view.via, view.agent, view.admin], ['o@x.dev', 'admin', null, 'boss@x.dev']);
+  });
   test('summaries are capped so a row stays small', () => {
     assert.equal(logic.activityRow(alice, { action: 'deploy', summary: 'x'.repeat(1000) }).summary.length, 300);
   });
@@ -51,8 +57,8 @@ describe('activity queries', () => {
   });
   test('admins (all) see everyone; agent=dashboard means the manual token', () => {
     const q = logic.activityQuery({ id: 'admin' }, { agent: 'dashboard' }, { all: true });
-    assert.equal(q.filter.text, 'agent = {:agent}');
-    assert.deepEqual(q.filter.params, { agent: '' });
+    assert.equal(q.filter.text, 'agent = {:agent} && agent_name = {:none}', "not the owner copies of an admin's actions");
+    assert.deepEqual(q.filter.params, { agent: '', none: '' });
     assert.equal(logic.activityQuery({ id: 'a' }, {}, { all: true }).filter.text, '');
   });
   test('limit defaults to 50 and is clamped to 1..500', () => {

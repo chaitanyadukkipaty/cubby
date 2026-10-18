@@ -119,6 +119,7 @@ describe('formatters', () => {
     ].join('\n'));
     assert.equal(lib.formatActivity(rows, { users: true }).split('\n')[0], '2026-10-17 09:30  a@x.dev  todo  Claude Code · mbp  Deployed d2 (3 files)');
     assert.equal(lib.formatActivity([]), 'No activity in the last 30 days');
+    assert.match(lib.formatActivity([{ at: 'T', app: 'todo', via: 'admin', agent: null, admin: 'boss@x.dev', summary: 'Admin (boss@x.dev) emptied …' }]), /todo {2}admin {2}Admin/, "your copy of an admin's clear says admin");
   });
   test('formatProjects flags undeployed apps', () => {
     assert.equal(lib.formatProjects([{ slug: 'a', url: 'u1', current_deploy: 'd' }, { slug: 'b', url: 'u2' }]),

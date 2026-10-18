@@ -75,7 +75,7 @@ async function clearDone(user, project, actor, result, reason, note = '') {
   if (actor.admin) {
     const summary = logic.adminClearSummary(user, result, reason) + note;
     await recordActivity(user, { action: 'admin.data.clear', app: slug, summary });
-    await recordActivity({ id: project.owner }, { action: 'admin.data.clear', app: slug, summary });
+    await recordActivity({ id: project.owner, byAdmin: user.email }, { action: 'admin.data.clear', app: slug, summary });
   } else {
     await recordActivity(user, { action: 'data.clear', app: slug, summary: logic.clearSummary(result) + note });
   }

@@ -101,13 +101,15 @@ export const agentView = (k, currentKeyId) => ({
 });
 
 // --- Activity log: one row per mutation, attributed to the agent key that made it ---
-// `actor.agent` is { id, name } for an agent's key, null for the manual token (the dashboard).
+// `actor.agent` is { id, name } for an agent's key, null for the manual token (the dashboard). `actor.byAdmin` is the
+// email of an admin who acted on the user's app: the owner's copy of that row has no agent and the admin's email as
+// `agent_name`, so it never reads as the owner's own dashboard.
 // `meta` is optional structured detail the dashboard reads instead of parsing `summary` (e.g. { deploy, files }).
 // Keep it small and never put secret values in it: it is returned by the activity APIs as is.
 export const activityRow = (actor, { action, app = '', summary = '', meta = null }, now = new Date()) => ({
   user: actor.id,
   agent: actor.agent?.id ?? '',
-  agent_name: actor.agent?.name ?? '',
+  agent_name: actor.agent?.name ?? actor.byAdmin ?? '',
   app,
   action,
   summary: String(summary).slice(0, 300),
@@ -121,7 +123,7 @@ export const ACTIVITY_DAYS = 30;
 export const activityCutoff = (now) => new Date(now.getTime() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ');
 
 // The PocketBase filter for listing activity. A user sees only rows they made (their apps and agents);
-// `all` (admins, /api/admin/activity) drops that. agent=dashboard means the manual token.
+// `all` (admins, /api/admin/activity) drops that. agent=dashboard means the manual token (not an admin's actions).
 export function activityQuery(user, { app, agent, limit } = {}, { all = false } = {}) {
   const parts = [];
   const params = {};
@@ -129,6 +131,7 @@ export function activityQuery(user, { app, agent, limit } = {}, { all = false } 
   if (!all) add('user = {:u}', 'u', user.id);
   if (app) add('app = {:app}', 'app', String(app));
   if (agent) add('agent = {:agent}', 'agent', agent === 'dashboard' ? '' : String(agent));
+  if (agent === 'dashboard') add('agent_name = {:none}', 'none', '');
   const n = Number.parseInt(limit, 10);
   return {
     filter: { text: parts.join(' && '), params },
@@ -216,8 +219,9 @@ export const activityView = (r) => ({
   id: r.id,
   at: r.at,
   user: r.expand?.user?.email ?? null,
-  via: r.agent ? 'agent' : 'dashboard',
+  via: r.agent ? 'agent' : r.agent_name ? 'admin' : 'dashboard',
   agent: r.agent ? { id: r.agent, name: r.agent_name } : null,
+  ...(!r.agent && r.agent_name && { admin: r.agent_name }),
   app: r.app || null,
   action: r.action,
   summary: r.summary,
