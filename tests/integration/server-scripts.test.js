@@ -451,6 +451,9 @@ describe('cubby-server fail2ban', () => {
     const jail = readFileSync(host(inst, 'etc/fail2ban/jail.d/cubby.conf'), 'utf8');
     assert.match(jail, new RegExp(`logpath = ${host(inst, 'var/log/cubby/access.log')}\n`));
     assert.match(jail, new RegExp(`cubby_bin="${join(inst.home, 'bin/cubby-server')}"`));
+    // fail2ban and systemd run the hooks without our environment, so the install's home goes along.
+    assert.match(jail, new RegExp(`cubby_home="${inst.home}"`));
+    assert.match(readFileSync(host(inst, 'etc/systemd/system/cubby-fail2ban.service'), 'utf8'), new RegExp(`Environment=CUBBY_HOME=${inst.home}\\n`));
     assert.ok(existsSync(host(inst, 'var/log/cubby/access.log')), 'the log exists before fail2ban reads it');
     for (const d of ['events', 'requests', 'results', 'tmp']) assert.ok(existsSync(host(inst, 'var/lib/cubby/fail2ban', d)), d);
     assert.match(readFileSync(host(inst, 'etc/systemd/system/fail2ban.service.d/cubby.conf'), 'utf8'), /After=docker\.service/);

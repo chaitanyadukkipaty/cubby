@@ -101,7 +101,7 @@ fail2ban_install_config() {
   touch "$LOG_DIR/access.log" # fail2ban refuses a jail whose log doesn't exist yet
   cp "$conf"/filter.d/cubby-*.conf "$F2B_ETC/filter.d/"
   cp "$conf"/action.d/cubby-*.conf "$F2B_ETC/action.d/"
-  sed -e "s#__LOG__#$LOG_DIR/access.log#g" -e "s#__CUBBY_BIN__#$CUBBY_BIN#g" "$conf/jail.d/cubby.conf" > "$F2B_ETC/jail.d/cubby.conf"
+  sed -e "s#__LOG__#$LOG_DIR/access.log#g" -e "s#__CUBBY_BIN__#$CUBBY_BIN#g" -e "s#__CUBBY_HOME__#$CUBBY_HOME#g" "$conf/jail.d/cubby.conf" > "$F2B_ETC/jail.d/cubby.conf"
   # Debian 12 without rsyslog has no auth.log, so the stock sshd jail can't start and takes fail2ban down with it.
   # Debian's fix: read sshd from the journal.
   if [[ -f "$F2B_ETC/paths-debian.conf" && ! -f "$HOST_ROOT/var/log/auth.log" ]]; then
@@ -125,6 +125,7 @@ Description=Answer Cubby unban requests
 
 [Service]
 Type=oneshot
+Environment=CUBBY_HOME=$CUBBY_HOME
 ExecStart=$CUBBY_BIN fail2ban process-requests
 UNIT
 }
