@@ -169,7 +169,8 @@ async function appData(body, a, slug) {
   body.replaceChildren(back,
     h('div', { class: 'page-h' }, h('h2', { class: 'mono' }, a.slug), h('span', { class: 'muted' }, `owned by ${a.owner}`),
       mine ? h('a', { class: 'page-actions', href: appPath(a.slug, 'data') }, 'Open your Data tab') : null),
-    mine ? null : h('p', { class: 'muted small' }, `This app isn't yours: clearing its data needs a reason. ${a.owner} sees it on their app and in their activity, with the snapshot to restore.`),
+    // replaceChildren prints null as text, so the note is spread in only when it applies.
+    ...(mine ? [] : [h('p', { class: 'muted small' }, `This app isn't yours: clearing its data needs a reason. ${a.owner} sees it on their app and in their activity, with the snapshot to restore.`)]),
     panel);
   await renderData(panel, { slug: a.slug, needsReason: !mine });
 }

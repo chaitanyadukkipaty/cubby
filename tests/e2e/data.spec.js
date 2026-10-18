@@ -151,3 +151,17 @@ test("an admin clears someone else's app with a reason; the owner sees a banner 
   await expect(banner).toHaveCount(0);
   await ownerPage.close();
 });
+
+test("an admin's own app on Admin → Apps links to their Data tab, asks for no reason, and shows no stray text", async ({ page, api, dashboard }) => {
+  const token = await api.adminToken();
+  const slug = uid('adown');
+  await api.createApp(token, slug);
+  const { admin } = dashboard;
+  await dashboard.openAs(token);
+  await dashboard.openAdmin('Apps');
+  await admin.appRow(slug).clearDataLink.click();
+  await expect(page.getByRole('link', { name: 'Open your Data tab' })).toBeVisible();
+  await expect(page.getByText(/clearing its data needs a reason/)).toHaveCount(0);
+  // DOM methods print null as a word.
+  expect(await page.locator('body').innerText()).not.toMatch(/\b(null|undefined)\b/);
+});
