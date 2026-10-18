@@ -35,6 +35,9 @@ export const config = {
   // keep: seeds the backup_keep setting on first boot, and stands in for it on rows from before it existed.
   backups: { keep: Number(env('BACKUP_KEEP', 7)), hour: Number(env('BACKUP_HOUR', 3)) },
   keepDeploys: 10,
+  // Set by cubby-server only while fail2ban is enabled on the host: the folder it shares with the host (ban events in,
+  // unban requests out) and Caddy's access log, for what a banned scanner swept. Unset: the Security tab is off.
+  fail2ban: { dir: env('CUBBY_FAIL2BAN_DIR') || null, accessLog: env('CUBBY_ACCESS_LOG') || null },
   pb: {
     url: env('PB_URL', 'http://127.0.0.1:8090'),
     bin: resolve(root, env('PB_BIN', './bin/pocketbase')),

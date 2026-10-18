@@ -255,4 +255,27 @@ async function ensurePlatformCollections() {
       'CREATE INDEX idx_cubby_activity_at ON cubby_activity (at)',
     ],
   });
+
+  // IPs fail2ban banned (bans.js), one row per ban, with the hosts and sample paths a scanner swept. Kept 90 days.
+  // Holds raw IPs, on purpose and only of banned addresses: the Admin page's Security tab.
+  await upsertCollection({
+    name: 'cubby_bans',
+    type: 'base',
+    ...LOCKED,
+    fields: [
+      { name: 'ip', type: 'text', required: true, max: 64 },
+      { name: 'jail', type: 'text', required: true, max: 46 },
+      { name: 'banned_at', type: 'date', required: true },
+      { name: 'expires_at', type: 'date' },
+      { name: 'unbanned_at', type: 'date' },
+      { name: 'unbanned_by', type: 'text', max: 200 },
+      { name: 'hosts', type: 'json', maxSize: 20_000 },
+      { name: 'paths', type: 'json', maxSize: 20_000 },
+      ...autodates,
+    ],
+    indexes: [
+      'CREATE INDEX idx_cubby_bans_ip ON cubby_bans (ip, jail, unbanned_at)',
+      'CREATE INDEX idx_cubby_bans_at ON cubby_bans (banned_at)',
+    ],
+  });
 }

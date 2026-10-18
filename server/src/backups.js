@@ -13,6 +13,7 @@ import { deleteBackup, listBackups, planRetention } from './storage.js';
 import { pruneActivity } from './activity.js';
 import { pocketbaseStore, rollupMetrics } from './metrics.js';
 import { pruneSnapshots } from './snapshots.js';
+import { bansStore, pruneBans } from './bans.js';
 
 // Keeps the newest `keep` backups (the Admin setting), deleting older ones as whole pairs by date. `pb` (the
 // superuser client), `dataDir`, `now`, `createTar` and `log` are injectable for tests.
@@ -91,6 +92,7 @@ export const MAINTENANCE = [
     return rolled || deleted ? `metrics: rolled ${rolled} hourly rows into days, deleted ${deleted} daily rows older than a year` : null;
   }],
   ['snapshot prune', async () => { const n = await pruneSnapshots(config.dataDir); return n ? `pruned ${n} data snapshots` : null; }],
+  ['bans prune', async () => { const n = await pruneBans(bansStore(admin)); return n ? `pruned ${n} ban records older than 90 days` : null; }],
 ];
 
 // The nightly maintenance: the cleanups, then a backup. A failed cleanup never stops the others or the backup.
