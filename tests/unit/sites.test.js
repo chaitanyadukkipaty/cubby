@@ -222,4 +222,7 @@ describe('oldDeploys', () => {
     assert.throws(() => sites.oldDeploys(list, { id: 'd3' }), (e) => e.status === 409 && /current deploy/.test(e.message));
     assert.throws(() => sites.oldDeploys(list, { id: 'nope' }), (e) => e.status === 404);
   });
+  test('an unknown id is echoed back cut short, however long it is', () => {
+    assert.throws(() => sites.oldDeploys(list, { id: 'x'.repeat(500) }), (e) => e.status === 404 && e.message === `Deploy ${'x'.repeat(40)}… not found`);
+  });
 });

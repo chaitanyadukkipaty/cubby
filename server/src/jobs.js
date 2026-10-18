@@ -9,7 +9,7 @@ import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { admin } from './pb.js';
 import { config, prefixFor, SLUG_RE } from './config.js';
-import { HttpError } from './http.js';
+import { HttpError, clip } from './http.js';
 import { parseCron, cronMatches, nextRun } from './cron.js';
 import { isAllowed, checkForeignRefs } from './proxy.js';
 import { getSettings } from './settings.js';
@@ -333,7 +333,7 @@ export async function runNow(project, name) {
 export async function jobRuns(project, name, { limit = 1, id } = {}) {
   if (id) {
     const r = await runs().getOne(id).catch(() => null);
-    if (!r || r.project !== project.id || r.job !== name) throw new HttpError(404, `Run ${id} not found`);
+    if (!r || r.project !== project.id || r.job !== name) throw new HttpError(404, `Run ${clip(id)} not found`);
     return [runView(r)];
   }
   const n = Math.min(Math.max(Number.parseInt(limit, 10) || 1, 1), KEEP_RUNS);

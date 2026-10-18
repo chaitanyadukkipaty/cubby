@@ -116,6 +116,7 @@ describe('emptying collections', () => {
     await assert.rejects(clearData('shop', { collections: ['other__products'] }, deps()), (e) => e.status === 404);
     await assert.rejects(clearData('shop', { collections: [] }, deps()), (e) => e.status === 400 && /Name the collections/.test(e.message));
     await assert.rejects(clearData('shop', {}, deps()), (e) => e.status === 400);
+    await assert.rejects(clearData('shop', { collections: ['n'.repeat(500)] }, deps()), (e) => e.status === 404 && e.message === `Collection "${'n'.repeat(40)}…" not found`, 'a long name is cut short');
     assert.equal(pb.records('shop__products').length, 2);
     assert.ok(!existsSync(join(dataDir, 'snapshots')));
   });
@@ -225,6 +226,12 @@ describe('deleting by filter or ids', () => {
     assert.equal(pb.records('shop__products').length, 2);
     const r = await clearData('shop', { collection: 'products', filter: 'title != ""', all_matching: true }, deps({ maxMatches: 1 }));
     assert.equal(r.matches, 2);
+  });
+  test('by ids, the 10,000 limit counts the records that match, not the ids given', async () => {
+    const many = ['p1', 'p2', ...Array.from({ length: 5 }, (_, i) => `gone${i}`)];
+    await assert.rejects(clearData('shop', { collection: 'products', ids: many }, deps({ maxMatches: 1 })), (e) => e.status === 409 && /^Those ids match 2 records, more than 1\./.test(e.message));
+    const r = await clearData('shop', { collection: 'products', ids: ['p1', ...many.slice(2)], dry_run: true }, deps({ maxMatches: 1 }));
+    assert.deepEqual([r.matches, r.missing.length], [1, 5], '7 ids, 1 match: under the limit');
   });
   test('a filter with a foreign @collection is refused before it runs', async () => {
     await assert.rejects(clearData('shop', { collection: 'products', filter: '@collection.other__products.title != ""' }, deps()), (e) => e.status === 403);

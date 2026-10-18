@@ -3,7 +3,7 @@
 // Every function takes { pb, dataDir }: the superuser client and DATA_DIR, injectable for unit tests.
 import { join } from 'node:path';
 import { prefixFor } from './config.js';
-import { HttpError } from './http.js';
+import { HttpError, clip } from './http.js';
 import { projectCollections, readSchema, deleteCollections, collectionIndex } from './schema.js';
 import { dirSize } from './sites.js';
 import { checkForeignRefs } from './proxy.js';
@@ -126,7 +126,7 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
   }
   const targets = req.names.map((name) => {
     const c = cols.find((x) => x.name === prefix + name);
-    if (!c) throw new HttpError(404, `Collection "${name}" not found`);
+    if (!c) throw new HttpError(404, `Collection "${clip(name)}" not found`);
     return c;
   });
   const short = (c) => c.name.slice(prefix.length);
@@ -144,14 +144,23 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     const [c] = targets;
     total = await count(c.name, '');
     const filters = req.mode === 'ids' ? chunks(req.ids).map((ids) => byIds(pb, ids)) : [req.filter];
-    const n = req.mode === 'ids' ? req.ids.length : await count(c.name, req.filter).catch((err) => {
-      if (err.status === 400) throw new HttpError(400, `PocketBase rejected the filter: ${err.response?.message ?? err.message}`);
-      throw err;
-    });
-    if (n > maxMatches && !request.all_matching) throw new HttpError(409, `${req.mode === 'ids' ? 'That' : 'The filter'} matches ${n} records, more than ${maxMatches}. Narrow it, or confirm with all_matching (--all-matching).`);
+    const tooMany = (what, n) => {
+      if (n > maxMatches && !request.all_matching) throw new HttpError(409, `${what} ${n} records, more than ${maxMatches}. Narrow it, or confirm with all_matching (--all-matching).`);
+    };
+    // A filter is counted before its ids are read; ids given are looked up first (the limit is on what matches).
+    if (req.mode === 'filter') {
+      tooMany('The filter matches', await count(c.name, req.filter).catch((err) => {
+        if (err.status === 400) throw new HttpError(400, `PocketBase rejected the filter: ${err.response?.message ?? err.message}`);
+        throw err;
+      }));
+    }
     matched = [];
     for (const filter of filters) await eachPage(pb, c.name, filter, (items) => { matched.push(...items.map((r) => r.id)); });
-    if (req.mode === 'ids') missing = req.ids.filter((id) => !matched.includes(id));
+    if (req.mode === 'ids') {
+      tooMany('Those ids match', matched.length);
+      const found = new Set(matched);
+      missing = req.ids.filter((id) => !found.has(id));
+    }
   }
   // Uploaded bytes of records `ids` of collection id `col`.
   const sizeOf = async (col, ids) => (await Promise.all(ids.map((id) => dirSize(join(storageDir(dataDir, col), id))))).reduce((a, b) => a + b, 0);

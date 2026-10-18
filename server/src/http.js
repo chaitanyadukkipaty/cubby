@@ -6,6 +6,12 @@ export class HttpError extends Error {
   }
 }
 
+// A name or id from a request, as an error message echoes it back: at most 40 characters ("…" when cut).
+export const clip = (value, max = 40) => {
+  const s = String(value);
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+};
+
 export function sendJson(res, status, body) {
   const data = JSON.stringify(body);
   res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data) });

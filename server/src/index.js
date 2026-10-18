@@ -2,7 +2,7 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { readFile, statfs } from 'node:fs/promises';
 import { config, SLUG_RE, prefixFor } from './config.js';
-import { HttpError, sendJson, readJson, readBody, rateLimiter, clientIp } from './http.js';
+import { HttpError, sendJson, readJson, readBody, rateLimiter, clientIp, clip } from './http.js';
 import { admin, startPocketBase, onShutdown } from './pb.js';
 import { signup, login, authenticate, regenerateToken, listAgents, renameAgent, revokeAgent } from './auth.js';
 import { applySchema, readSchema, dropFromSchema, projectCollections, deleteCollections } from './schema.js';
@@ -46,7 +46,7 @@ async function findProject(slug) {
 // Only the owner may change an app. Admins can delete apps, but only through /api/admin.
 async function ownedProject(user, slug) {
   const project = await findProject(slug);
-  if (!project || project.owner !== user.id) throw new HttpError(404, `App "${slug}" not found in your account`);
+  if (!project || project.owner !== user.id) throw new HttpError(404, `App "${clip(slug)}" not found in your account`);
   return project;
 }
 
@@ -85,7 +85,7 @@ async function clearDone(user, project, actor, result, reason, note = '') {
 async function appForOwnerOrAdmin(user, slug) {
   if (!user.is_admin) return ownedProject(user, slug);
   const project = await findProject(slug);
-  if (!project) throw new HttpError(404, `App "${slug}" not found`);
+  if (!project) throw new HttpError(404, `App "${clip(slug)}" not found`);
   return project;
 }
 
@@ -409,7 +409,7 @@ const compiledRoutes = logic.compileRoutes(routes);
 
 async function adminProject(slug) {
   const project = await findProject(slug);
-  if (!project) throw new HttpError(404, `App "${slug}" not found`);
+  if (!project) throw new HttpError(404, `App "${clip(slug)}" not found`);
   return project;
 }
 
