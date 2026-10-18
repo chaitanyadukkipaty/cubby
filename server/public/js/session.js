@@ -10,7 +10,10 @@ export const state = {
   me: null,
   info: { name: 'Cubby', open_signup: false, https: isHttps(SERVER) },
 };
-try { state.token = localStorage.getItem('cubby_token'); } catch {}
+function storedToken() {
+  try { return localStorage.getItem('cubby_token'); } catch { return null; }
+}
+state.token = storedToken();
 
 // main.js registers how to redraw the current page; views call rerender() after changing something.
 let redraw = () => {};
@@ -35,7 +38,19 @@ export async function api(method, path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && state.token) { logout(); throw new Error('Session expired'); }
+  if (res.status === 401 && state.token) {
+    // Tabs share one stored token. If another tab stored a newer one (it signed in again or regenerated), this tab's
+    // token is just stale: switch to the stored one rather than deleting it, which would sign out every tab.
+    const stored = storedToken();
+    if (stored && stored !== state.token) {
+      state.token = stored;
+      await loadMe();
+      rerender();
+      throw new Error('Signed in again in another tab. Try that again.');
+    }
+    logout();
+    throw new Error('Session expired');
+  }
   if (!res.ok) throw new Error(apiErrorMessage(res.status, data));
   return data;
 }
