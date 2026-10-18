@@ -1,8 +1,10 @@
 // Release tooling (scripts/release.mjs): when to tag, release notes, the versioning rule, changelog moves.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { changelogSection, planRelease, nextVersion, moveUnreleased } from '../../scripts/release.mjs';
+import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { changelogSection, planRelease, nextVersion, moveUnreleased, verifyTested, REQUIRED_CHECKS, main } from '../../scripts/release.mjs';
 
 const CHANGELOG = `# Changelog
 
@@ -112,4 +114,55 @@ test('every package.json carrying a version agrees with the root (release PRs bu
 test('the current CHANGELOG has a section for the current version (it was released through a release PR)', () => {
   const version = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
   assert.ok(changelogSection(readFileSync(new URL('../../CHANGELOG.md', import.meta.url), 'utf8'), version));
+});
+
+describe('verifyTested: releasing without running CI again on main', () => {
+  // A squash merge of an up-to-date PR has exactly the tree CI tested on the PR's head.
+  const sha = 'm'.repeat(40);
+  const head = 'h'.repeat(40);
+  const prs = [{ number: 55, merged_at: '2026-10-18T19:53:35Z', merge_commit_sha: sha, base: { ref: 'main' }, head: { sha: head } }];
+  const passed = REQUIRED_CHECKS.map((name, i) => ({ id: i + 1, name, head_sha: head, status: 'completed', conclusion: 'success' }));
+  const ok = { sha, tree: 't1', headTree: 't1', prs, checks: passed };
+
+  test('the merged PR\'s head has the same tree and every required check passed: release', () => {
+    assert.deepEqual(verifyTested(ok), { ok: true, pr: 55, head });
+  });
+  test('a commit that no merged PR made (a direct push) is refused', () => {
+    assert.match(verifyTested({ ...ok, prs: [] }).reason, /isn't the merge of a pull request/);
+    assert.match(verifyTested({ ...ok, prs: [{ ...prs[0], merged_at: null }] }).reason, /isn't the merge of a pull request/);
+    assert.match(verifyTested({ ...ok, prs: [{ ...prs[0], merge_commit_sha: 'x'.repeat(40) }] }).reason, /isn't the merge of a pull request/);
+  });
+  test('different code than CI tested (the PR was behind main) is refused', () => {
+    assert.match(verifyTested({ ...ok, headTree: 't2' }).reason, /differs from what CI tested on #55/);
+  });
+  test('a required check missing, failed, still running or for another commit is refused', () => {
+    assert.match(verifyTested({ ...ok, checks: passed.slice(1) }).reason, new RegExp(`${REQUIRED_CHECKS[0]}: missing`));
+    assert.match(verifyTested({ ...ok, checks: [{ ...passed[0], conclusion: 'failure' }, ...passed.slice(1)] }).reason, /: failure/);
+    assert.match(verifyTested({ ...ok, checks: [{ ...passed[0], status: 'in_progress', conclusion: null }, ...passed.slice(1)] }).reason, /: in_progress/);
+    assert.match(verifyTested({ ...ok, checks: passed.map((c) => ({ ...c, head_sha: 'z'.repeat(40) })) }).reason, /missing/);
+  });
+  test('a re-run counts: the newest run of each check decides', () => {
+    const rerun = [{ ...passed[0], id: 1, conclusion: 'failure' }, { ...passed[0], id: 99, conclusion: 'success' }, ...passed.slice(1)];
+    assert.equal(verifyTested({ ...ok, checks: rerun }).ok, true);
+    const regressed = [{ ...passed[0], id: 99, conclusion: 'failure' }, { ...passed[0], id: 1 }, ...passed.slice(1)];
+    assert.equal(verifyTested({ ...ok, checks: regressed }).ok, false);
+  });
+  test('the required checks are exactly the CI jobs, so renaming a job can\'t silently skip one', () => {
+    const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+    const jobs = [...ci.matchAll(/^    name: (.+)$/gm)].map((m) => m[1].trim());
+    assert.deepEqual([...REQUIRED_CHECKS].sort(), jobs.sort());
+  });
+
+  test('verify reads what the workflow fetched (check runs one per line) and refuses with the reason', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cubby-verify-'));
+    writeFileSync(join(dir, 'prs.json'), JSON.stringify(prs));
+    writeFileSync(join(dir, 'checks.ndjson'), passed.map((c) => JSON.stringify(c)).join('\n') + '\n');
+    const args = (headTree) => ['verify', '--sha', sha, '--tree', 't1', '--head-tree', headTree, '--prs', join(dir, 'prs.json'), '--checks', join(dir, 'checks.ndjson')];
+    const log = console.log;
+    let out = '';
+    console.log = (m) => { out += m; };
+    try { main(args('t1')); } finally { console.log = log; }
+    assert.match(out, /CI passed on #55 .* releasing without running it again/);
+    assert.throws(() => main(args('t2')), /differs from what CI tested on #55.*Not releasing/);
+  });
 });

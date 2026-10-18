@@ -182,6 +182,11 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 - Never push, move or delete `v*` tags: a ruleset blocks it, and the Release workflow is the only thing that creates
   them (over SSH with the `RELEASE_DEPLOY_KEY` deploy key). It tags when main's version has no tag and refuses if
   CHANGELOG.md has no section for that version.
+- Release commits (`chore(release):`) skip CI on main, and Release runs on the push instead of after CI. That's safe
+  only because main takes squash merges of up-to-date PRs: `verifyTested` (scripts/release.mjs) proves the commit's
+  tree equals its PR head's and that head passed `REQUIRED_CHECKS`. Loosening branch protection (allowing merges of
+  PRs behind main, or direct pushes) breaks that proof; Verify then refuses, but keep the two in step. A renamed CI
+  job must be renamed in `REQUIRED_CHECKS` too (a unit test compares them).
 - The reported version must differ whenever the code differs: `X.Y.Z` only for a build of tag `vX.Y.Z`, otherwise
   `X.Y.Z-dev+<sha>` (server/src/version.js). The launcher picks CLIs by this string, so don't "simplify" it to
   package.json. Docker builds get the commit/tag via `CUBBY_COMMIT`/`CUBBY_TAG` build args from `cubby-server`;

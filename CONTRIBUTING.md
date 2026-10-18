@@ -229,9 +229,13 @@ release PR. Feature PRs only add entries under `## [Unreleased]` in `CHANGELOG.m
    entries under `## [X.Y.Z] - <date>` and bumps both `package.json` files and the lockfile. Open the PR; CI runs as
    usual.
 2. **The maintainer merges it.** That merge is the decision to release.
-3. **Automation tags and publishes.** After CI passes on `main`, the [Release workflow](.github/workflows/release.yml)
+3. **Automation tags and publishes.** On the push to `main`, the [Release workflow](.github/workflows/release.yml)
    sees a version without a `vX.Y.Z` tag, creates the tag and publishes a GitHub Release whose notes are that
-   version's `CHANGELOG.md` section. If the section is missing, nothing is released.
+   version's `CHANGELOG.md` section. If the section is missing, nothing is released. CI doesn't run again on `main`
+   for a release commit: since PRs must be up to date and are squash-merged, the commit has exactly the code the
+   release PR's CI run tested. The workflow checks that before tagging (the commit is the PR's merge, its tree equals
+   the PR head's, and all three required checks passed on that head) and refuses otherwise. After a refusal, fix the
+   cause and run the Release workflow by hand (Actions → Release → Run workflow), which vouches for `main` as it is.
 
 **Release tags are created only by that workflow.** A tag ruleset protects `v*` tags, and the workflow pushes them with
 a dedicated deploy key; don't create, move or delete `v*` tags by hand.
