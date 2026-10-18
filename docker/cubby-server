@@ -237,9 +237,10 @@ cmd_fail2ban_enable() {
   echo "See bans with: sudo cubby-server fail2ban status   (or the Security tab on the Admin page)"
 }
 
-# /api/info of the running server ("" if it isn't answering).
+# /api/info of the running server ("" if it isn't answering). Asked inside the container, like its HEALTHCHECK: with a
+# domain, Caddy answers plain HTTP with a redirect to HTTPS (no body), so going through the published port never worked.
 server_info() {
-  curl -fsS --max-time 5 -H "Host: $(get_env BASE_DOMAIN)" "http://127.0.0.1:$(http_port)/api/info" 2>/dev/null || true
+  docker exec "$NAME" curl -fsS --max-time 5 http://127.0.0.1:8080/api/info 2>/dev/null || true
 }
 json_field() { sed -n "s/.*\"$1\":\"\\([^\"]*\\)\".*/\\1/p"; }
 

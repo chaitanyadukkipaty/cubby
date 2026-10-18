@@ -182,12 +182,20 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
 - Never push, move or delete `v*` tags: a ruleset blocks it, and the Release workflow is the only thing that creates
   them (over SSH with the `RELEASE_DEPLOY_KEY` deploy key). It tags when main's version has no tag and refuses if
   CHANGELOG.md has no section for that version.
+- Release commits (`chore(release):`) skip CI on main, and Release runs on the push instead of after CI. That's safe
+  only because main takes squash merges of up-to-date PRs: `verifyTested` (scripts/release.mjs) proves the commit's
+  tree equals its PR head's and that head passed `REQUIRED_CHECKS`. Loosening branch protection (allowing merges of
+  PRs behind main, or direct pushes) breaks that proof; Verify then refuses, but keep the two in step. A renamed CI
+  job must be renamed in `REQUIRED_CHECKS` too (a unit test compares them).
 - The reported version must differ whenever the code differs: `X.Y.Z` only for a build of tag `vX.Y.Z`, otherwise
   `X.Y.Z-dev+<sha>` (server/src/version.js). The launcher picks CLIs by this string, so don't "simplify" it to
   package.json. Docker builds get the commit/tag via `CUBBY_COMMIT`/`CUBBY_TAG` build args from `cubby-server`;
   tests set both to `''` (= unknown, plain version) in tests/helpers/server.js.
 - The daily release check (server/src/updates.js) is the only outbound request Cubby itself makes (app jobs make
   their own). Tests must never reach GitHub: the helper sets `CUBBY_UPDATE_CHECK=0`; tests that need it point `CUBBY_UPDATE_URL` at a local stub.
+- `cubby-server` and install.sh check the server with `docker exec cubby curl http://127.0.0.1:8080/api/info`, like the
+  image's HEALTHCHECK. Never through the published port: with a domain, port 80 only redirects to HTTPS (a 308 with an
+  empty body that `curl -f` accepts), which made every domain-mode upgrade report failure from 0.1.0 to 0.1.6.
 - docker/ref.sh is sourced by both install.sh (downloaded from main when piped) and cubby-server, so it must stay
   compatible with older checkouts' callers. cubby-server runs everything inside `main()` and replaces itself by
   rename at the end of `upgrade`; keep both, or an upgrade can edit the script bash is executing.

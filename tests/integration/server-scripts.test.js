@@ -45,13 +45,18 @@ echo "docker $*" >> "$STATE/log"
 case "$1" in
   ps) if [[ "$*" == *--format* ]]; then printf "%b" "$FAKE_DOCKER_PS"; else echo abc123; fi ;;
   port) printf "%b" "$FAKE_DOCKER_PORT" ;;
-  exec) [[ "$FAKE_BACKUP_FAIL" == 1 ]] && exit 1; echo "backup ok" ;;
+  exec)
+    if [[ "$*" == *"/api/info"* ]]; then
+      # curl inside the container, straight to the server: no Caddy, ports or TLS in between.
+      [[ -f "$STATE/running" ]] || exit 7
+      printf '{"name":"x","version":"%s","commit":"%s"}' "$(cat "$STATE/running")" "$(cat "$STATE/running-commit" 2>/dev/null)"
+    else [[ "$FAKE_BACKUP_FAIL" == 1 ]] && exit 1; echo "backup ok"; fi ;;
   build)
     commit=""; tag=""; for a in "$@"; do case "$a" in CUBBY_COMMIT=*) commit="\${a#*=}";; CUBBY_TAG=*) tag="\${a#*=}";; esac; done
     src="\${@: -1}"; v="$(sed -n 's/.*"version":"\\([^"]*\\)".*/\\1/p' "$src/package.json")"
     if [[ "$tag" == "v$v" ]]; then echo "$v" > "$STATE/built"; else echo "$v-dev+$commit" > "$STATE/built"; fi
     echo "$commit" > "$STATE/built-commit" ;;
-  run) cp "$STATE/built" "$STATE/running"; cp "$STATE/built-commit" "$STATE/running-commit" ;;
+  run) if [[ "$FAKE_RUN_FAILS" == 1 ]]; then rm -f "$STATE/running"; else cp "$STATE/built" "$STATE/running"; cp "$STATE/built-commit" "$STATE/running-commit"; fi ;;
 esac
 exit 0
 `);
@@ -59,6 +64,8 @@ exit 0
   writeFileSync(join(fakebin, 'curl'), `#!/bin/bash
 echo "curl $*" >> "$STATE/curl-log"
 if [[ "$*" == *"/api/info"* ]]; then
+  # With a domain, Caddy answers plain HTTP with a 308 to HTTPS: no body, and curl -f still exits 0.
+  [[ "$FAKE_HTTPS" == 1 && "$*" == *"http://"* ]] && exit 0
   [[ -f "$STATE/running" ]] || exit 7
   printf '{"name":"x","version":"%s","commit":"%s"}' "$(cat "$STATE/running")" "$(cat "$STATE/running-commit" 2>/dev/null)"
 elif [[ "$*" == *"api.ipify.org"* ]]; then
@@ -187,7 +194,7 @@ describe('cubby-server upgrade', () => {
     const back = cubbyServer(inst, ['upgrade', '--version', '0.1.0', '--no-backup']);
     assert.equal(back.status, 0, back.err);
     assert.match(back.out, /Upgraded Cubby 0\.1\.1 → 0\.1\.0 \(v0\.1\.0\)/);
-    assert.doesNotMatch(readFileSync(join(inst.state, 'log'), 'utf8'), /exec/, '--no-backup skips the backup');
+    assert.doesNotMatch(readFileSync(join(inst.state, 'log'), 'utf8'), /admin-tasks\.js backup/, '--no-backup skips the backup');
     const missing = cubbyServer(inst, ['upgrade', '--version', '0.9.9']);
     assert.equal(missing.status, 1);
     assert.match(missing.err, /Cubby 0\.9\.9 doesn't exist/);
@@ -269,15 +276,13 @@ describe('cubby-server host ports', () => {
     assert.match(dockerRun(inst), /-p 80:80 -p 127\.0\.0\.1:8090:8090 -p 443:443 /);
   });
 
-  test('stored ports are published and health checks use the HTTP port', () => {
+  test('stored ports are published; health checks ask the server inside the container, not through a port', () => {
     const inst = install('v0.1.0', 'release', '0.1.0');
     withEnv(inst, 'CUBBY_HTTP_PORT=8080\nCUBBY_PB_PORT=8091\n');
     const r = cubbyServer(inst, ['upgrade', '--no-backup']);
     assert.equal(r.status, 0, r.err);
     assert.match(dockerRun(inst), /-p 8080:80 -p 127\.0\.0\.1:8091:8090 /);
-    const curls = readFileSync(join(inst.state, 'curl-log'), 'utf8');
-    assert.match(curls, /Host: example\.test http:\/\/127\.0\.0\.1:8080\/api\/info/);
-    assert.doesNotMatch(curls, /127\.0\.0\.1\/api/);
+    assert.match(readFileSync(join(inst.state, 'log'), 'utf8'), /docker exec cubby curl -fsS --max-time 5 http:\/\/127\.0\.0\.1:8080\/api\/info/);
   });
 
   test('a stored port taken by another process: refuse, keep the running container, never move', () => {
@@ -374,7 +379,6 @@ describe('install.sh ports', () => {
     assert.match(r.env, /BASE_DOMAIN=203-0-113-7\.sslip\.io:8080\nPUBLIC_URL=http:\/\/203-0-113-7\.sslip\.io:8080\n/);
     assert.match(r.env, /CUBBY_HTTP_PORT=8080\n/);
     assert.match(r.log, /docker run .*-p 8080:80 -p 127\.0\.0\.1:8090:8090 /);
-    assert.match(r.curls, /http:\/\/127\.0\.0\.1:8080\/api\/info/);
     assert.match(r.out, /URL: +http:\/\/203-0-113-7\.sslip\.io:8080/);
     assert.match(r.out, /Open port 8080 \(TCP\) in your cloud provider's firewall/);
   });
@@ -423,6 +427,15 @@ describe('install.sh ports', () => {
     assert.doesNotMatch(r.env, /CUBBY_FAIL2BAN=1/);
     assert.match(r.out, /fail2ban couldn't be set up/);
     assert.match(r.log, /docker run/);
+  });
+
+  test('the installer waits for the server itself and prints its version, with a domain and without', () => {
+    for (const [args, fakes] of [[['--domain', 'cubby.example.com'], { FAKE_HTTPS: '1' }], [['--no-domain'], {}]]) {
+      const r = runInstall([...args, '--no-fail2ban'], fakes);
+      assert.equal(r.status, 0, r.err + r.out);
+      assert.match(r.out, /Version: +0\.1\.1/, args.join(' '));
+      assert.match(r.log, /docker exec cubby curl -fsS --max-time 5 http:\/\/127\.0\.0\.1:8080\/api\/info/);
+    }
   });
 
   test('a domain needs ports 80 and 443; --http-port is refused with one', () => {
@@ -592,5 +605,28 @@ describe('cubby-server fail2ban', () => {
     const off = install('v0.1.0', 'release', '0.1.0');
     writeFileSync(join(off.home, 'cubby.env'), envFile(off) + 'CUBBY_FAIL2BAN=0\n');
     assert.doesNotMatch(cubbyServer(off, ['upgrade', '--no-backup']).out, /fail2ban/);
+  });
+});
+
+describe('cubby-server health checks, with a domain (HTTPS) and without (IP mode)', () => {
+  // With a domain, port 80 only redirects to HTTPS; in IP mode it serves Cubby on a stored port.
+  for (const [mode, extraEnv, fakes] of [['domain', 'CUBBY_HTTPS=1\n', { FAKE_HTTPS: '1' }], ['IP', 'CUBBY_HTTP_PORT=8080\n', {}]]) {
+    test(`${mode} mode: an upgrade sees the new version, installs its own new copy, and version reports it`, () => {
+      const inst = install('v0.1.0', 'release', '0.1.0');
+      writeFileSync(join(inst.home, 'cubby.env'), envFile(inst) + extraEnv);
+      const r = cubbyServer(inst, ['upgrade'], fakes);
+      assert.equal(r.status, 0, r.err + r.out);
+      assert.match(r.out, /Upgraded Cubby 0\.1\.0 → 0\.1\.1 \(v0\.1\.1\)/);
+      assert.equal(readFileSync(join(inst.home, 'bin/cubby-server'), 'utf8'), readFileSync(join(inst.home, 'src/docker/cubby-server'), 'utf8'));
+      assert.match(cubbyServer(inst, ['version'], fakes).out, /Running: +0\.1\.1\n/);
+    });
+  }
+
+  test('a server that really is down still fails the upgrade, with the rollback command', () => {
+    const inst = install('v0.1.0', 'release', '0.1.0');
+    const r = cubbyServer(inst, ['upgrade'], { FAKE_RUN_FAILS: '1' });
+    assert.equal(r.status, 1);
+    assert.match(r.err, /Cubby didn't come back up\. Check: cubby-server logs/);
+    assert.match(r.err, /Roll back with: sudo cubby-server upgrade --version 0\.1\.0/);
   });
 });

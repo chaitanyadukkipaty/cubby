@@ -12,6 +12,8 @@ concurrency:
 jobs:
   unit:
     name: Unit tests
+    # A release PR's own run already tested this exact code; Release verifies that instead of testing it again.
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release):')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -28,6 +30,7 @@ jobs:
 
   integration:
     name: Integration tests and coverage
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release):')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -51,6 +54,7 @@ jobs:
 
   e2e:
     name: End-to-end tests (Chromium)
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release):')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

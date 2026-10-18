@@ -6,6 +6,8 @@
 //   node scripts/release.mjs bump X.Y.Z [--major-change]    explicit version
 //   node scripts/release.mjs plan --tags <file> --releases <file> --notes <file>
 //       used by .github/workflows/release.yml: decides whether main's version needs a tag and/or a release
+//   node scripts/release.mjs verify --sha <sha> --tree <tree> --head-tree <tree> --prs <file> --checks <file>
+//       used by release.yml: may this commit be released on the strength of its PR's CI run? (see verifyTested)
 import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve, join } from 'node:path';
@@ -79,6 +81,29 @@ function setVersion(file, version) {
   writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
 }
 
+// The CI jobs main's branch protection requires (.github/workflows/ci.yml; a unit test keeps them equal).
+export const REQUIRED_CHECKS = ['Unit tests', 'Integration tests and coverage', 'End-to-end tests (Chromium)'];
+
+// A release PR has already passed CI, and main only takes squash merges of up-to-date PRs, so the merge commit has
+// exactly the tree CI tested on the PR's head. Release on that run instead of testing the same code again on main,
+// but only when it provably holds: `sha` is the merge of a PR into main, its tree equals the PR head's, and the newest
+// run of every required check on that head succeeded. `prs` is GitHub's commits/<sha>/pulls; `checks` the head's
+// check runs.
+export function verifyTested({ sha, tree, headTree, prs, checks }) {
+  const pr = prs.find((p) => p.merged_at && p.merge_commit_sha === sha && p.base?.ref === 'main');
+  if (!pr) return { ok: false, reason: `${sha} isn't the merge of a pull request into main, so no CI run covers it` };
+  if (!tree || tree !== headTree) return { ok: false, reason: `the code on main differs from what CI tested on #${pr.number} (was the PR behind main?)` };
+  const head = pr.head.sha;
+  const problems = REQUIRED_CHECKS.map((name) => {
+    const runs = checks.filter((c) => c.name === name && c.head_sha === head).sort((a, b) => b.id - a.id);
+    if (!runs.length) return `${name}: missing`;
+    const { status, conclusion } = runs[0];
+    return status !== 'completed' ? `${name}: ${status}` : conclusion === 'success' ? null : `${name}: ${conclusion}`;
+  }).filter(Boolean);
+  if (problems.length) return { ok: false, reason: `CI on #${pr.number} didn't pass (${problems.join('; ')})` };
+  return { ok: true, pr: pr.number, head };
+}
+
 export function main(argv) {
   const [cmd, ...rest] = argv;
   const flag = (name) => {
@@ -116,6 +141,17 @@ export function main(argv) {
     if (plan.notes && flag('--notes')) writeFileSync(flag('--notes'), `${plan.notes}\n`);
     console.log(plan.reason ?? `${plan.action} ${plan.tag}`);
     if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `action=${plan.action}\ntag=${plan.tag}\n`);
+    return;
+  }
+  if (cmd === 'verify') {
+    // --checks is `gh api --paginate --jq '.check_runs[]'`: one JSON object per line.
+    const lines = (f) => readFileSync(f, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+    const result = verifyTested({
+      sha: flag('--sha'), tree: flag('--tree'), headTree: flag('--head-tree'),
+      prs: JSON.parse(readFileSync(flag('--prs'), 'utf8')), checks: lines(flag('--checks')),
+    });
+    if (!result.ok) throw new Error(`${result.reason}. Not releasing; see CONTRIBUTING.md "Releases".`);
+    console.log(`CI passed on #${result.pr} (${result.head}) with the same code: releasing without running it again.`);
     return;
   }
   throw new Error('usage: release.mjs bump [patch|minor|major|X.Y.Z] [--major-change] [--date YYYY-MM-DD] [--skip-lock] | plan --tags f --releases f --notes f  (both take --root dir)');

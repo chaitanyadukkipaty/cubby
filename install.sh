@@ -232,16 +232,18 @@ fi
 info "Building image (takes a minute)…"
 CUBBY_HOME="$CUBBY_HOME" CUBBY_BIN="$CUBBY_BIN" "$CUBBY_BIN" rebuild >/dev/null
 
+# Asked inside the container, like cubby-server: with a domain, port 80 only redirects to HTTPS.
+server_info() { docker exec cubby curl -fsS --max-time 5 http://127.0.0.1:8080/api/info 2>/dev/null || true; }
 info "Waiting for Cubby to start…"
 for _ in $(seq 1 60); do
-  if curl -fsS -H "Host: $BASE_DOMAIN" "http://127.0.0.1:$HTTP_PORT/api/info" >/dev/null 2>&1; then STARTED=1; break; fi
+  if [[ -n "$(server_info)" ]]; then STARTED=1; break; fi
   sleep 2
 done
 [[ "${STARTED:-}" == "1" ]] || die "Cubby didn't start. Check: cubby-server logs"
 
 # The admin account exists now; don't keep its password on disk.
 sed -i.bak '/^CUBBY_ADMIN_PASSWORD=/d' "$ENV_FILE" && rm -f "$ENV_FILE.bak"
-RUNNING="$(curl -fsS -H "Host: $BASE_DOMAIN" "http://127.0.0.1:$HTTP_PORT/api/info" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
+RUNNING="$(server_info | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
 
 echo
 bold "Cubby is running 🎉"
