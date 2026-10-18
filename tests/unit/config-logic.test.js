@@ -286,6 +286,9 @@ describe('logic routes', () => {
     assert.equal(logic.matchRoute(routes, 'POST', '/api/projects'), null);
     assert.equal(logic.matchRoute(routes, 'GET', '/api/projectsX'), null);
   });
+  test('a malformed %-escape in a path parameter is a 400, not a crash', () => {
+    rejects(() => logic.matchRoute(routes, 'GET', '/api/projects/%E0%A4%A'), 400, /Malformed URL/);
+  });
 });
 
 describe('logic.renderDocs', () => {

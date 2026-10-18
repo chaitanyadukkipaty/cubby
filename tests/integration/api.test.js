@@ -100,6 +100,28 @@ describe('projects and ownership', () => {
   });
 });
 
+describe('bad requests', () => {
+  test('a null or non-object JSON body and a bad %-escape in the path are 400s, not 500s', async () => {
+    for (const [method, path, call] of [['POST', '/api/login', anon], ['POST', '/api/device/poll', anon], ['POST', '/api/projects', alice], ['PATCH', '/api/agents/x', alice]]) {
+      for (const raw of ['null', '[]']) {
+        const r = await call(method, path, { raw, headers: { 'content-type': 'application/json' } });
+        assert.equal(r.status, 400, `${method} ${path} ${raw}: ${r.text}`);
+        assert.match(r.data.error, /JSON object/);
+      }
+    }
+    for (const [path, call] of [['/api/device/%E0%A4%A', anon], ['/api/agents/%E0%A4%A', alice]]) {
+      const r = await call(path.startsWith('/api/agents') ? 'DELETE' : 'GET', path);
+      assert.equal(r.status, 400, path);
+      assert.match(r.data.error, /Malformed URL/);
+    }
+  });
+  test('an env value over 64 KB names the real limit', async () => {
+    const r = await alice('PUT', '/api/projects/alice-app/env/BIG', { body: { value: 'x'.repeat(100_000) } });
+    assert.equal(r.status, 413);
+    assert.equal(r.data.error, 'Body exceeds 64 KB limit');
+  });
+});
+
 describe('schema push against real PocketBase', () => {
   const schema = { collections: [
     { name: 'users', type: 'auth', createRule: '' },

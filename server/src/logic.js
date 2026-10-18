@@ -363,7 +363,11 @@ export function matchRoute(routes, method, pathname) {
   for (const route of routes) {
     const m = pathname.match(route.re);
     if (!m || route.method !== method) continue;
-    return { route, params: Object.fromEntries(route.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])) };
+    try {
+      return { route, params: Object.fromEntries(route.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])) };
+    } catch {
+      throw new HttpError(400, 'Malformed URL: a path segment has a bad %-escape');
+    }
   }
   return null;
 }

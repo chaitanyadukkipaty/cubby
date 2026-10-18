@@ -20,6 +20,16 @@ describe('readBody / readJson', () => {
     assert.deepEqual(await readJson(req()), {});
     await assert.rejects(readJson(req({ chunks: ['{nope'] })), (e) => e.status === 400 && /Invalid JSON/.test(e.message));
   });
+  test('readJson refuses bodies that aren\'t a JSON object (null, arrays, numbers, strings) with 400', async () => {
+    for (const body of ['null', '[]', '[{"a":1}]', '42', '"x"', 'true']) {
+      await assert.rejects(readJson(req({ chunks: [body] })), (e) => e.status === 400 && /JSON object/.test(e.message), body);
+    }
+  });
+  test('the 413 message names a limit under 1 MB in KB, not "0MB"', async () => {
+    await assert.rejects(readBody(req({ chunks: ['x'.repeat(65 * 1024)] }), 64 * 1024), (e) => e.status === 413 && e.message === 'Body exceeds 64 KB limit');
+    await assert.rejects(readBody(req({ chunks: ['x'.repeat(5000)] }), 4096), (e) => e.message === 'Body exceeds 4 KB limit');
+    await assert.rejects(readBody(req({ chunks: ['x'.repeat(3 * 1024 * 1024)] }), 2 * 1024 * 1024), (e) => e.message === 'Body exceeds 2 MB limit');
+  });
 });
 
 describe('sendJson', () => {
