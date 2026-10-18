@@ -61,6 +61,15 @@ export function checkForeignRefs(search, body, prefix) {
   return { foreign };
 }
 
+// The hidden auth field (`password`, the hash, or `tokenKey`) that `text` (a filter, or a query string) names
+// outside its quoted strings, or null. PocketBase never lets anyone but a superuser filter or sort on them, but a
+// data clear's filter and a job's requests run as superuser: matching on them would read them a character at a time.
+export function hiddenFieldRef(text) {
+  const code = decode(String(text)).replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g, '""');
+  return /(?<![\w])(password|tokenKey)(?![\w])/.exec(code)?.[1] ?? null;
+}
+export const hiddenFieldMessage = (field) => `Can't filter or sort on "${field}": password hashes and token keys of accounts stay hidden.`;
+
 // PocketBase (0.40) delivers record events to topics `<collection>`, `<collection>/*` and
 // `<collection>/<recordId>`, each optionally followed by `?<query>` (`options=` carries filters and
 // headers), where <collection> is the exact collection name or id. The collection part is matched

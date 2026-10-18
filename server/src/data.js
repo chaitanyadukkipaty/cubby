@@ -6,7 +6,7 @@ import { prefixFor } from './config.js';
 import { HttpError, clip } from './http.js';
 import { projectCollections, readSchema, deleteCollections, collectionIndex } from './schema.js';
 import { dirSize } from './sites.js';
-import { checkForeignRefs } from './proxy.js';
+import { checkForeignRefs, hiddenFieldRef, hiddenFieldMessage } from './proxy.js';
 import { startSnapshot, newSnapshotId, expiresAt, FILES_CAP_BYTES } from './snapshots.js';
 import { planCascade } from './cascade.js';
 
@@ -32,6 +32,8 @@ export function checkDataFilter(filter, prefix) {
   const via = [...filter.matchAll(/([a-zA-Z0-9_]+)_via_[a-zA-Z0-9_]+/g)].map((m) => m[1]).find((name) => !name.startsWith(prefix));
   const bad = foreign ?? via;
   if (bad) throw new HttpError(403, `Cannot reference collection "${bad}" from this app.`);
+  const hidden = hiddenFieldRef(filter);
+  if (hidden) throw new HttpError(403, hiddenFieldMessage(hidden));
 }
 
 // Runs `fn` once every earlier data change of app `slug` (clear, restore, schema push or drop) is done, so they never

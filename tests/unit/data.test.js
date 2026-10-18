@@ -424,6 +424,12 @@ describe('filters run as superuser, so they may only reach this app', () => {
     refused('other__orders_via_product.qty > 0', /"other__orders"/);
     refused('cubby_projects_via_owner.slug != ""', /"cubby_projects"/);
   });
+  test("accounts' password hashes and token keys can't be matched on (as superuser, a filter would be a way to read them)", () => {
+    refused('owner.password ~ "$2a$"', /password/);
+    refused('owner.tokenKey != ""', /tokenKey/);
+    refused('(password:lower != "")', /password/);
+    for (const f of ['title = "password"', "note ~ 'tokenKey'", 'password_hint != ""', 'owner.passwords > 0']) assert.doesNotThrow(() => checkDataFilter(f, 'shop__'), f);
+  });
   test('a filter is a non-empty string of at most 2000 characters', () => {
     for (const bad of ['', '   ', 42, null, 'x'.repeat(2001)]) assert.throws(() => checkDataFilter(bad, 'shop__'), (e) => e.status === 400, String(bad));
   });

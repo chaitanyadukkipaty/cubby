@@ -11,7 +11,7 @@ import { admin } from './pb.js';
 import { config, prefixFor, SLUG_RE } from './config.js';
 import { HttpError, clip } from './http.js';
 import { parseCron, cronMatches, nextRun } from './cron.js';
-import { isAllowed, checkForeignRefs } from './proxy.js';
+import { isAllowed, checkForeignRefs, hiddenFieldRef, hiddenFieldMessage } from './proxy.js';
 import { getSettings } from './settings.js';
 import { envFor } from './secrets.js';
 import { jobTimeout } from './logic.js';
@@ -122,6 +122,8 @@ export async function forwardJobRequest(slug, msg, { send = fetch, index } = {})
   }
   const { foreign } = checkForeignRefs(url.search, null, prefixFor(slug));
   if (foreign) return encodeJson(403, `Cannot reference collection "${foreign}" from this app.`);
+  const hidden = hiddenFieldRef(url.search);
+  if (hidden) return encodeJson(403, hiddenFieldMessage(hidden));
   const headers = { authorization: admin.authStore.token };
   if (msg.contentType) headers['content-type'] = msg.contentType;
   try {
