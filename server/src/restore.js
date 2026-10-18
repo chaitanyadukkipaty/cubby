@@ -117,14 +117,16 @@ export async function restoreSnapshot({ meta, dir }, { overwrite = false, dry_ru
     existing.set(name, ids);
     counts.set(name, n);
   }
-  const auth = order.filter((n) => saved.get(n).type === 'auth');
+  // Auth collections where accounts are (or would be) created: one that exists again is skipped, or replaced with
+  // its password kept.
+  const auth = order.filter((n) => saved.get(n).type === 'auth' && counts.get(n) > existing.get(n).size);
   const result = {
     snapshot: meta.id, overwrite, recreated: recreate, skipped_fields: skipped, refused_fields: refused, files: meta.files,
     collections: order.map((name) => ({ name, records: counts.get(name), existing: existing.get(name).size, restored: 0, replaced: 0, failed: 0 })),
     links: [],
     accounts: [], failures: [], warnings: [
       ...(meta.files ? [] : ['This snapshot has no uploaded files (they were over the size cap): records come back without them.']),
-      ...auth.map((n) => `${n} holds user accounts: restored accounts get new random passwords (listed in "accounts"), since PocketBase never hands out password hashes.`),
+      ...auth.map((n) => `${n} holds user accounts: restored accounts get new random passwords (the restore lists them), since PocketBase never hands out password hashes.`),
     ],
   };
   const row = (name) => result.collections.find((c) => c.name === name);

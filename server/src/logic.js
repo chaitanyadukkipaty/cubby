@@ -193,7 +193,7 @@ export function restoreSummary({ snapshot, collections, links = [], accounts }) 
     ...(sum('existing') - sum('replaced') > 0 ? [`${sum('existing') - sum('replaced')} already there`] : []),
     ...(sum('failed') ? [`${sum('failed')} failed`] : []),
     ...(relinked ? [`${relinked} record${relinked === 1 ? '' : 's'} relinked`] : []),
-    ...(accounts.length ? [`${accounts.length} accounts with new passwords`] : []),
+    ...(accounts.length ? [accounts.length === 1 ? '1 account with a new password' : `${accounts.length} accounts with new passwords`] : []),
   ];
   return `Restored ${n} record${n === 1 ? '' : 's'} from snapshot ${snapshot}${notes.length ? ` (${notes.join(', ')})` : ''}`;
 }

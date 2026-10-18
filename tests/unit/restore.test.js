@@ -341,7 +341,16 @@ describe('accounts', () => {
     assert.match(a.password, /^[\w-]{16}$/);
     assert.equal(pb.password('shop__customers', 'c1'), a.password);
     assert.equal(pb.records('shop__customers')[0].nick, 'ann');
-    assert.match(r.warnings.join('\n'), /new random passwords/);
+    assert.match(r.warnings.join('\n'), /customers holds user accounts: restored accounts get new random passwords \(the restore lists them\)/);
+  });
+  test('no password warning when no account is created: those that exist again are kept or replaced, passwords and all', async () => {
+    const { snapshot } = await clear({ collections: ['customers'] });
+    assert.match((await restore(snapshot.id, { dry_run: true })).warnings.join('\n'), /new random passwords/, 'the dry run warns: one would be created');
+    await restore(snapshot.id);
+    const again = await restore(snapshot.id, { dry_run: true });
+    assert.deepEqual(again.warnings, []);
+    const over = await restore(snapshot.id, { overwrite: true });
+    assert.deepEqual([over.accounts, over.warnings], [[], []]);
   });
 });
 

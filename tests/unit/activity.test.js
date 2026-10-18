@@ -104,6 +104,7 @@ describe('activity summaries', () => {
   });
   test('a restore with nothing to note is one plain line; a bare snapshot lists without who or why', () => {
     assert.equal(logic.restoreSummary({ snapshot: 's', collections: [{ restored: 1, replaced: 0, existing: 0, failed: 0 }], accounts: [] }), 'Restored 1 record from snapshot s');
+    assert.equal(logic.restoreSummary({ snapshot: 's', collections: [{ restored: 1, replaced: 0, existing: 0, failed: 0 }], accounts: [1] }), 'Restored 1 record from snapshot s (1 account with a new password)');
     const v = logic.snapshotView({ id: 's', app: 'a', created: 'C', expires: 'E', mode: 'ids', collections: [{ name: 'x', records: 2 }], files: true, files_bytes: 0 });
     assert.deepEqual([v.by, v.by_admin, v.reason, v.records], [null, false, '', 2]);
   });

@@ -454,8 +454,9 @@ const commands = {
       if (flags['dry-run'] || !flags.yes) {
         const preview = await api('POST', `${base}/clear`, { body: { ...body, dry_run: true } });
         if (flags['dry-run']) return out(formatClearPreview(app, preview), preview);
-        const what = flags.wipe ? `drops every collection (${preview.matches} records)`
-          : flags.collection ? `deletes ${preview.matches} records from ${flags.collection}`
+        const records = `${preview.matches} record${preview.matches === 1 ? '' : 's'}`;
+        const what = flags.wipe ? `drops every collection (${records})`
+          : flags.collection ? `deletes ${records} from ${flags.collection}`
           : `${flags.drop ? 'drops' : 'empties'} ${body.collections.join(', ')}${flags.drop ? ' (the collections themselves go too)' : ''}`;
         throw new CliError(`This ${what} in ${app}. A snapshot keeps them for 7 days (\`cubby data restore\`). Re-run with --yes.`, formatClearPreview(app, preview).split('\n').slice(1));
       }

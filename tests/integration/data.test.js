@@ -142,7 +142,7 @@ describe('deleting by filter or ids', () => {
     assert.deepEqual(r.json.cascade, [{ collection: 'orders', field: 'product', records: 1, deletes: true }]);
     const text = await cubby(['data', 'clear', 'picky', '--collection', 'products', '--filter', 'title = "Mug"']);
     assert.equal(text.code, 1, 'without --yes it only previews');
-    assert.match(text.stderr, /deletes 1 records from products in picky[\s\S]*Re-run with --yes[\s\S]*prodmug00000001[\s\S]*cascade on orders\.product/);
+    assert.match(text.stderr, /deletes 1 record from products in picky[\s\S]*Re-run with --yes[\s\S]*prodmug00000001[\s\S]*cascade on orders\.product/);
     assert.equal((await pb.collection('picky__products').getList(1, 1)).totalItems, 2);
   });
   test('filters naming another app\'s or a platform collection are refused', async () => {
