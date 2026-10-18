@@ -44,6 +44,7 @@ export function rollbackTarget(deploys, deployId) {
 }
 
 function actorOf(row, agents) {
+  if (row.via === 'admin') return { name: 'Admin', mono: 'AD', href: null };
   if (row.via !== 'agent' || !row.agent) return { name: 'Dashboard', mono: 'DB', href: null };
   const known = agents.find((a) => a.id === row.agent.id);
   if (!known) return { name: row.agent.name, mono: monogram(row.agent.name), href: null };
@@ -113,11 +114,30 @@ export function lastDeployers(rows, agents = []) {
   return out;
 }
 
+/**
+ * Who made a deploy (the Deploys tab's "From"), as a function of a GET /deploys row: the agent whose key deployed it
+ * (from the activity rows), else the client name the CLI sent (`client`), else "Dashboard"; null when nothing is known.
+ */
+export function deploySources(rows, agents = []) {
+  const byDeploy = new Map();
+  for (const r of rows) {
+    if (r.action !== 'deploy') continue;
+    const { deploy } = deployDetails(r);
+    if (deploy && !byDeploy.has(deploy)) byDeploy.set(deploy, r);
+  }
+  return (d) => {
+    const row = byDeploy.get(d.id);
+    if (row?.via === 'agent' && row.agent) return actorOf(row, agents);
+    if (d.client) return { name: d.client, mono: monogram(d.client), href: null };
+    return row ? actorOf(row, agents) : null;
+  };
+}
+
 /** { agentId | 'dashboard': [slug, …] } — the apps each agent changed, most recent first. */
 export function appsByAgent(rows) {
   const out = {};
   for (const r of rows) {
-    if (!r.app) continue;
+    if (!r.app || r.via === 'admin') continue;
     const key = r.via === 'agent' && r.agent ? r.agent.id : 'dashboard';
     const list = (out[key] ??= []);
     if (!list.includes(r.app)) list.push(r.app);

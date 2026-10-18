@@ -122,6 +122,14 @@ describe('schema drift', () => {
     assert.deepEqual(again.recreated.sort(), ['customers', 'orders', 'products'], 'a collection with no records comes back too');
     assert.deepEqual(again.collections.find((c) => c.name === 'customers'), { name: 'customers', records: 0, existing: 0, restored: 0, replaced: 0, failed: 0 });
   });
+  test('dropping a collection with no records and restoring it brings it back', async () => {
+    await applySchema('shop', { collections: [{ name: 'bundles', fields: [{ name: 'label', type: 'text' }] }] }, pb.collections);
+    const { snapshot } = await clear({ collections: ['bundles'], drop: true });
+    assert.ok(snapshot, 'a drop always leaves a snapshot, records or not');
+    const r = await restore(snapshot.id);
+    assert.deepEqual(r.recreated, ['bundles']);
+    assert.ok(pb.collections.byName('shop__bundles'));
+  });
   test('a recreated collection loses relations to collections that are gone too', async () => {
     const { snapshot } = await clear({ collections: ['orders'], drop: true });
     await pb.collections.truncate('shop__products');
@@ -341,7 +349,16 @@ describe('accounts', () => {
     assert.match(a.password, /^[\w-]{16}$/);
     assert.equal(pb.password('shop__customers', 'c1'), a.password);
     assert.equal(pb.records('shop__customers')[0].nick, 'ann');
-    assert.match(r.warnings.join('\n'), /new random passwords/);
+    assert.match(r.warnings.join('\n'), /customers holds user accounts: restored accounts get new random passwords \(the restore lists them\)/);
+  });
+  test('no password warning when no account is created: those that exist again are kept or replaced, passwords and all', async () => {
+    const { snapshot } = await clear({ collections: ['customers'] });
+    assert.match((await restore(snapshot.id, { dry_run: true })).warnings.join('\n'), /new random passwords/, 'the dry run warns: one would be created');
+    await restore(snapshot.id);
+    const again = await restore(snapshot.id, { dry_run: true });
+    assert.deepEqual(again.warnings, []);
+    const over = await restore(snapshot.id, { overwrite: true });
+    assert.deepEqual([over.accounts, over.warnings], [[], []]);
   });
 });
 

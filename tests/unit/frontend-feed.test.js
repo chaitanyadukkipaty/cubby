@@ -141,6 +141,16 @@ describe('summaries from the activity log', () => {
     assert.equal(last.club.name, 'Dashboard');
     assert.equal(last.other, undefined);
   });
+  test("who made each deploy, for the Deploys tab's From column: the agent, else the client the CLI named, else the dashboard", () => {
+    const from = feed.deploySources(rows, [{ id: 'k1', name: 'Claude Code · mbp', tool: 'Claude Code' }]);
+    assert.deepEqual(from({ id: 'd3', client: '' }), { name: 'Claude Code · mbp', mono: 'CC', href: '/agents/k1' });
+    assert.deepEqual(from({ id: 'd3', client: 'ci-bot' }), { name: 'Claude Code · mbp', mono: 'CC', href: '/agents/k1' });
+    assert.equal(from({ id: 'd2' }).name, 'Codex · wl'); // a revoked agent keeps its logged name
+    assert.deepEqual(from({ id: 'c1', client: 'ci-bot' }), { name: 'ci-bot', mono: 'CI', href: null });
+    assert.equal(from({ id: 'c1', client: '' }).name, 'Dashboard');
+    assert.deepEqual(from({ id: 'zz', client: 'ci-bot' }), { name: 'ci-bot', mono: 'CI', href: null }); // older than the log
+    assert.equal(from({ id: 'zz', client: '' }), null);
+  });
   test('which apps each agent touched, most recent first', () => {
     const touched = feed.appsByAgent(rows);
     assert.deepEqual(touched.k1, ['polls']);
@@ -176,6 +186,11 @@ describe('feedEntry()', () => {
   test('changes made from the dashboard (or the manual token) say so', () => {
     const e = feed.feedEntry(row({ via: 'dashboard', agent: null }), { apps, agents });
     assert.deepEqual(e.actor, { name: 'Dashboard', mono: 'DB', href: null });
+  });
+  test("an admin's action on your app (your copy of it) is the admin's, not your dashboard's", () => {
+    const e = feed.feedEntry(row({ via: 'admin', agent: null, admin: 'boss@x.dev', action: 'admin.data.clear' }), { apps, agents });
+    assert.deepEqual(e.actor, { name: 'Admin', mono: 'AD', href: null });
+    assert.deepEqual(feed.appsByAgent([row({ via: 'admin', agent: null })]), {}, 'nor one of the apps your manual token touched');
   });
   test("an app that's gone (or isn't yours) is named by its slug, without a link; account-wide actions have no app", () => {
     assert.deepEqual(feed.feedEntry(row({ app: 'old-app' }), { apps, agents }).app, { slug: 'old-app', name: 'old-app', href: null });

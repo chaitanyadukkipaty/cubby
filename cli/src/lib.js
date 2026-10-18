@@ -98,7 +98,7 @@ export function formatActivity(list, { users = false } = {}) {
     (r) => String(r.at).replace('T', ' ').slice(0, 16),
     ...(users ? [(r) => r.user ?? '-'] : []),
     (r) => r.app ?? '-',
-    (r) => r.agent?.name ?? 'dashboard',
+    (r) => r.agent?.name ?? (r.via === 'admin' ? 'admin' : 'dashboard'),
   ];
   const widths = cols.map((get) => Math.max(...list.map((r) => get(r).length)) + 2);
   return list.map((r) => cols.map((get, i) => get(r).padEnd(widths[i])).join('') + r.summary).join('\n');
@@ -320,15 +320,19 @@ const counts = (b) => `${String(b.views).padStart(6)} views  ${String(b.visitors
 
 // `cubby metrics <app>`: visitors are unique per UTC day, so each day is listed with its own count (and signups: the same days).
 // Past a month, only the days with views or signups are listed.
+// A range that starts mid-day (anything by the hour) counts visitors and top paths since the start of that UTC day.
+const daysSince = (r) => (r.days_from && r.from && r.days_from < r.from ? `${r.days_from.slice(0, 10)} 00:00 UTC` : null);
 export function formatMetrics(r) {
   const signups = new Map(r.accounts.days.map((d) => [d.start, d.signups]));
   const days = r.days.length > 31 ? r.days.filter((d) => d.views || signups.get(d.start)) : r.days;
+  const since = daysSince(r);
   return [
-    `${r.app}: ${r.views} views, ${r.visitors} visitors in the last ${r.range}`,
+    since ? `${r.app}: ${r.views} views in the last ${r.range}; ${r.visitors} visitors since ${since} (unique per UTC day)`
+      : `${r.app}: ${r.views} views, ${r.visitors} visitors in the last ${r.range}`,
     `  Active now ${r.active_now}, peak ${r.peak_active}`,
     `  API: ${r.api_requests} requests, ${r.api_errors} errors (${(r.api_error_rate * 100).toFixed(1)}%)`,
     `  Accounts: ${r.accounts.total}, ${r.accounts.new} new`,
-    ...(r.top_paths?.length ? [`  Top paths: ${r.top_paths.map((p) => `${p.path} ${p.views}`).join(' · ')}`] : []),
+    ...(r.top_paths?.length ? [`  Top paths${since ? ` since ${since}` : ''}: ${r.top_paths.map((p) => `${p.path} ${p.views}`).join(' · ')}`] : []),
     ...(r.deploys ?? []).map((d) => `  Deploy ${String(d.created).replace('T', ' ').slice(0, 16)} ${d.id} ${d.message}`.trimEnd()),
     ...days.map((d) => `  ${d.start.slice(0, 10)} ${counts(d)}  ${String(signups.get(d.start)).padStart(4)} signups`),
   ].join('\n');
@@ -337,8 +341,11 @@ export function formatMetrics(r) {
 // `cubby metrics --all` (admins): every app summed, then the busiest.
 export function formatAdminMetrics(r) {
   const width = Math.max(0, ...r.top_apps.map((a) => a.app.length));
+  const since = daysSince(r);
+  const apps = `${r.apps} app${r.apps === 1 ? '' : 's'}`;
   return [
-    `All apps: ${r.views} views, ${r.visitors} visitors in the last ${r.range} (${r.apps} apps)`,
+    since ? `All apps: ${r.views} views in the last ${r.range}; ${r.visitors} visitors since ${since} (unique per app and UTC day), ${apps}`
+      : `All apps: ${r.views} views, ${r.visitors} visitors in the last ${r.range} (${apps})`,
     `  Active now ${r.active_now}`,
     `  API: ${r.api_requests} requests, ${r.api_errors} errors (${(r.api_error_rate * 100).toFixed(1)}%)`,
     ...(r.top_apps.length ? ['Busiest apps:'] : []),

@@ -2,7 +2,7 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { readFile, statfs } from 'node:fs/promises';
 import { config, SLUG_RE, prefixFor } from './config.js';
-import { HttpError, sendJson, readJson, readBody, rateLimiter, clientIp } from './http.js';
+import { HttpError, sendJson, readJson, readBody, rateLimiter, clientIp, clip } from './http.js';
 import { admin, startPocketBase, onShutdown } from './pb.js';
 import { signup, login, authenticate, regenerateToken, listAgents, renameAgent, revokeAgent } from './auth.js';
 import { applySchema, readSchema, dropFromSchema, projectCollections, deleteCollections } from './schema.js';
@@ -46,7 +46,7 @@ async function findProject(slug) {
 // Only the owner may change an app. Admins can delete apps, but only through /api/admin.
 async function ownedProject(user, slug) {
   const project = await findProject(slug);
-  if (!project || project.owner !== user.id) throw new HttpError(404, `App "${slug}" not found in your account`);
+  if (!project || project.owner !== user.id) throw new HttpError(404, `App "${clip(slug)}" not found in your account`);
   return project;
 }
 
@@ -75,7 +75,7 @@ async function clearDone(user, project, actor, result, reason, note = '') {
   if (actor.admin) {
     const summary = logic.adminClearSummary(user, result, reason) + note;
     await recordActivity(user, { action: 'admin.data.clear', app: slug, summary });
-    await recordActivity({ id: project.owner }, { action: 'admin.data.clear', app: slug, summary });
+    await recordActivity({ id: project.owner, byAdmin: user.email }, { action: 'admin.data.clear', app: slug, summary });
   } else {
     await recordActivity(user, { action: 'data.clear', app: slug, summary: logic.clearSummary(result) + note });
   }
@@ -85,7 +85,7 @@ async function clearDone(user, project, actor, result, reason, note = '') {
 async function appForOwnerOrAdmin(user, slug) {
   if (!user.is_admin) return ownedProject(user, slug);
   const project = await findProject(slug);
-  if (!project) throw new HttpError(404, `App "${slug}" not found`);
+  if (!project) throw new HttpError(404, `App "${clip(slug)}" not found`);
   return project;
 }
 
@@ -110,7 +110,7 @@ const routes = [
   ['PATCH', '/api/agents/:id', 'user', async (req, user, { id }) => renameAgent(user, id, (await readJson(req)).name)],
   ['DELETE', '/api/agents/:id', 'user', async (req, user, { id }) => revokeAgent(user, id)],
   ['GET', '/api/activity', 'user', async (req, user, params, url) => listActivity(user, Object.fromEntries(url.searchParams))],
-  ['POST', '/api/token/regenerate', 'user', async (req, user) => ({ token: await regenerateToken(user.id) })],
+  ['POST', '/api/token/regenerate', 'user', async (req, user) => ({ token: await regenerateToken(user) })],
 
   ['GET', '/api/projects', 'user', async (req, user) => {
     const list = await admin.collection('cubby_projects').getFullList({ filter: admin.filter('owner = {:u}', { u: user.id }), sort: '-created' });
@@ -212,8 +212,8 @@ const routes = [
     const range = url.searchParams.get('range') || '24h';
     const hours = parseRange(range);
     const project = await appForOwnerOrAdmin(user, slug);
-    const report = (await metrics.report([project.id], hours))[project.id];
-    const accounts = await appAccounts(admin, prefixFor(project.slug), Date.parse(report.from), Date.parse(report.to));
+    const { restored_accounts: restored, ...report } = (await metrics.report([project.id], hours))[project.id];
+    const accounts = await appAccounts(admin, prefixFor(project.slug), Date.parse(report.from), Date.parse(report.to), restored);
     // Deploy markers: the deploys still kept (the last 10) that went out in the range.
     const deploys = (await admin.collection('cubby_deploys').getFullList({
       filter: admin.filter('project = {:p} && created >= {:from}', { p: project.id, from: new Date(report.from) }), sort: 'created',
@@ -272,6 +272,7 @@ const routes = [
     const result = await oneAtATime(project.slug, () => restoreSnapshot(snap, { overwrite: Boolean(overwrite), dry_run: Boolean(dry_run) }, { pb: admin, dataDir: config.dataDir, project, actor }));
     if (dry_run) return result;
     storageCache.clear();
+    metrics.accountsRestored(project.id, result.accounts.length); // not signups
     await recordActivity(user, { action: 'data.restore', app: project.slug, summary: logic.restoreSummary(result) });
     return result;
   }],
@@ -390,11 +391,11 @@ const routes = [
   ['GET', '/api/admin/apps/:slug/deploys', 'admin', async (req, user, { slug }) => listDeploys(await adminProject(slug))],
   ['POST', '/api/admin/apps/:slug/deploys/prune', 'admin', async (req, user, { slug }) => {
     const project = await adminProject(slug);
-    return removeDeploys(project, oldDeploys(await listDeploys(project), { keep: (await readJson(req)).keep ?? 0 }));
+    return removeDeploys(user, project, oldDeploys(await listDeploys(project), { keep: (await readJson(req)).keep ?? 0 }));
   }],
   ['DELETE', '/api/admin/apps/:slug/deploys/:id', 'admin', async (req, user, { slug, id }) => {
     const project = await adminProject(slug);
-    return removeDeploys(project, oldDeploys(await listDeploys(project), { id }));
+    return removeDeploys(user, project, oldDeploys(await listDeploys(project), { id }));
   }],
   ['DELETE', '/api/admin/apps/:slug', 'admin', async (req, user, { slug }) => {
     const project = await adminProject(slug);
@@ -408,13 +409,22 @@ const compiledRoutes = logic.compileRoutes(routes);
 
 async function adminProject(slug) {
   const project = await findProject(slug);
-  if (!project) throw new HttpError(404, `App "${slug}" not found`);
+  if (!project) throw new HttpError(404, `App "${clip(slug)}" not found`);
   return project;
 }
 
-async function removeDeploys(project, picked) {
+// An admin's delete of older deploys is logged for the admin, and for the owner (who loses rollback targets) as the
+// admin's, like an admin's data clear.
+async function removeDeploys(user, project, picked) {
   const freed = await deleteDeploys(project, picked);
-  if (picked.length) storageCache.clear();
+  if (picked.length) {
+    storageCache.clear();
+    const ids = picked.map((d) => d.id);
+    const what = `${ids.length} older deploy${ids.length === 1 ? '' : 's'} of ${project.slug}: ${ids.join(', ')}`;
+    const entry = { action: 'admin.deploys.delete', app: project.slug, meta: { deploys: ids } };
+    await recordActivity(user, { ...entry, summary: `Deleted ${what}` });
+    if (project.owner !== user.id) await recordActivity({ id: project.owner, byAdmin: user.email }, { ...entry, summary: `Admin (${user.email}) deleted ${what}` });
+  }
   return { ok: true, deleted: picked.map((d) => d.id), freed_bytes: freed, deploys: await listDeploys(project) };
 }
 
@@ -547,6 +557,11 @@ const server = http.createServer(async (req, res) => {
     if (asset) {
       res.writeHead(200, { 'content-type': asset.type, 'content-length': asset.body.length, 'cache-control': 'public, max-age=31536000, immutable' });
       return res.end(asset.body);
+    }
+    // A browser asking for a page the dashboard doesn't have gets the shell with a 404, so it can say so and link home.
+    if (req.method === 'GET' && logic.isBrowser(req.headers['user-agent']) && /text\/html/.test(req.headers.accept ?? '')) {
+      res.writeHead(404, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', vary: 'User-Agent, Accept' });
+      return res.end(dashboard.page({ publicUrl: config.publicUrl, version: config.version }));
     }
     sendPage(res, 404, 'Not found');
   } catch (err) {

@@ -25,13 +25,21 @@ export function startDevice(publicUrl, now = Date.now(), hint = {}) {
   return { device_id: deviceId, user_code: code, verify_url: `${publicUrl}/connect?code=${code}`, expires_in: TTL_MS / 1000, interval: 2 };
 }
 
-const findByCode = (code, now) => [...pending.values()].find((d) => d.userCode === String(code).trim().toUpperCase() && d.expires > now);
+const GONE = 'This login link has expired or was already used. Ask your agent to run `cubby login` again.';
+
+// A live code that nobody has approved yet. Once approved it stays approved for whoever approved it first:
+// a second approval would hand the agent to another account after the first person was told it connected.
+function findByCode(code, now) {
+  const d = [...pending.values()].find((p) => p.userCode === String(code).trim().toUpperCase() && p.expires > now);
+  if (!d) throw new HttpError(404, GONE);
+  if (d.userId) throw new HttpError(409, 'This login link was already approved. Ask your agent to run `cubby login` again if that wasn\'t you.');
+  return d;
+}
 
 // Whether a code is live and, for a signed-in `user` (the approval page), which agent is asking: null for CLIs
 // from before agents, which send no hint. Anonymous callers never see the agent, since it names a machine.
 export function deviceInfo(code, now = Date.now(), user = null) {
   const d = findByCode(code, now);
-  if (!d) throw new HttpError(404, 'This login link has expired or was already used. Ask your agent to run `cubby login` again.');
   if (!user) return { ok: true };
   const { tool, machine } = d.hint;
   return { ok: true, agent: tool || machine ? { name: agentName(d.hint), tool: tool || null, machine: machine || null } : null };
@@ -39,7 +47,6 @@ export function deviceInfo(code, now = Date.now(), user = null) {
 
 export function approveDevice(user, code, now = Date.now()) {
   const d = findByCode(code, now);
-  if (!d) throw new HttpError(404, 'This login link has expired or was already used. Ask your agent to run `cubby login` again.');
   d.userId = user.id;
   return { ok: true };
 }

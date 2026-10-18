@@ -142,7 +142,7 @@ describe('deleting by filter or ids', () => {
     assert.deepEqual(r.json.cascade, [{ collection: 'orders', field: 'product', records: 1, deletes: true }]);
     const text = await cubby(['data', 'clear', 'picky', '--collection', 'products', '--filter', 'title = "Mug"']);
     assert.equal(text.code, 1, 'without --yes it only previews');
-    assert.match(text.stderr, /deletes 1 records from products in picky[\s\S]*Re-run with --yes[\s\S]*prodmug00000001[\s\S]*cascade on orders\.product/);
+    assert.match(text.stderr, /deletes 1 record from products in picky[\s\S]*Re-run with --yes[\s\S]*prodmug00000001[\s\S]*cascade on orders\.product/);
     assert.equal((await pb.collection('picky__products').getList(1, 1)).totalItems, 2);
   });
   test('filters naming another app\'s or a platform collection are refused', async () => {
@@ -151,6 +151,10 @@ describe('deleting by filter or ids', () => {
       assert.equal(r.status, 403, filter);
     }
     assert.equal((await owner('POST', '/api/projects/picky/data/clear', { body: { collection: 'products', filter: 'nope ===' } })).status, 400);
+    const unknown = await owner('POST', '/api/projects/picky/data/clear', { body: { collection: 'products', filter: 'titel = "Mug"', dry_run: true } });
+    assert.deepEqual([unknown.status, unknown.data.error], [400, 'PocketBase rejected the filter: products has no field "titel" (its fields: id, title, photo, created, updated). A filter looks like done = false && title ~ "milk".']);
+    const hidden = await owner('POST', '/api/projects/picky/data/clear', { body: { collection: 'orders', filter: 'product.title != "" && @request.auth.password != ""', dry_run: true } });
+    assert.equal(hidden.status, 403, 'a password hash is never matched on');
     assert.equal((await pb.collection('picky__products').getList(1, 1)).totalItems, 2);
   });
   test('a filter deletes only the matching records, snapshotting just those and their files', async () => {
@@ -255,6 +259,8 @@ describe('restoring', () => {
       headers: { 'content-type': 'application/json' }, body: { identity: 'ann@shop.test', password: 'ann-pass-1234' },
     });
     assert.equal(old.status, 400, 'the old password is gone');
+    const { accounts, restored_accounts } = (await owner('GET', '/api/projects/accounts/metrics')).data;
+    assert.deepEqual([accounts.total, accounts.new, accounts.days.at(-1).signups, restored_accounts], [1, 0, 0, undefined], 'a restored account is no signup');
   });
   test('--overwrite needs --yes, replaces records and saves what it replaced', async () => {
     await newApp('over');
@@ -291,6 +297,8 @@ describe('admin clears are never silent', () => {
     assert.equal(r.code, 0, r.stderr);
     const mine = (await owner('GET', '/api/activity?app=watched')).data[0];
     assert.equal(mine.action, 'admin.data.clear');
+    assert.deepEqual([mine.via, mine.agent, mine.admin], ['admin', null, 'admin@test.dev'], "the admin's, not the owner's dashboard");
+    assert.ok(!(await owner('GET', '/api/activity?app=watched&agent=dashboard')).data.some((x) => x.action === 'admin.data.clear'));
     assert.match(mine.summary, /^Admin \(admin@test\.dev\) emptied orders — 1 record · snapshot \S+ until \S+\. Reason: spam flood$/);
     const flag = (await owner('GET', '/api/projects/watched')).data.admin_clear;
     assert.deepEqual([flag.by, flag.reason, flag.snapshot], ['admin@test.dev', 'spam flood', r.json.snapshot.id]);

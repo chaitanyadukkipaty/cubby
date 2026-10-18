@@ -3,10 +3,10 @@
 // Every function takes { pb, dataDir }: the superuser client and DATA_DIR, injectable for unit tests.
 import { join } from 'node:path';
 import { prefixFor } from './config.js';
-import { HttpError } from './http.js';
+import { HttpError, clip } from './http.js';
 import { projectCollections, readSchema, deleteCollections, collectionIndex } from './schema.js';
 import { dirSize } from './sites.js';
-import { checkForeignRefs } from './proxy.js';
+import { checkForeignRefs, hiddenFieldRef, hiddenFieldMessage } from './proxy.js';
 import { startSnapshot, newSnapshotId, expiresAt, FILES_CAP_BYTES } from './snapshots.js';
 import { planCascade } from './cascade.js';
 
@@ -32,6 +32,8 @@ export function checkDataFilter(filter, prefix) {
   const via = [...filter.matchAll(/([a-zA-Z0-9_]+)_via_[a-zA-Z0-9_]+/g)].map((m) => m[1]).find((name) => !name.startsWith(prefix));
   const bad = foreign ?? via;
   if (bad) throw new HttpError(403, `Cannot reference collection "${bad}" from this app.`);
+  const hidden = hiddenFieldRef(filter);
+  if (hidden) throw new HttpError(403, hiddenFieldMessage(hidden));
 }
 
 // Runs `fn` once every earlier data change of app `slug` (clear, restore, schema push or drop) is done, so they never
@@ -126,7 +128,7 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
   }
   const targets = req.names.map((name) => {
     const c = cols.find((x) => x.name === prefix + name);
-    if (!c) throw new HttpError(404, `Collection "${name}" not found`);
+    if (!c) throw new HttpError(404, `Collection "${clip(name)}" not found`);
     return c;
   });
   const short = (c) => c.name.slice(prefix.length);
@@ -144,14 +146,23 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     const [c] = targets;
     total = await count(c.name, '');
     const filters = req.mode === 'ids' ? chunks(req.ids).map((ids) => byIds(pb, ids)) : [req.filter];
-    const n = req.mode === 'ids' ? req.ids.length : await count(c.name, req.filter).catch((err) => {
-      if (err.status === 400) throw new HttpError(400, `PocketBase rejected the filter: ${err.response?.message ?? err.message}`);
-      throw err;
-    });
-    if (n > maxMatches && !request.all_matching) throw new HttpError(409, `${req.mode === 'ids' ? 'That' : 'The filter'} matches ${n} records, more than ${maxMatches}. Narrow it, or confirm with all_matching (--all-matching).`);
+    const tooMany = (what, n) => {
+      if (n > maxMatches && !request.all_matching) throw new HttpError(409, `${what} ${n} records, more than ${maxMatches}. Narrow it, or confirm with all_matching (--all-matching).`);
+    };
+    // A filter is counted before its ids are read; ids given are looked up first (the limit is on what matches).
+    if (req.mode === 'filter') {
+      tooMany('The filter matches', await count(c.name, req.filter).catch((err) => {
+        if (err.status === 400) throw new HttpError(400, `PocketBase rejected the filter: ${filterHint(req.filter, c, short(c))}`);
+        throw err;
+      }));
+    }
     matched = [];
     for (const filter of filters) await eachPage(pb, c.name, filter, (items) => { matched.push(...items.map((r) => r.id)); });
-    if (req.mode === 'ids') missing = req.ids.filter((id) => !matched.includes(id));
+    if (req.mode === 'ids') {
+      tooMany('Those ids match', matched.length);
+      const found = new Set(matched);
+      missing = req.ids.filter((id) => !found.has(id));
+    }
   }
   // Uploaded bytes of records `ids` of collection id `col`.
   const sizeOf = async (col, ids) => (await Promise.all(ids.map((id) => dirSize(join(storageDir(dataDir, col), id))))).reduce((a, b) => a + b, 0);
@@ -279,6 +290,20 @@ export async function clearData(slug, request, { pb, dataDir, project, actor, re
     throw out;
   }
   return done;
+}
+
+// Why PocketBase may have refused `filter` on collection `col` (named `name`): it only ever answers "Something went
+// wrong while processing your request.". Names that aren't fields of the collection (the first part of a path like
+// `owner.email`; @macros and back-relations aside), or else a reminder of the syntax.
+function filterHint(filter, col, name) {
+  const fields = [...new Set(['id', ...col.fields.map((f) => f.name)])].filter((f) => !['password', 'tokenKey'].includes(f));
+  const code = filter.replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g, '""');
+  const names = [...code.matchAll(/(?<![\w@.:])[A-Za-z_]\w*(?!\w|\s*\()/g)].map((m) => m[0])
+    .filter((w) => !['true', 'false', 'null'].includes(w) && !w.includes('_via_'));
+  const unknown = [...new Set(names)].filter((w) => !fields.includes(w));
+  const example = 'A filter looks like done = false && title ~ "milk".';
+  if (unknown.length) return `${name} has no field ${unknown.slice(0, 3).map((w) => `"${clip(w)}"`).join(', ')} (its fields: ${fields.join(', ')}). ${example}`;
+  return `check its operators (=, !=, >, <, ~, ?=, &&, ||) and that text is in quotes. ${example}`;
 }
 
 // "lines.item must point at an items record and doesn't cascade: 2 records (l1, l2) would point at nothing. …"

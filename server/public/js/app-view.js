@@ -11,6 +11,14 @@ export function rangeFrom(search) {
   return RANGES.includes(range) ? range : '7d';
 }
 
+/** The query string to put in the URL when its ?range= isn't one the page offers ("?range=1y" → "?range=7d"), else null. */
+export function fixedRangeSearch(search) {
+  const params = new URLSearchParams(search);
+  if (!params.has('range') || RANGES.includes(params.get('range'))) return null;
+  params.set('range', rangeFrom(search));
+  return `?${params}`;
+}
+
 /**
  * Views per UTC day over the last 7 days, added up across GET /api/metrics?range=7d rows (each with `days`), and their
  * total: Home's "Views · 7 days" card, and with one row an app's sparkline on /apps. One request for every app.

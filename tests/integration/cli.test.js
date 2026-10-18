@@ -77,6 +77,18 @@ describe('basics', () => {
     const j = await cubby(['projects', '--json']);
     assert.match(j.json.error, /Not logged in/);
   });
+  test('bad flags give one error line (or JSON with --json) and exit 1, never a stack trace', async () => {
+    for (const args of [['whoami', '--bogus'], ['activity', '--limit', '-1'], ['rollback', '-x']]) {
+      const r = await cubby(args);
+      assert.equal(r.code, 1, args.join(' '));
+      assert.match(r.stderr, /^error: \S.*\n$/, `one line: ${r.stderr}`);
+      assert.doesNotMatch(r.stderr, /\n\s+at |ERR_PARSE_ARGS/);
+      const j = await cubby([...args, '--json']);
+      assert.equal(j.code, 1);
+      assert.equal(typeof j.json?.error, 'string', `JSON on stdout: ${j.stdout}${j.stderr}`);
+    }
+    assert.match((await cubby(['whoami', '--bogus', '--json'])).json.error, /Unknown option '--bogus'/);
+  });
   test('unreachable servers produce a readable error', async () => {
     const r = await cubby(['whoami'], { env: { CUBBY_TOKEN: 'hk_x', CUBBY_SERVER: 'http://127.0.0.1:1' } });
     assert.equal(r.code, 1);
@@ -221,7 +233,7 @@ describe('app lifecycle', () => {
     writeFileSync(join(dir(), 'dist/index.html'), '<h1>one</h1>');
     const pkg = JSON.parse(readFileSync(join(dir(), 'package.json'), 'utf8'));
     writeFileSync(join(dir(), 'package.json'), JSON.stringify({ ...pkg, description: 'CLI test app' }));
-    const first = ok(await inApp(['deploy', '--no-build', '-m', 'one', '--client', 'test-agent']));
+    const first = ok(await inApp(['deploy', '--no-build', '-m', 'one', '--client', '🤖 test-agent']));
     assert.match(first.stdout, /Schema applied\. created: users, tasks/);
     assert.match(first.stdout, /Deployed \w+ to admin's Cubby \(http:\/\/localhost:\d+\) \(1 files/);
     const second = ok(await inApp(['deploy', '--no-build', '-m', 'two', '--unlisted']));
@@ -232,7 +244,7 @@ describe('app lifecycle', () => {
     const deploys = ok(await inApp(['deploys'])).stdout.trim().split('\n');
     assert.equal(deploys.length, 2);
     assert.match(deploys[0], /^\* .*two$/);
-    assert.match(deploys[1], /\[test-agent\] one$/);
+    assert.match(deploys[1], /\[🤖 test-agent\] one$/, 'names beyond Latin-1 survive the header');
   });
   test('rollback', async () => {
     const list = ok(await inApp(['deploys', '--json'])).json;

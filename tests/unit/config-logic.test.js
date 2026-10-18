@@ -180,6 +180,13 @@ describe('logic patches', () => {
     assert.equal(logic.deployClient('claude-code'), 'claude-code');
     assert.equal(logic.deployClient('x'.repeat(100)).length, 60);
   });
+  test('deployClient decodes the percent-encoded header new CLIs send, and takes old CLIs\' plain values as they are', () => {
+    assert.equal(logic.deployClient(encodeURIComponent('🤖 agent')), '🤖 agent');
+    assert.equal(logic.deployClient(encodeURIComponent('Кубик')), 'Кубик');
+    assert.equal(logic.deployClient('Caf\u00e9'), 'Café', 'an old CLI sent Latin-1 raw');
+    assert.equal(logic.deployClient('50%-bot'), '50%-bot', 'not a valid escape: kept as sent');
+    assert.equal(logic.deployClient(encodeURIComponent('a\u202Eb\n')), 'ab', 'cleaned like agent names');
+  });
   test('agentHint keeps the tool and machine a CLI sends, cleaned and capped; old CLIs send nothing', () => {
     assert.deepEqual(logic.agentHint({ tool: ' Claude  Code\n', machine: 'mbp\u0007' }), { tool: 'Claude Code', machine: 'mbp' });
     assert.deepEqual(logic.agentHint({}), { tool: '', machine: '' });
@@ -205,6 +212,13 @@ describe('logic patches', () => {
     assert.equal(logic.agentLabel('  CI  runner\n'), 'CI runner');
     for (const bad of ['', '   ', '\u0007', undefined, 42, 'x'.repeat(61)]) rejects(() => logic.agentLabel(bad), 400, /Agent name must be 1-60 characters/);
     assert.equal(logic.agentLabel('x'.repeat(60)).length, 60);
+  });
+  test('names drop bidi overrides and other invisible format characters, so they can\'t disguise themselves', () => {
+    // U+202E (right-to-left override) would show "ma\u202Eenihc" as "machine"; U+200B and U+2066 are invisible.
+    assert.deepEqual(logic.agentHint({ tool: 'Co\u202Edex', machine: 'ma\u202Eenihc\u2066\u200B\u061C\u200F' }), { tool: 'Codex', machine: 'maenihc' });
+    assert.equal(logic.agentLabel('\u202Etwin\u202C'), 'twin');
+    rejects(() => logic.agentLabel('\u202E\u200B'), 400, /Agent name must be/);
+    assert.equal(logic.agentLabel('dev 👩\u200D💻 ✨'), 'dev 👩\u200D💻 ✨', 'emoji sequences keep their zero-width joiner');
   });
   test('touchThrottle lets a key record its use at most once per interval, each key on its own clock', () => {
     const t = logic.touchThrottle(60_000);
@@ -271,6 +285,9 @@ describe('logic routes', () => {
     assert.equal(logic.matchRoute(routes, 'GET', '/api/projects/a/b'), null);
     assert.equal(logic.matchRoute(routes, 'POST', '/api/projects'), null);
     assert.equal(logic.matchRoute(routes, 'GET', '/api/projectsX'), null);
+  });
+  test('a malformed %-escape in a path parameter is a 400, not a crash', () => {
+    rejects(() => logic.matchRoute(routes, 'GET', '/api/projects/%E0%A4%A'), 400, /Malformed URL/);
   });
 });
 

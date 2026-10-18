@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import * as tar from 'tar';
 import { admin } from './pb.js';
 import { config } from './config.js';
-import { HttpError } from './http.js';
+import { HttpError, clip } from './http.js';
 import { JOBS_DIR, jobsDir, readJobsBundle } from './jobs.js';
 
 const sitesDir = (slug) => join(config.dataDir, 'sites', slug);
@@ -66,7 +66,7 @@ export async function createDeploy(project, tarball, message = '', client = '') 
 export function oldDeploys(deploys, { keep = 0, id } = {}) {
   if (id !== undefined) {
     const d = deploys.find((x) => x.id === id);
-    if (!d) throw new HttpError(404, `Deploy ${id} not found`);
+    if (!d) throw new HttpError(404, `Deploy ${clip(id)} not found`);
     if (d.current) throw new HttpError(409, `${id} is the current deploy: the app serves it. Roll back to another deploy first.`);
     return [d];
   }
@@ -98,7 +98,7 @@ export async function listDeploys(project) {
 
 export async function rollback(project, deployId) {
   const deploys = await listDeploys(project);
-  if (!deploys.some((d) => d.id === deployId)) throw new HttpError(404, `Deploy ${deployId} not found`);
+  if (!deploys.some((d) => d.id === deployId)) throw new HttpError(404, `Deploy ${clip(deployId)} not found`);
   await admin.collection('cubby_projects').update(project.id, { current_deploy: deployId });
 }
 

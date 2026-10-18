@@ -1,7 +1,7 @@
 // Nightly backups: a PocketBase backup (all app data) plus a tarball of deployed sites (with their jobs) and the
 // key that decrypts app secrets, which must be restored together with the data.
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as tar from 'tar';
 import { admin } from './pb.js';
@@ -14,25 +14,51 @@ import { pruneActivity } from './activity.js';
 import { pocketbaseStore, rollupMetrics } from './metrics.js';
 import { pruneSnapshots } from './snapshots.js';
 
-const backupDir = join(config.dataDir, 'backups');
-
-// Keeps the newest `keep` backups (the Admin setting), deleting older ones as whole pairs by date.
-export async function runBackup({ keep } = {}) {
-  const stamp = new Date().toISOString().slice(0, 10);
+// Keeps the newest `keep` backups (the Admin setting), deleting older ones as whole pairs by date. `pb` (the
+// superuser client), `dataDir`, `now`, `createTar` and `log` are injectable for tests.
+// One backup per day: a manual backup later the same day replaces it, but only once the new pair is complete. Both
+// files are written under temporary names first and then renamed over the day's pair, so a failure leaves the
+// earlier one as it was. PocketBase keeps its backups as files in pb_data/backups (each with a `.attrs` file of
+// metadata; docker/cubby-server reads the same folder), so its new zip is renamed there.
+export async function runBackup({ keep, pb = admin, dataDir = config.dataDir, now = () => new Date(), createTar = tar.c, log = console.log } = {}) {
+  const stamp = now().toISOString().slice(0, 10);
   const name = `cubby-${stamp}.zip`;
-  // One backup per day: a manual backup later the same day replaces it.
-  if ((await admin.backups.getFullList()).some((b) => b.key === name)) await admin.backups.delete(name);
-  await admin.backups.create(name);
-  await mkdir(backupDir, { recursive: true });
-  // A fresh server has no sites yet; tar refuses an empty list (synchronously), and a pair should always be whole.
-  await mkdir(join(config.dataDir, 'sites'), { recursive: true });
-  const dirs = ['sites', 'secrets'].filter((d) => existsSync(join(config.dataDir, d)));
-  await tar.c({ gzip: true, cwd: config.dataDir, file: join(backupDir, `sites-${stamp}.tar.gz`) }, dirs).catch(() => {});
+  const temp = `cubby-${stamp}-new.zip`;
+  const pbDir = join(dataDir, 'pb_data', 'backups');
+  const backupDir = join(dataDir, 'backups');
+  const sites = join(backupDir, `sites-${stamp}.tar.gz`);
+  const sitesTemp = `${sites}.new`;
+  // Left over by a run that died halfway.
+  if ((await pb.backups.getFullList()).some((b) => b.key === temp)) await pb.backups.delete(temp);
+  await pb.backups.create(temp);
+  try {
+    await mkdir(backupDir, { recursive: true });
+    // A fresh server has no sites yet; tar refuses an empty list (synchronously), and a pair should always be whole.
+    await mkdir(join(dataDir, 'sites'), { recursive: true });
+    const dirs = ['sites', 'secrets'].filter((d) => existsSync(join(dataDir, d)));
+    await createTar({ gzip: true, cwd: dataDir, file: sitesTemp }, dirs);
+  } catch (err) {
+    await rm(sitesTemp, { force: true });
+    await pb.backups.delete(temp).catch(() => {});
+    throw err;
+  }
+  if (existsSync(join(pbDir, temp))) {
+    for (const ext of ['', '.attrs']) {
+      if (existsSync(join(pbDir, temp + ext))) await rename(join(pbDir, temp + ext), join(pbDir, name + ext));
+    }
+  } else {
+    // A PocketBase not started by Cubby keeps its files elsewhere: replace the day's backup through its API, keeping
+    // the new one until that's done.
+    if ((await pb.backups.getFullList()).some((b) => b.key === name)) await pb.backups.delete(name);
+    await pb.backups.create(name);
+    await pb.backups.delete(temp);
+  }
+  await rename(sitesTemp, sites);
 
-  const list = await listBackups(admin, config.dataDir);
+  const list = await listBackups(pb, dataDir);
   const plan = planRetention(list, keep ?? backupKeep(await getSettings()));
-  for (const date of plan.delete) await deleteBackup(admin, config.dataDir, list.find((b) => b.date === date));
-  console.log(`backup ${stamp} done`);
+  for (const date of plan.delete) await deleteBackup(pb, dataDir, list.find((b) => b.date === date));
+  log(`backup ${stamp} done`);
 }
 
 // Runs backups one at a time in the background ("Back up now" and the nightly run share it), so the backup list

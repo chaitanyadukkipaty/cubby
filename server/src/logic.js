@@ -48,11 +48,20 @@ export function deployPatch(searchParams) {
   return patch;
 }
 
-export const deployClient = (header) => String(header ?? '').slice(0, 60);
+// The agent's name from the x-cubby-client header. HTTP headers can't carry characters above U+00FF, so CLIs
+// percent-encode it; older CLIs sent it raw (ASCII, or Latin-1), which decodes to itself or isn't a valid escape.
+export function deployClient(header) {
+  const raw = String(header ?? '');
+  let text;
+  try { text = decodeURIComponent(raw); } catch { text = raw; }
+  return hintText(text, 60);
+}
 
 // --- Agents: one API key per approved `cubby login` ---
 // What a CLI says about itself when it starts a device login. Older CLIs send nothing, so every part is optional.
-const hintText = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+// Control and format characters (\p{Cc}, \p{Cf}) go: bidi overrides like U+202E would reorder a name on the
+// approval page and in the activity feed, and zero-width ones hide in it. The zero-width joiner stays: emoji need it.
+const hintText = (v, max) => (typeof v === 'string' ? v.replace(/(?!\u200d)[\p{Cc}\p{Cf}]/gu, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
 // 40 + " · " + 57 = 100, the key label's limit.
 export const agentHint = (body) => ({ tool: hintText(body?.tool, 40), machine: hintText(body?.machine, 57) });
 
@@ -101,13 +110,15 @@ export const agentView = (k, currentKeyId) => ({
 });
 
 // --- Activity log: one row per mutation, attributed to the agent key that made it ---
-// `actor.agent` is { id, name } for an agent's key, null for the manual token (the dashboard).
+// `actor.agent` is { id, name } for an agent's key, null for the manual token (the dashboard). `actor.byAdmin` is the
+// email of an admin who acted on the user's app: the owner's copy of that row has no agent and the admin's email as
+// `agent_name`, so it never reads as the owner's own dashboard.
 // `meta` is optional structured detail the dashboard reads instead of parsing `summary` (e.g. { deploy, files }).
 // Keep it small and never put secret values in it: it is returned by the activity APIs as is.
 export const activityRow = (actor, { action, app = '', summary = '', meta = null }, now = new Date()) => ({
   user: actor.id,
   agent: actor.agent?.id ?? '',
-  agent_name: actor.agent?.name ?? '',
+  agent_name: actor.agent?.name ?? actor.byAdmin ?? '',
   app,
   action,
   summary: String(summary).slice(0, 300),
@@ -121,7 +132,7 @@ export const ACTIVITY_DAYS = 30;
 export const activityCutoff = (now) => new Date(now.getTime() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ');
 
 // The PocketBase filter for listing activity. A user sees only rows they made (their apps and agents);
-// `all` (admins, /api/admin/activity) drops that. agent=dashboard means the manual token.
+// `all` (admins, /api/admin/activity) drops that. agent=dashboard means the manual token (not an admin's actions).
 export function activityQuery(user, { app, agent, limit } = {}, { all = false } = {}) {
   const parts = [];
   const params = {};
@@ -129,6 +140,7 @@ export function activityQuery(user, { app, agent, limit } = {}, { all = false } 
   if (!all) add('user = {:u}', 'u', user.id);
   if (app) add('app = {:app}', 'app', String(app));
   if (agent) add('agent = {:agent}', 'agent', agent === 'dashboard' ? '' : String(agent));
+  if (agent === 'dashboard') add('agent_name = {:none}', 'none', '');
   const n = Number.parseInt(limit, 10);
   return {
     filter: { text: parts.join(' && '), params },
@@ -190,7 +202,7 @@ export function restoreSummary({ snapshot, collections, links = [], accounts }) 
     ...(sum('existing') - sum('replaced') > 0 ? [`${sum('existing') - sum('replaced')} already there`] : []),
     ...(sum('failed') ? [`${sum('failed')} failed`] : []),
     ...(relinked ? [`${relinked} record${relinked === 1 ? '' : 's'} relinked`] : []),
-    ...(accounts.length ? [`${accounts.length} accounts with new passwords`] : []),
+    ...(accounts.length ? [accounts.length === 1 ? '1 account with a new password' : `${accounts.length} accounts with new passwords`] : []),
   ];
   return `Restored ${n} record${n === 1 ? '' : 's'} from snapshot ${snapshot}${notes.length ? ` (${notes.join(', ')})` : ''}`;
 }
@@ -216,8 +228,9 @@ export const activityView = (r) => ({
   id: r.id,
   at: r.at,
   user: r.expand?.user?.email ?? null,
-  via: r.agent ? 'agent' : 'dashboard',
+  via: r.agent ? 'agent' : r.agent_name ? 'admin' : 'dashboard',
   agent: r.agent ? { id: r.agent, name: r.agent_name } : null,
+  ...(!r.agent && r.agent_name && { admin: r.agent_name }),
   app: r.app || null,
   action: r.action,
   summary: r.summary,
@@ -350,7 +363,11 @@ export function matchRoute(routes, method, pathname) {
   for (const route of routes) {
     const m = pathname.match(route.re);
     if (!m || route.method !== method) continue;
-    return { route, params: Object.fromEntries(route.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])) };
+    try {
+      return { route, params: Object.fromEntries(route.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])) };
+    } catch {
+      throw new HttpError(400, 'Malformed URL: a path segment has a bad %-escape');
+    }
   }
   return null;
 }

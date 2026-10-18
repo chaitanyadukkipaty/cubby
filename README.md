@@ -113,24 +113,24 @@ else's platform and you can't bring your own agent.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-home.png?v=48d949ff" alt="Dashboard Home: prompt suggestions for your agent, a failed job with a Copy fix-it prompt button, and a timeline of agent activity with Roll back on deploys, next to active visitors, 7-day views and your agents"><p align="center"><sub>Home on Priya's Cubby: what your agents did, and what to ask next</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-app-overview.png?v=aaef244c" alt="Friend Polls' Overview tab: a KPI strip, then views, unique visitors, active visitors and API errors charted on one time axis with dashed deploy lines, and the top paths"><p align="center"><sub>An app's Overview: every chart shares one time axis, with deploys drawn through</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-home.png?v=4af9ab02" alt="Dashboard Home: prompt suggestions for your agent, a failed job with a Copy fix-it prompt button, and a timeline of agent activity with Roll back on deploys, next to active visitors, 7-day views and your agents"><p align="center"><sub>Home on Priya's Cubby: what your agents did, and what to ask next</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-app-overview.png?v=14cbcc92" alt="Friend Polls' Overview tab: a KPI strip, then views, unique visitors, active visitors and API errors charted on one time axis with dashed deploy lines, and the top paths"><p align="center"><sub>An app's Overview: every chart shares one time axis, with deploys drawn through</sub></p></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-agents.png?v=a8074a2c" alt="The Agents page: Claude Code and Codex with their machine, the apps each touched, last seen, and Rename and Revoke buttons, above the token for scripts and CI"><p align="center"><sub>Agents: rename, revoke, or connect another</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-first-run.png?v=64b14f11" alt="Home for a new user: step 1 Copy prompt for agent, then approve the login, then ask for an app"><p align="center"><sub>First visit: connect your agent in three steps</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-agents.png?v=401289b1" alt="The Agents page: Claude Code and Codex with their machine, the apps each touched, last seen, and Rename and Revoke buttons, above the token for scripts and CI"><p align="center"><sub>Agents: rename, revoke, or connect another</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-first-run.png?v=31cd2160" alt="Home for a new user: step 1 Copy prompt for agent, then approve the login, then ask for an app"><p align="center"><sub>First visit: connect your agent in three steps</sub></p></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-gallery.png?v=a0e0f981" alt="Explore page listing everyone's apps"><p align="center"><sub>Explore: everyone's apps</sub></p></td>
-<td width="50%"><img src="docs/assets/connect-approve.png?v=4a5cb37f" alt="Approval page naming the agent that wants access"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-gallery.png?v=82594e61" alt="Explore page listing everyone's apps"><p align="center"><sub>Explore: everyone's apps</sub></p></td>
+<td width="50%"><img src="docs/assets/connect-approve.png?v=5a9c0219" alt="Approval page naming the agent that wants access"><p align="center"><sub>One click to connect an agent to a named server</sub></p></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-apps.png?v=69b4f308" alt="The Apps page: one row per app with active visitors, views over 7 days with a sparkline, and who deployed it last"><p align="center"><sub>Apps: who's on each app, 7-day views, and which agent deployed it</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-app-deploys.png?v=94c02f2e" alt="An app's Deploys tab listing four deploys with their message, agent, size and age, the live one marked, and Roll back to this on the others"><p align="center"><sub>Deploys: roll back to any kept deploy</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-apps.png?v=5e9cbe4a" alt="The Apps page: one row per app with active visitors, views over 7 days with a sparkline, and who deployed it last"><p align="center"><sub>Apps: who's on each app, 7-day views, and which agent deployed it</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-app-deploys.png?v=8b95e3fa" alt="An app's Deploys tab listing four deploys with their message, agent, size and age, the live one marked, and Roll back to this on the others"><p align="center"><sub>Deploys: roll back to any kept deploy</sub></p></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/assets/dashboard-admin-overview.png?v=b31fd97f" alt="Admin Overview: users, views, visitors, active now, API error rate and free disk across the server, a 7-day views chart of every app, the top apps by views, the most active agents across users, the disk bar and an update notice"><p align="center"><sub>Admin Overview: the whole server at a glance</sub></p></td>
-<td width="50%"><img src="docs/assets/dashboard-admin-storage.png?v=29f7d1fb" alt="Admin Storage: a disk bar split into database, uploads, current and old deploys, backups, snapshots, other files and free space; the nightly backups with Back up now, a copyable restore command and Delete on each; apps by size; and data-clear snapshots with Purge"><p align="center"><sub>Admin Storage: where the disk goes, backups and snapshots</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-admin-overview.png?v=2c70f70a" alt="Admin Overview: users, views, visitors, active now, API error rate and free disk across the server, a 7-day views chart of every app, the top apps by views, the most active agents across users, the disk bar and an update notice"><p align="center"><sub>Admin Overview: the whole server at a glance</sub></p></td>
+<td width="50%"><img src="docs/assets/dashboard-admin-storage.png?v=3ed73197" alt="Admin Storage: a disk bar split into database, uploads, current and old deploys, backups, snapshots, other files and free space; the nightly backups with Back up now, a copyable restore command and Delete on each; apps by size; and data-clear snapshots with Purge"><p align="center"><sub>Admin Storage: where the disk goes, backups and snapshots</sub></p></td>
 </tr>
 </table>
 
@@ -258,7 +258,8 @@ account" error.
    ```
 
    Your other agents keep working. An agent can revoke itself too, which logs it out like `cubby logout`.
-   **Regenerate** on the Agents page replaces only the manual token; agents keep their own keys.
+   **Regenerate** on the Agents page replaces only the manual token; agents keep their own keys, and an agent's key
+   can't regenerate the manual token. A login link works once: after it's approved, nobody can approve it again.
 3. Ask your agent for an app in plain words, naming the server if you have more than one. That's it.
 4. Your dashboard's Home then shows what your agents do, newest first. If a deploy broke something, **Roll back** on
    its line serves the one before it again; if a scheduled job failed, **Copy fix-it prompt** gives your agent the
@@ -389,7 +390,7 @@ date. Nothing can be deleted until you click **Preview**, which shows "matches N
 (tick some to delete only those), what goes by cascade, what blocks the clear (the button stays locked), and asks for
 an extra tick above 10,000 records. Change the form and the preview goes stale. Then type the app's name to unlock the button; the result names the snapshot.
 
-<p align="center"><img src="docs/assets/dashboard-app-data.png?v=0997ebdc" width="760" alt="Friend Polls' Data tab: collections with record counts and file sizes (users unticked), Empty, Drop or delete by filter, a preview that says Empties comments, polls and votes: 4,231 records with five sample records, the app name typed to confirm, and two snapshots with Restore and Purge"></p>
+<p align="center"><img src="docs/assets/dashboard-app-data.png?v=46e536b5" width="760" alt="Friend Polls' Data tab: collections with record counts and file sizes (users unticked), Empty, Drop or delete by filter, a preview that says Empties comments, polls and votes: 4,231 records with five sample records, the app name typed to confirm, and two snapshots with Restore and Purge"></p>
 
 ### Undo a clear
 
@@ -467,7 +468,9 @@ flowchart LR
   that only lives in memory and changes every day (UTC), so the same person counts once a day and can't be followed
   across days; the IP itself is never stored. Counts are kept in memory and written to the database every minute
   (views per hour; views and unique visitors per day). A crash loses at most that minute, and a restart may count
-  some of that day's visitors twice. Only the app's owner (and admins) can see them.
+  some of that day's visitors twice. Because visitors and top paths are per day, a range that starts mid-day (like
+  `1h`) counts them from that day's start, and the report says so (`days_from`). Accounts a data restore brings back
+  aren't counted as signups. Only the app's owner (and admins) can see them.
   - **Active now** is the number of visitors who loaded a page or made a `/pb` call in the last 5 minutes, kept only
     in memory (no heartbeat, nothing added to the app); the highest it reached each hour is stored as that hour's
     **peak**. Someone reading a page for more than 5 minutes without any database call drops out, so it's a floor.
@@ -544,7 +547,8 @@ for groups who trust each other, not as a hostile multi-tenant cloud.
 - "Last seen" for an agent is updated at most once a minute. Home's timeline shows your latest 60 changes; older
   ones are on each agent's page and in `cubby activity`.
 - The activity log keeps 30 days (pruned nightly) and shows your own actions. An admin's actions on your app (like
-  deleting it) are in the admin's log, not yours, except data clears, which are in both. An app's history stays after the app is deleted, until it ages
+  deleting it) are in the admin's log, not yours, except data clears and deleted deploys, which are in both and show
+  the admin as who did it. An app's history stays after the app is deleted, until it ages
   out; deleting a user deletes their history.
 - Not yet supported: server code that runs per request (API endpoints, hooks), custom domains per app, single sign-on
   across apps, app emails.

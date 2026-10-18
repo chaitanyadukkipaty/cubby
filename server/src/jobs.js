@@ -9,9 +9,9 @@ import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { admin } from './pb.js';
 import { config, prefixFor, SLUG_RE } from './config.js';
-import { HttpError } from './http.js';
+import { HttpError, clip } from './http.js';
 import { parseCron, cronMatches, nextRun } from './cron.js';
-import { isAllowed, checkForeignRefs } from './proxy.js';
+import { isAllowed, checkForeignRefs, hiddenFieldRef, hiddenFieldMessage } from './proxy.js';
 import { getSettings } from './settings.js';
 import { envFor } from './secrets.js';
 import { jobTimeout } from './logic.js';
@@ -122,6 +122,8 @@ export async function forwardJobRequest(slug, msg, { send = fetch, index } = {})
   }
   const { foreign } = checkForeignRefs(url.search, null, prefixFor(slug));
   if (foreign) return encodeJson(403, `Cannot reference collection "${foreign}" from this app.`);
+  const hidden = hiddenFieldRef(url.search);
+  if (hidden) return encodeJson(403, hiddenFieldMessage(hidden));
   const headers = { authorization: admin.authStore.token };
   if (msg.contentType) headers['content-type'] = msg.contentType;
   try {
@@ -333,7 +335,7 @@ export async function runNow(project, name) {
 export async function jobRuns(project, name, { limit = 1, id } = {}) {
   if (id) {
     const r = await runs().getOne(id).catch(() => null);
-    if (!r || r.project !== project.id || r.job !== name) throw new HttpError(404, `Run ${id} not found`);
+    if (!r || r.project !== project.id || r.job !== name) throw new HttpError(404, `Run ${clip(id)} not found`);
     return [runView(r)];
   }
   const n = Math.min(Math.max(Number.parseInt(limit, 10) || 1, 1), KEEP_RUNS);

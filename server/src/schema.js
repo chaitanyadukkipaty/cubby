@@ -2,7 +2,7 @@
 // enforcing that a project can only ever create or reference its own collections.
 import { admin, mergeFieldIds } from './pb.js';
 import { prefixFor } from './config.js';
-import { HttpError } from './http.js';
+import { HttpError, clip } from './http.js';
 
 const COLLECTION_NAME_RE = /^[a-z][a-z0-9_]{0,40}$/;
 const FIELD_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,60}$/;
@@ -174,12 +174,12 @@ export async function dropFromSchema(slug, target, api = pbCollections()) {
   const prefix = prefixFor(slug);
   const [name, field] = String(target).split('.');
   const col = (await projectCollections(slug, api)).find((c) => c.name === prefix + name);
-  if (!col) throw new HttpError(404, `Collection "${name}" not found`);
+  if (!col) throw new HttpError(404, `Collection "${clip(name)}" not found`);
   if (!field) {
     await deleteCollections([col], api);
   } else {
     const f = col.fields.find((x) => x.name === field);
-    if (!f) throw new HttpError(404, `Field "${name}.${field}" not found`);
+    if (!f) throw new HttpError(404, `Field "${clip(name)}.${clip(field)}" not found`);
     if (f.system) throw new HttpError(400, `"${name}.${field}" is a system field and can't be dropped`);
     try {
       await api.update(col.id, { fields: col.fields.filter((x) => x.name !== field) });

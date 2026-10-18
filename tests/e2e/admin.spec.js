@@ -50,8 +50,16 @@ test('settings: renaming the server updates the header and tab; limits reject ou
   expect((await api.settings()).server_name).toBe("E2E Crew's Cubby");
   await api.updateSettings({ server_name: original });
 
+  // The form checks the range itself (an empty field would otherwise be sent as 0), so nothing is sent.
+  for (const appsPerUser of [20000, '']) {
+    await admin.saveLimits({ appsPerUser });
+    expect(await admin.appsPerUser.evaluate((el) => el.validity.valid)).toBe(false);
+  }
+  expect((await api.settings()).max_apps_per_user).toBe(10);
+  // Should the server still refuse a value, it names the field the way the form does.
+  await admin.appsPerUser.evaluate((el) => { el.removeAttribute('max'); });
   await admin.saveLimits({ appsPerUser: 20000 });
-  await expect(dashboard.toast).toHaveText(/between 1 and 10000/);
+  await expect(dashboard.toast).toHaveText('Apps per user must be a whole number between 1 and 10000');
 
   await admin.saveLimits({ appsPerUser: 7, maxDeployMb: 4 });
   await expect(dashboard.toast).toHaveText('Limits saved');

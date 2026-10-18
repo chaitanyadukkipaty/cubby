@@ -171,10 +171,43 @@ All notable changes to Cubby are documented here. The format follows
   system, and a toggle under your email overrides it (remembered in the browser).
 - The dashboard is now an HTML shell, a stylesheet and ES modules served with hashed URLs (still no build step and
   no dependencies), instead of one HTML file.
+- Bad CLI flags such as `--bogus` or `--limit -1` print one error line (JSON with `--json`) and exit 1, instead of
+  a stack trace. `--client` and `CUBBY_CLIENT` names beyond Latin-1 (emoji, CJK) work instead of failing every
+  command with "Cannot reach"; older CLIs keep working.
+- The API answers 400 instead of 500 for a `null` or non-object JSON body and for a bad `%`-escape in the path;
+  array bodies are no longer taken as `{}`. Size limits under 1 MB are named in KB ("Body exceeds 64 KB limit")
+  instead of "0MB".
+- A stale dashboard tab no longer signs out a fresh session another tab started.
+- An admin's data clear shows to the app's owner as the admin's (`via: "admin"`, "Admin" in the feed and CLI), not
+  as the owner's dashboard. An admin deleting an app's older deploys is now in both their logs, with the deploy ids.
+- Metrics: visitors and top paths are per UTC day, so reports carry `days_from`, and `cubby metrics` says "visitors
+  since <day> 00:00 UTC" when the range starts mid-day. Accounts a data restore brings back no longer count as
+  signups.
+- Backups: a second backup the same day replaces the day's pair only once the new one is complete, and a failed
+  sites/secrets tarball fails the backup instead of being ignored.
+- Data: `cubby data clear --ids` applies the 10,000 limit to the records that match; a restore warns about new
+  passwords only when it creates accounts; a filter PocketBase rejects says which names aren't fields (listing the
+  collection's) instead of "Something went wrong"; not-found errors cut ids and names longer than 40 characters.
+- Dashboard on phones: pages start right under the top bar, nothing scrolls sideways (long names, paths and the app
+  header wrap or truncate; top paths keep Views visible), snapshot Restore and Purge fit, and the live dot stays on
+  the title's line.
+- Dashboard: text and chart graphics meet WCAG AA contrast in both themes (a darker orange accent and green,
+  readable chart axes). The docs site uses the new accent too.
+- Dashboard: an unknown page shows "Page not found" (status 404) with links back; an unsupported `?range=` is
+  corrected in the URL; the Deploys tab's From names the agent that deployed, else the CLI's client name; deploys
+  made close together share one chart label ("v1–v4"); agents sharing a name are told apart by tool and machine.
+- Dashboard: failed admin and job actions show their error instead of failing silently; settings errors name the
+  field by its label, and number fields are checked before saving; sign up and log in send one request at a time;
+  the theme button follows system theme changes; the token's Reveal turns into Hide.
 
 ### Security
 
 - Realtime subscriptions through an app's `/pb` are now limited to that app's own collections.
+- Agent keys can no longer regenerate the manual token, so a revoked agent can't keep a full-access token. A
+  device-login link can be approved only once. Agent names drop bidi overrides and other invisible format
+  characters.
+- Data-clear filters and scheduled jobs' record queries can't filter or sort on accounts' password hashes or token
+  keys (they run as superuser).
 
 ## [0.1.4] - 2026-10-17
 

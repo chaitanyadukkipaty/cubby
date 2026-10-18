@@ -65,8 +65,9 @@ export const VISITOR_CAP = 200_000;
 // a small app holds a few KB). Past it, newcomers aren't counted until someone drops out, so active now and peaks
 // become lower bounds.
 export const ACTIVE_CAP = 50_000;
-// Numeric fields of a bucket, added up across flushes.
-const COUNTERS = ['views', 'visitors', 'api_requests', 'api_errors'];
+// Numeric fields of a bucket, added up across flushes. `restored_accounts` (hourly) counts accounts a data restore
+// created again, which appAccounts leaves out of signups.
+const COUNTERS = ['views', 'visitors', 'api_requests', 'api_errors', 'restored_accounts'];
 // `fields` of a bucket, 0 where a row lacks one (rows stored before a field existed, or days not rolled up yet).
 const pick = (row, fields) => Object.fromEntries(fields.map((f) => [f, row[f] ?? 0]));
 // Numeric fields of a bucket that keep the highest value seen across flushes.
@@ -130,7 +131,7 @@ export async function rollupMetrics({ store, now = Date.now, batch = 500 }) {
       const key = `${h.project}\t${dayStart(Date.parse(h.start))}`;
       const d = days.get(key) ?? { project: h.project, start: dayStart(Date.parse(h.start)), hours: [], counts: {} };
       d.hours.push(h);
-      d.counts = mergeCounts(d.counts, pick(h, ['views', 'api_requests', 'api_errors', 'peak_active']));
+      d.counts = mergeCounts(d.counts, pick(h, ['views', 'api_requests', 'api_errors', 'peak_active', 'restored_accounts']));
       days.set(key, d);
     }
     for (const { project, start, hours: list, counts: { views, ...counts } } of days.values()) {
@@ -155,15 +156,15 @@ export async function rollupMetrics({ store, now = Date.now, batch = 500 }) {
 export function summarizeMetrics(projects, report) {
   const apps = projects.map((p) => {
     const r = report[p.id];
-    return { app: p.slug, owner: p.expand?.owner?.email ?? null, views: r.views, visitors: r.visitors, api_requests: r.api_requests, api_errors: r.api_errors, active_now: r.active_now, from: r.from, to: r.to };
+    return { app: p.slug, owner: p.expand?.owner?.email ?? null, views: r.views, visitors: r.visitors, api_requests: r.api_requests, api_errors: r.api_errors, active_now: r.active_now, from: r.from, to: r.to, days_from: r.days_from };
   });
   const total = (f) => apps.reduce((n, a) => n + a[f], 0);
   const requests = total('api_requests');
   return {
-    from: apps[0]?.from ?? null, to: apps[0]?.to ?? null, apps: apps.length,
+    from: apps[0]?.from ?? null, to: apps[0]?.to ?? null, days_from: apps[0]?.days_from ?? null, apps: apps.length,
     views: total('views'), visitors: total('visitors'), active_now: total('active_now'),
     api_requests: requests, api_errors: total('api_errors'), api_error_rate: requests ? total('api_errors') / requests : 0,
-    top_apps: apps.sort((a, b) => b.views - a.views || a.app.localeCompare(b.app)).slice(0, 10).map(({ from, to, ...a }) => a),
+    top_apps: apps.sort((a, b) => b.views - a.views || a.app.localeCompare(b.app)).slice(0, 10).map(({ from, to, days_from, ...a }) => a),
     hours: sumBuckets(projects.map((p) => report[p.id].hours)),
     days: sumBuckets(projects.map((p) => report[p.id].days)),
   };
@@ -192,8 +193,10 @@ function sumBuckets(seriesList) {
 }
 
 // The app's own accounts (records of its auth collections, names starting with `prefix`), read when asked, never
-// stored: the total, signups since `from`, and signups per UTC day for the days the range touches.
-export async function appAccounts(admin, prefix, from, to) {
+// stored: the total, signups since `from`, and signups per UTC day for the days the range touches. A restore creates
+// accounts again (with a new `created`): `restored` (the report's restored_accounts: the range's total and one count
+// per day) are left out of the signups, never below zero.
+export async function appAccounts(admin, prefix, from, to, restored = { total: 0, days: [] }) {
   const names = (await admin.collections.getFullList({ batch: 500, fields: 'name,type' }))
     .filter((c) => c.type === 'auth' && c.name.startsWith(prefix)).map((c) => c.name);
   const first = dayStart(from);
@@ -209,7 +212,8 @@ export async function appAccounts(admin, prefix, from, to) {
       if (t >= from) fresh++;
     }
   }
-  return { total, new: fresh, days };
+  days.forEach((d, i) => { d.signups = Math.max(0, d.signups - (restored.days[i] ?? 0)); });
+  return { total, new: Math.max(0, fresh - restored.total), days };
 }
 
 export function createMetrics({ store, now = Date.now, newSalt = () => randomBytes(16).toString('hex'), cap = VISITOR_CAP, activeCap = ACTIVE_CAP }) {
@@ -299,6 +303,12 @@ export function createMetrics({ store, now = Date.now, newSalt = () => randomByt
     activeNow(project) {
       return prune(project, now());
     },
+    // `n` accounts a data restore created again: not signups.
+    accountsRestored(project, n) {
+      if (!n) return;
+      const hour = pend(project, 'hour', hourStart(now()));
+      hour.restored_accounts = (hour.restored_accounts ?? 0) + n;
+    },
     // A page view (also makes its visitor active).
     record(project, { ip, ua, path }) {
       const t = now();
@@ -350,6 +360,18 @@ export function createMetrics({ store, now = Date.now, newSalt = () => randomByt
         return out;
       };
       const sum = (list, field) => list.reduce((n, b) => n + b[field], 0);
+      // Accounts a restore created again (for appAccounts): in the range, and per day it touches (whole days, from
+      // the day's row once rolled up plus its hours not rolled up yet).
+      const restoredOf = (p, byHour, byDay) => {
+        const at = (period, s) => rows.get(`${p}\t${period}\t${s}`)?.restored_accounts ?? 0;
+        const days = byDay.map(({ start }) => {
+          const s = Date.parse(start);
+          let n = at('day', s);
+          for (let h = s; h < s + DAY; h += HOUR) n += at('hour', h);
+          return n;
+        });
+        return { total: hourly ? byHour.reduce((n, b) => n + at('hour', Date.parse(b.start)), 0) : days.reduce((a, b) => a + b, 0), days };
+      };
       return Object.fromEntries(projects.map((p) => {
         const byHour = hourly ? series(p, 'hour', from, HOUR, t) : [];
         const byDay = series(p, 'day', dayStart(from), DAY, t);
@@ -357,11 +379,13 @@ export function createMetrics({ store, now = Date.now, newSalt = () => randomByt
         const [requests, errors] = [sum(totals, 'api_requests'), sum(totals, 'api_errors')];
         const { other, ...named } = topPaths(...byDay.map((d) => rows.get(`${p}\tday\t${Date.parse(d.start)}`)?.paths));
         return [p, {
-          from: iso(from), to: iso(t), views: sum(totals, 'views'), visitors: sum(byDay, 'visitors'),
+          // Visitors and top paths are kept per UTC day only, so they cover the whole days the range touches: from
+          // `days_from`, before `from` when the range starts mid-day (a 1h range counts today's visitors).
+          from: iso(from), to: iso(t), days_from: iso(dayStart(from)), views: sum(totals, 'views'), visitors: sum(byDay, 'visitors'),
           top_paths: [...Object.entries(named), ...(other ? [['other', other]] : [])].map(([path, views]) => ({ path, views })),
           active_now: this.activeNow(p), peak_active: Math.max(0, ...totals.map((h) => h.peak_active)),
           api_requests: requests, api_errors: errors, api_error_rate: requests ? errors / requests : 0,
-          hours: byHour, days: byDay,
+          hours: byHour, days: byDay, restored_accounts: restoredOf(p, byHour, byDay),
         }];
       }));
     },

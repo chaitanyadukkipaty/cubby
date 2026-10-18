@@ -119,6 +119,7 @@ describe('formatters', () => {
     ].join('\n'));
     assert.equal(lib.formatActivity(rows, { users: true }).split('\n')[0], '2026-10-17 09:30  a@x.dev  todo  Claude Code · mbp  Deployed d2 (3 files)');
     assert.equal(lib.formatActivity([]), 'No activity in the last 30 days');
+    assert.match(lib.formatActivity([{ at: 'T', app: 'todo', via: 'admin', agent: null, admin: 'boss@x.dev', summary: 'Admin (boss@x.dev) emptied …' }]), /todo {2}admin {2}Admin/, "your copy of an admin's clear says admin");
   });
   test('formatProjects flags undeployed apps', () => {
     assert.equal(lib.formatProjects([{ slug: 'a', url: 'u1', current_deploy: 'd' }, { slug: 'b', url: 'u2' }]),
@@ -199,6 +200,15 @@ describe('jobs and env helpers', () => {
       '  2026-10-17   1230 views     2 visitors     4 signups',
     ].join('\n'));
   });
+  test('formatMetrics: visitors and top paths are per UTC day, so a range that starts mid-day says since when they count', () => {
+    const text = lib.formatMetrics({
+      app: 'notes', range: '1h', from: '2026-10-17T12:00:00.000Z', days_from: '2026-10-17T00:00:00.000Z', views: 0, visitors: 7,
+      active_now: 0, peak_active: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_paths: [{ path: '/old', views: 7 }],
+      days: [{ start: '2026-10-17T00:00:00.000Z', views: 7, visitors: 7 }], accounts: { total: 0, new: 0, days: [{ start: '2026-10-17T00:00:00.000Z', signups: 0 }] },
+    });
+    assert.match(text, /^notes: 0 views in the last 1h; 7 visitors since 2026-10-17 00:00 UTC \(unique per UTC day\)\n/);
+    assert.match(text, /\n {2}Top paths since 2026-10-17 00:00 UTC: \/old 7\n/);
+  });
   test('formatMetrics: top paths and deploys in the range; past a month only the days with traffic', () => {
     const days = Array.from({ length: 60 }, (_, i) => ({ start: new Date(Date.UTC(2026, 7, 19 + i)).toISOString(), views: i === 59 ? 5 : 0, visitors: i === 59 ? 2 : 0 }));
     const text = lib.formatMetrics({
@@ -224,6 +234,8 @@ describe('jobs and env helpers', () => {
       '  polls     15 views     4 visitors     1 API errors  a@x.dev',
       '  notes      5 views     2 visitors     0 API errors',
     ].join('\n'));
+    assert.match(lib.formatAdminMetrics({ range: '1h', from: '2026-10-17T12:00:00.000Z', days_from: '2026-10-17T00:00:00.000Z', apps: 1, views: 0, visitors: 7, active_now: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_apps: [] }),
+      /^All apps: 0 views in the last 1h; 7 visitors since 2026-10-17 00:00 UTC \(unique per app and UTC day\), 1 app\n/);
     assert.doesNotMatch(lib.formatAdminMetrics({ range: '24h', apps: 0, views: 0, visitors: 0, active_now: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_apps: [] }), /Busiest/);
   });
   test('formatData: one line per collection with its type, records and uploads', () => {

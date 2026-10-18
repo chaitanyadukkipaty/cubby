@@ -1,7 +1,7 @@
 // Admin storage breakdown and backup management (API ↔ PocketBase backups ↔ disk).
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
 import { startServer, ADMIN } from '../helpers/server.js';
@@ -66,6 +66,16 @@ describe('admin storage and backups', () => {
     const [logged] = (await adminCall('GET', '/api/activity')).data;
     assert.equal(logged.action, 'admin.backup.create');
     assert.match(logged.summary, new RegExp(`Started a backup \\(${today}\\)`));
+    // Again the same day: the new pair replaces the day's, and PocketBase still knows it by the day's name.
+    assert.equal((await adminCall('POST', '/api/admin/backups')).status, 200);
+    const again = await waitForBackup();
+    assert.equal(again.last.ok, true, again.last.error);
+    assert.deepEqual(again.backups.filter((x) => x.date === today).map((x) => x.complete), [true]);
+    assert.deepEqual(readdirSync(join(srv.dataDir, 'pb_data', 'backups')).filter((n) => n.includes(today)).sort(), [`cubby-${today}.zip`, `cubby-${today}.zip.attrs`]);
+    assert.deepEqual(readdirSync(join(srv.dataDir, 'backups')).filter((n) => n.includes(today)), [`sites-${today}.tar.gz`]);
+    const pb = new PocketBase(srv.pbUrl);
+    await pb.collection('_superusers').authWithPassword(srv.env.PB_SUPERUSER_EMAIL, srv.env.PB_SUPERUSER_PASSWORD);
+    assert.ok((await pb.backups.getFullList()).some((x) => x.key === `cubby-${today}.zip`));
   });
   test('delete removes both files of a pair, warns about the newest, and refuses the only backup without leave_none', async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -143,6 +153,18 @@ describe('admin storage and backups', () => {
     assert.equal((await app(srv, 'pruned-app')('GET', '/')).text, 'v3'.repeat(50), 'the app still serves its current deploy');
 
     assert.equal((await adminCall('POST', '/api/admin/apps/pruned-app/deploys/prune', { body: {} })).data.deleted.length, 0);
+    // Logged for the admin, and for the owner (who loses rollback targets), as the admin's; deleting nothing isn't.
+    const logged = (call) => call('GET', '/api/activity?app=pruned-app').then((r) => r.data.filter((x) => x.action === 'admin.deploys.delete'));
+    const mine = await logged(adminCall);
+    assert.deepEqual(mine.map((r) => [r.summary, r.meta]), [
+      [`Deleted 1 older deploy of pruned-app: ${id('v4')}`, { deploys: [id('v4')] }],
+      [`Deleted 2 older deploys of pruned-app: ${id('v1')}, ${id('v2')}`, { deploys: [id('v1'), id('v2')] }],
+    ]);
+    const owners = await logged(user);
+    assert.deepEqual(owners.map((r) => [r.via, r.admin, r.summary]), [
+      ['admin', ADMIN.email, `Admin (${ADMIN.email}) deleted 1 older deploy of pruned-app: ${id('v4')}`],
+      ['admin', ADMIN.email, `Admin (${ADMIN.email}) deleted 2 older deploys of pruned-app: ${id('v1')}, ${id('v2')}`],
+    ]);
     assert.equal((await adminCall('POST', '/api/admin/apps/pruned-app/deploys/prune', { body: { keep: -1 } })).status, 400);
     assert.equal((await adminCall('GET', '/api/admin/apps/no-such-app/deploys')).status, 404);
     for (const [m, p] of [['GET', '/api/admin/apps/pruned-app/deploys'], ['POST', '/api/admin/apps/pruned-app/deploys/prune'], ['DELETE', `/api/admin/apps/pruned-app/deploys/${id('v3')}`]]) {

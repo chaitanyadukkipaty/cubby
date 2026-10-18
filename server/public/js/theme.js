@@ -38,3 +38,5 @@ export function themeButton() {
 }
 
 apply();
+// The page follows a system change through CSS; the buttons' icon and label follow it here.
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => document.querySelectorAll('button[data-theme-toggle]').forEach(draw));

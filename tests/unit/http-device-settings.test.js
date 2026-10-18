@@ -20,6 +20,16 @@ describe('readBody / readJson', () => {
     assert.deepEqual(await readJson(req()), {});
     await assert.rejects(readJson(req({ chunks: ['{nope'] })), (e) => e.status === 400 && /Invalid JSON/.test(e.message));
   });
+  test('readJson refuses bodies that aren\'t a JSON object (null, arrays, numbers, strings) with 400', async () => {
+    for (const body of ['null', '[]', '[{"a":1}]', '42', '"x"', 'true']) {
+      await assert.rejects(readJson(req({ chunks: [body] })), (e) => e.status === 400 && /JSON object/.test(e.message), body);
+    }
+  });
+  test('the 413 message names a limit under 1 MB in KB, not "0MB"', async () => {
+    await assert.rejects(readBody(req({ chunks: ['x'.repeat(65 * 1024)] }), 64 * 1024), (e) => e.status === 413 && e.message === 'Body exceeds 64 KB limit');
+    await assert.rejects(readBody(req({ chunks: ['x'.repeat(5000)] }), 4096), (e) => e.message === 'Body exceeds 4 KB limit');
+    await assert.rejects(readBody(req({ chunks: ['x'.repeat(3 * 1024 * 1024)] }), 2 * 1024 * 1024), (e) => e.message === 'Body exceeds 2 MB limit');
+  });
 });
 
 describe('sendJson', () => {
@@ -102,6 +112,15 @@ describe('device login', () => {
     const issueToken = async (uid, hint) => (calls.push([uid, hint]), 'hk_new');
     assert.deepEqual(await pollDevice(d.device_id, { now: T0 + 3, issueToken }), { status: 'approved', token: 'hk_new' });
     assert.deepEqual(calls, [['u1', { tool: 'Claude Code', machine: 'chaitanya-mbp' }]]);
+  });
+  test('an approved code can\'t be approved again by someone else: the first approval stands', async () => {
+    const d = startDevice('x', T0, { tool: 'Codex' });
+    approveDevice({ id: 'dave' }, d.user_code, T0 + 1);
+    assert.throws(() => approveDevice({ id: 'bob' }, d.user_code, T0 + 2), (e) => e.status === 409 && /already approved/.test(e.message));
+    assert.throws(() => approveDevice({ id: 'dave' }, d.user_code, T0 + 2), (e) => e.status === 409, 'not even by the same person');
+    assert.throws(() => deviceInfo(d.user_code, T0 + 2, { id: 'bob' }), (e) => e.status === 409 && /already approved/.test(e.message), 'the approval page says so');
+    const issueToken = async (uid) => `hk_${uid}`;
+    assert.deepEqual(await pollDevice(d.device_id, { now: T0 + 3, issueToken }), { status: 'approved', token: 'hk_dave' });
   });
   test('codes expire after 10 minutes', async () => {
     const d = startDevice('x', T0);

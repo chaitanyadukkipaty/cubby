@@ -19,19 +19,29 @@ import {
 } from './servers.js';
 import { helpJson, helpText } from './commands.js';
 
-const { values: flags, positionals } = parseArgs({
-  allowPositionals: true,
-  options: {
-    email: { type: 'string' }, password: { type: 'string' }, server: { type: 'string' },
-    dir: { type: 'string' }, name: { type: 'string' }, file: { type: 'string' }, message: { type: 'string', short: 'm' },
-    token: { type: 'string' }, code: { type: 'string' }, client: { type: 'string' }, 'no-skill': { type: 'boolean' }, wait: { type: 'boolean' }, 'no-wait': { type: 'boolean' },
-    'no-install': { type: 'boolean' }, 'no-build': { type: 'boolean' }, unlisted: { type: 'boolean' }, listed: { type: 'boolean' },
-    yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
-    run: { type: 'string' }, limit: { type: 'string' }, agent: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
-    keep: { type: 'string' }, range: { type: 'string' },
-    collections: { type: 'string' }, drop: { type: 'boolean' }, reason: { type: 'string' },
-    collection: { type: 'string' }, filter: { type: 'string' }, ids: { type: 'string' }, 'dry-run': { type: 'boolean' }, 'all-matching': { type: 'boolean' }, overwrite: { type: 'boolean' }, wipe: { type: 'boolean' },
-  },
+// A bad flag is a usage error like any other: one line (JSON with --json) and exit 1, not parseArgs' stack trace.
+function parseFlags(options) {
+  try {
+    return parseArgs({ allowPositionals: true, options });
+  } catch (err) {
+    if (!err.code?.startsWith('ERR_PARSE_ARGS')) throw err;
+    const message = err.message.replace(/\s*\n\s*/g, ' ');
+    if (process.argv.includes('--json')) console.log(JSON.stringify({ error: message }, null, 2));
+    else console.error(formatError({ message }));
+    process.exit(1);
+  }
+}
+
+const { values: flags, positionals } = parseFlags({
+  email: { type: 'string' }, password: { type: 'string' }, server: { type: 'string' },
+  dir: { type: 'string' }, name: { type: 'string' }, file: { type: 'string' }, message: { type: 'string', short: 'm' },
+  token: { type: 'string' }, code: { type: 'string' }, client: { type: 'string' }, 'no-skill': { type: 'boolean' }, wait: { type: 'boolean' }, 'no-wait': { type: 'boolean' },
+  'no-install': { type: 'boolean' }, 'no-build': { type: 'boolean' }, unlisted: { type: 'boolean' }, listed: { type: 'boolean' },
+  yes: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, all: { type: 'boolean' },
+  run: { type: 'string' }, limit: { type: 'string' }, agent: { type: 'string' }, 'from-stdin': { type: 'boolean' }, 'leave-none': { type: 'boolean' },
+  keep: { type: 'string' }, range: { type: 'string' },
+  collections: { type: 'string' }, drop: { type: 'boolean' }, reason: { type: 'string' },
+  collection: { type: 'string' }, filter: { type: 'string' }, ids: { type: 'string' }, 'dry-run': { type: 'boolean' }, 'all-matching': { type: 'boolean' }, overwrite: { type: 'boolean' }, wipe: { type: 'boolean' },
 });
 
 const CLI_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -69,7 +79,8 @@ async function api(method, path, { body, raw, contentType, auth = true } = {}) {
     headers.authorization = `Bearer ${token}`;
   }
   const client = flags.client || process.env.CUBBY_CLIENT;
-  if (client) headers['x-cubby-client'] = client;
+  // Percent-encoded: header values can't hold characters above U+00FF (emoji, CJK). The server decodes it.
+  if (client) headers['x-cubby-client'] = encodeURIComponent(client);
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (raw) headers['content-type'] = contentType;
   let res;
@@ -454,8 +465,9 @@ const commands = {
       if (flags['dry-run'] || !flags.yes) {
         const preview = await api('POST', `${base}/clear`, { body: { ...body, dry_run: true } });
         if (flags['dry-run']) return out(formatClearPreview(app, preview), preview);
-        const what = flags.wipe ? `drops every collection (${preview.matches} records)`
-          : flags.collection ? `deletes ${preview.matches} records from ${flags.collection}`
+        const records = `${preview.matches} record${preview.matches === 1 ? '' : 's'}`;
+        const what = flags.wipe ? `drops every collection (${records})`
+          : flags.collection ? `deletes ${records} from ${flags.collection}`
           : `${flags.drop ? 'drops' : 'empties'} ${body.collections.join(', ')}${flags.drop ? ' (the collections themselves go too)' : ''}`;
         throw new CliError(`This ${what} in ${app}. A snapshot keeps them for 7 days (\`cubby data restore\`). Re-run with --yes.`, formatClearPreview(app, preview).split('\n').slice(1));
       }

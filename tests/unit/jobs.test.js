@@ -135,6 +135,13 @@ describe('forwardJobRequest', () => {
     assert.equal(res.status, 403);
     assert.match(decode(res).message, /Cannot reference collection "users"/);
   });
+  test("password hashes and token keys can't be filtered or sorted on (the job's requests run as superuser)", async () => {
+    for (const q of [`filter=${encodeURIComponent('owner.password ~ "$2a"')}`, 'sort=-owner.tokenKey']) {
+      const res = await forward({ method: 'GET', path: `/api/collections/my_app__a/records?${q}` });
+      assert.equal(res.status, 403, q);
+      assert.match(decode(res).message, /password hashes and token keys/);
+    }
+  });
   test('allowed requests go to PocketBase as superuser, body and type intact', async () => {
     const calls = [];
     admin.authStore.save('superuser-token', null);

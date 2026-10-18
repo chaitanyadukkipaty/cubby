@@ -132,9 +132,14 @@ describe('activity', () => {
 
 describe('regenerateToken', () => {
   test('replaces only the manual token; agents and other people keep their keys', async () => {
-    const token = await auth.regenerateToken('ann');
+    const token = await auth.regenerateToken({ id: 'ann', keyId: 'manual', agent: null });
     assert.match(token, /^hk_/);
     assert.deepEqual(ids(), ['laptop', 'desktop', 'bens', 'k1']);
     assert.equal(tables.cubby_api_keys.at(-1).key_hash, hash(token));
+  });
+  test('an agent key can\'t replace the manual token: revoking the agent must contain it', async () => {
+    const agent = { id: 'ann', keyId: 'laptop', agent: { id: 'laptop', name: 'laptop' } };
+    await assert.rejects(auth.regenerateToken(agent), rejects(403, /dashboard/));
+    assert.deepEqual(ids(), ['manual', 'laptop', 'desktop', 'bens'], 'nothing replaced');
   });
 });

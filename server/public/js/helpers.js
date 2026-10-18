@@ -47,7 +47,24 @@ export function ago(date, now = Date.now()) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-export const maskToken = (t) => `${String(t).slice(0, 6)}${'•'.repeat(20)}`;
+/**
+ * GET /api/agents rows with names that tell agents apart: two agents may be given the same name, so those get their
+ * tool and machine ("twin (Codex on laptop)"), or the end of their id, added; `given` keeps the name as it was given.
+ */
+export function withDistinctNames(keys) {
+  const key = (k) => String(k.name ?? '').trim().toLowerCase();
+  const groups = new Map();
+  for (const k of keys) groups.set(key(k), [...(groups.get(key(k)) ?? []), k]);
+  const about = (k) => [k.tool, k.machine && `on ${k.machine}`].filter(Boolean).join(' ');
+  return keys.map((k) => {
+    const group = groups.get(key(k));
+    if (group.length < 2) return { ...k };
+    const unique = about(k) && group.filter((o) => about(o) === about(k)).length === 1;
+    return { ...k, name: `${k.name} (${unique ? about(k) : `#${String(k.id).slice(-4)}`})`, given: k.name };
+  });
+}
+
+export const maskToken =(t) => `${String(t).slice(0, 6)}${'•'.repeat(20)}`;
 export const installCommand = (server) => `curl -fsSL ${server}/skill.sh | sh`;
 const SKILL_REPO = 'chaitanyadukkipaty/cubby';
 export const displayName = (name) => (typeof name === 'string' && name.trim()) || 'Cubby';

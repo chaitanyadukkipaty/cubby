@@ -100,6 +100,28 @@ describe('projects and ownership', () => {
   });
 });
 
+describe('bad requests', () => {
+  test('a null or non-object JSON body and a bad %-escape in the path are 400s, not 500s', async () => {
+    for (const [method, path, call] of [['POST', '/api/login', anon], ['POST', '/api/device/poll', anon], ['POST', '/api/projects', alice], ['PATCH', '/api/agents/x', alice]]) {
+      for (const raw of ['null', '[]']) {
+        const r = await call(method, path, { raw, headers: { 'content-type': 'application/json' } });
+        assert.equal(r.status, 400, `${method} ${path} ${raw}: ${r.text}`);
+        assert.match(r.data.error, /JSON object/);
+      }
+    }
+    for (const [path, call] of [['/api/device/%E0%A4%A', anon], ['/api/agents/%E0%A4%A', alice]]) {
+      const r = await call(path.startsWith('/api/agents') ? 'DELETE' : 'GET', path);
+      assert.equal(r.status, 400, path);
+      assert.match(r.data.error, /Malformed URL/);
+    }
+  });
+  test('an env value over 64 KB names the real limit', async () => {
+    const r = await alice('PUT', '/api/projects/alice-app/env/BIG', { body: { value: 'x'.repeat(100_000) } });
+    assert.equal(r.status, 413);
+    assert.equal(r.data.error, 'Body exceeds 64 KB limit');
+  });
+});
+
 describe('schema push against real PocketBase', () => {
   const schema = { collections: [
     { name: 'users', type: 'auth', createRule: '' },
@@ -324,6 +346,10 @@ describe('browser-approval login', () => {
   });
   test('regenerating rotates only the manual token; agents keep their own keys', async () => {
     const agent = await deviceLogin(api(srv.url, fay), { tool: 'Cursor', machine: 'box' });
+    const byAgent = await api(srv.url, agent)('POST', '/api/token/regenerate');
+    assert.equal(byAgent.status, 403, 'an agent key could otherwise mint a token that outlives revoking it');
+    assert.match(byAgent.data.error, /dashboard/);
+    assert.equal((await api(srv.url, fay)('GET', '/api/me')).status, 200, 'the manual token is untouched');
     const r = await api(srv.url, fay)('POST', '/api/token/regenerate');
     assert.match(r.data.token, /^hk_/);
     assert.notEqual(r.data.token, fay);
@@ -370,6 +396,22 @@ describe('public pages and files', () => {
     assert.equal((await anon('GET', main.replace(/\/static\/[0-9a-f]+\//, '/static/000000000000/'))).status, 404, 'an old prefix is gone');
     for (const p of ['/apps/Bad_Slug', '/apps/a/b', '/static/x', '/index.html', '/app.css']) assert.equal((await anon('GET', p)).status, 404, p);
     assert.equal((await anon('POST', '/apps')).status, 404, 'pages are GET only');
+  });
+  test("a browser opening a page that doesn't exist gets the shell with a 404, so the dashboard can say so; scripts get plain text", async () => {
+    const shell = await anon('GET', '/', { headers: { 'user-agent': BROWSER_UA } });
+    const page = { 'user-agent': BROWSER_UA, accept: 'text/html,application/xhtml+xml,*/*;q=0.8' };
+    for (const p of ['/zzz', '/apps/Bad_Slug', '/admin/bogus']) {
+      const r = await anon('GET', p, { headers: page });
+      assert.equal(r.status, 404, p);
+      assert.match(r.headers.get('content-type'), /^text\/html/, p);
+      assert.equal(r.text, shell.text, p);
+    }
+    for (const [p, headers] of [['/zzz', { 'user-agent': 'curl/8.7.1', accept: 'text/html' }], ['/favicon.ico', { 'user-agent': BROWSER_UA, accept: 'image/*' }]]) {
+      const r = await anon('GET', p, { headers });
+      assert.equal(r.status, 404, p);
+      assert.notEqual(r.text, shell.text, p);
+    }
+    assert.notEqual((await anon('POST', '/zzz', { headers: page })).text, shell.text, 'pages are GET only');
   });
   test('dashboard, connect page, docs, skill, CLI tarball', async () => {
     for (const p of ['/', '/connect']) {

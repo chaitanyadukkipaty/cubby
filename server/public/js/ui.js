@@ -10,6 +10,11 @@ export function toast(msg) {
   t._timer = setTimeout(() => t.classList.remove('show'), 1800);
 }
 
+/** An event handler that shows what went wrong in a toast instead of dropping the error; `undo` runs first on failure. */
+export const guarded = (fn, undo) => async (e) => {
+  try { await fn(e); } catch (ex) { undo?.(e); toast(ex.message); }
+};
+
 export async function copy(text, what = 'Copied') {
   try { await navigator.clipboard.writeText(text); toast(what); }
   catch { toast('Copy failed — select the text manually'); }

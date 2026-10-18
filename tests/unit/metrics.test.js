@@ -199,13 +199,36 @@ describe('reports', () => {
     // Views in the range; visitors are unique per day, summed over the days the range touches.
     assert.deepEqual([p1.views, p1.visitors], [4, 3]);
   });
+  test('visitors and top paths are kept per UTC day, so the report says which days they cover (from the start of the first)', async () => {
+    const { m, clock } = setup({ at: Date.parse('2026-10-17T08:00:00Z') });
+    for (const ip of ['10.0.0.1', '10.0.0.2']) m.record('p1', { ...visit(ip), path: '/old' });
+    clock.t = Date.parse('2026-10-17T12:00:00Z');
+    const { p1 } = await m.report(['p1'], 1);
+    assert.deepEqual([p1.from, p1.views, p1.visitors, p1.days_from], ['2026-10-17T12:00:00.000Z', 0, 2, '2026-10-17T00:00:00.000Z']);
+    assert.deepEqual(p1.top_paths, [{ path: '/old', views: 2 }]);
+  });
+  test('accounts brought back by a restore are counted by the hour, so signups can leave them out', async () => {
+    const { m, store, clock } = setup({ at: Date.parse('2026-10-16T08:30:00Z') });
+    m.accountsRestored('p1', 5); // before the 24h window
+    clock.t = Date.parse('2026-10-16T12:10:00Z');
+    m.accountsRestored('p1', 1);
+    clock.t = T0;
+    m.accountsRestored('p1', 2);
+    m.accountsRestored('p1', 0);
+    await m.flush();
+    assert.equal(bucket(store, 'hour', '2026-10-17T10:00:00.000Z').restored_accounts, 2);
+    const { p1 } = await m.report(['p1'], 24);
+    assert.deepEqual(p1.restored_accounts, { total: 3, days: [6, 2] }, 'in the range; and per day the range touches, whole days');
+    const { p1: long } = await m.report(['p1'], 60 * 24);
+    assert.equal(long.restored_accounts.total, 8);
+  });
   test('an app with no traffic reports zeros', async () => {
     const { m } = setup();
     const { p9 } = await m.report(['p9'], 1);
-    assert.deepEqual(p9, { from: '2026-10-17T10:00:00.000Z', to: new Date(T0).toISOString(), views: 0, visitors: 0,
+    assert.deepEqual(p9, { from: '2026-10-17T10:00:00.000Z', to: new Date(T0).toISOString(), days_from: '2026-10-17T00:00:00.000Z', views: 0, visitors: 0,
       active_now: 0, peak_active: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_paths: [],
       hours: [{ start: '2026-10-17T10:00:00.000Z', views: 0, peak_active: 0, api_requests: 0, api_errors: 0 }],
-      days: [{ start: '2026-10-17T00:00:00.000Z', views: 0, visitors: 0, api_requests: 0, api_errors: 0, peak_active: 0 }] });
+      days: [{ start: '2026-10-17T00:00:00.000Z', views: 0, visitors: 0, api_requests: 0, api_errors: 0, peak_active: 0 }], restored_accounts: { total: 0, days: [0] } });
   });
   test('a report has active now, the peak in the range and API requests, errors and error rate', async () => {
     const { m, clock } = setup({ at: Date.parse('2026-10-16T08:30:00Z') });
@@ -483,6 +506,15 @@ describe('app accounts', () => {
     });
     assert.ok(pb.calls.every(([name]) => name.startsWith('shop__')), 'only this app\'s collections are read');
   });
+  test("accounts a restore brought back aren't signups: they're left out of new and of their day", async () => {
+    const pb = fakePb([{ name: 'shop__users', type: 'auth' }], {
+      shop__users: [{ created: '2026-10-16 12:00:00.000Z' }, { created: '2026-10-17 09:00:00.000Z' }, { created: '2026-10-17 09:00:01.000Z' }, { created: '2026-10-17 10:00:00.000Z' }],
+    });
+    const accounts = await appAccounts(pb, 'shop__', Date.parse('2026-10-16T11:00:00Z'), T0, { total: 2, days: [0, 2] });
+    assert.deepEqual(accounts, { total: 4, new: 2, days: [{ start: '2026-10-16T00:00:00.000Z', signups: 1 }, { start: '2026-10-17T00:00:00.000Z', signups: 1 }] });
+    const gone = await appAccounts(pb, 'shop__', Date.parse('2026-10-16T11:00:00Z'), T0, { total: 9, days: [0, 9] });
+    assert.deepEqual([gone.new, gone.days[1].signups], [0, 0], 'never below zero (restored accounts deleted since)');
+  });
   test('an app without auth collections has no accounts', async () => {
     const accounts = await appAccounts(fakePb([{ name: 'shop__orders', type: 'base' }], {}), 'shop__', Date.parse('2026-10-17T10:00:00Z'), T0);
     assert.deepEqual(accounts, { total: 0, new: 0, days: [{ start: '2026-10-17T00:00:00.000Z', signups: 0 }] });
@@ -562,7 +594,7 @@ describe('rollup (nightly maintenance)', () => {
     const store = memoryStore();
     store.rows.push(
       { id: 'd1', project: 'p1', period: 'day', start: '2026-09-10T00:00:00.000Z', views: 7, visitors: 2, paths: { '/': 7 } },
-      hour('p1', '2026-09-10T08:00:00.000Z', { views: 3, peak_active: 2, api_requests: 10, api_errors: 1 }),
+      hour('p1', '2026-09-10T08:00:00.000Z', { views: 3, peak_active: 2, api_requests: 10, api_errors: 1, restored_accounts: 2 }),
       hour('p1', '2026-09-10T09:00:00.000Z', { views: 4, peak_active: 5, api_requests: 6, api_errors: 0 }),
       hour('p2', '2026-09-10T09:00:00.000Z', { views: 2, peak_active: 1, api_requests: 3, api_errors: 3 }), // no day row
       hour('p1', '2026-09-17T09:00:00.000Z', { views: 1 }), // exactly 30 days back: kept
@@ -572,8 +604,8 @@ describe('rollup (nightly maintenance)', () => {
     assert.deepEqual(store.rows.filter((x) => x.period === 'hour').map((x) => x.start), ['2026-09-17T09:00:00.000Z']);
     const day = (p) => { const { id, ...rest } = store.rows.find((x) => x.project === p && x.period === 'day'); return rest; };
     // Views were already counted per day; they're only taken from the hours when the day has no row.
-    assert.deepEqual(day('p1'), { project: 'p1', period: 'day', start: '2026-09-10T00:00:00.000Z', views: 7, visitors: 2, paths: { '/': 7 }, api_requests: 16, api_errors: 1, peak_active: 5 });
-    assert.deepEqual(day('p2'), { project: 'p2', period: 'day', start: '2026-09-10T00:00:00.000Z', views: 2, visitors: 0, api_requests: 3, api_errors: 3, peak_active: 1 });
+    assert.deepEqual(day('p1'), { project: 'p1', period: 'day', start: '2026-09-10T00:00:00.000Z', views: 7, visitors: 2, paths: { '/': 7 }, api_requests: 16, api_errors: 1, peak_active: 5, restored_accounts: 2 });
+    assert.deepEqual(day('p2'), { project: 'p2', period: 'day', start: '2026-09-10T00:00:00.000Z', views: 2, visitors: 0, api_requests: 3, api_errors: 3, peak_active: 1, restored_accounts: 0 });
   });
   test('day buckets more than a year back are deleted; work goes in batches until nothing is left', async () => {
     const store = memoryStore();
@@ -589,12 +621,12 @@ describe('rollup (nightly maintenance)', () => {
 });
 
 describe('admin totals', () => {
-  const rep = (views, visitors, api_requests, api_errors, active_now = 0) => ({ from: 'F', to: 'T', views, visitors, api_requests, api_errors, active_now });
+  const rep = (views, visitors, api_requests, api_errors, active_now = 0) => ({ from: 'F', to: 'T', days_from: 'D', views, visitors, api_requests, api_errors, active_now });
   test('sums every app and lists the busiest 10 by views, with their owners', () => {
     const projects = Array.from({ length: 12 }, (_, i) => ({ id: `p${i}`, slug: `app-${i}`, expand: { owner: { email: `o${i}@x.dev` } } }));
     const report = Object.fromEntries(projects.map((p, i) => [p.id, rep(i, 1, 10, i === 11 ? 5 : 0, 1)]));
     const s = summarizeMetrics(projects, report);
-    assert.deepEqual([s.from, s.to, s.apps, s.views, s.visitors, s.active_now, s.api_requests, s.api_errors], ['F', 'T', 12, 66, 12, 12, 120, 5]);
+    assert.deepEqual([s.from, s.to, s.days_from, s.apps, s.views, s.visitors, s.active_now, s.api_requests, s.api_errors], ['F', 'T', 'D', 12, 66, 12, 12, 120, 5]);
     assert.ok(Math.abs(s.api_error_rate - 5 / 120) < 1e-9);
     assert.equal(s.top_apps.length, 10);
     assert.deepEqual(s.top_apps[0], { app: 'app-11', owner: 'o11@x.dev', views: 11, visitors: 1, api_requests: 10, api_errors: 5, active_now: 1 });
@@ -607,7 +639,7 @@ describe('admin totals', () => {
     assert.equal(s.api_error_rate, 0);
   });
   test('no apps: zeros', () => {
-    assert.deepEqual(summarizeMetrics([], {}), { from: null, to: null, apps: 0, views: 0, visitors: 0, active_now: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_apps: [], hours: [], days: [] });
+    assert.deepEqual(summarizeMetrics([], {}), { from: null, to: null, days_from: null, apps: 0, views: 0, visitors: 0, active_now: 0, api_requests: 0, api_errors: 0, api_error_rate: 0, top_apps: [], hours: [], days: [] });
   });
   test("every app's hours and days added up by bucket, for the server-wide chart", () => {
     const projects = [{ id: 'a', slug: 'ant' }, { id: 'b', slug: 'bee' }];

@@ -1,11 +1,11 @@
 // /agents: the agents you connected (one per approved `cubby login`), renamed or revoked here, plus the manual token
 // for scripts and CI. /agents/:id: what one agent did.
-import { h, ago, setupPrompt } from '../helpers.js';
+import { h, ago, setupPrompt, withDistinctNames } from '../helpers.js';
 import { appsByAgent, monogram } from '../feed.js';
 import { appPath } from '../routes.js';
 import { state, api, rerender, SERVER } from '../session.js';
 import { navigate } from '../router.js';
-import { agentBadge, copy, icon, pageHeader, toast } from '../ui.js';
+import { agentBadge, copy, guarded, icon, pageHeader, toast } from '../ui.js';
 import { tokenCard } from './setup.js';
 import { timeline } from './feed-ui.js';
 
@@ -23,7 +23,7 @@ function nameCell(agent, { onSaved }) {
   const cell = h('div', { class: 'name-cell' });
   const show = () => cell.replaceChildren(h('a', { href: `/agents/${agent.id}` }, agent.name));
   const edit = () => {
-    const input = h('input', { type: 'text', value: agent.name, maxlength: 60, 'aria-label': `New name for ${agent.name}`, required: true });
+    const input = h('input', { type: 'text', value: agent.given ?? agent.name, maxlength: 60, 'aria-label': `New name for ${agent.name}`, required: true });
     const form = h('form', { class: 'row rename', onsubmit: async (e) => {
       e.preventDefault();
       try {
@@ -57,7 +57,7 @@ function agentsTable(agents, touched, apps) {
         h('td', { class: 'muted hide-sm' }, ago(a.created)),
         h('td', { class: 'actions' }, h('div', { class: 'row nowrap' },
           h('button', { type: 'button', class: 'sm', onclick: name.edit, 'aria-label': `Rename ${a.name}` }, 'Rename'),
-          h('button', { type: 'button', class: 'sm danger', 'aria-label': `Revoke ${a.name}`, onclick: async () => { if (await revoke(a)) rerender(); } }, 'Revoke'))),
+          h('button', { type: 'button', class: 'sm danger', 'aria-label': `Revoke ${a.name}`, onclick: guarded(async () => { if (await revoke(a)) rerender(); }) }, 'Revoke'))),
       );
     }))));
 }
@@ -66,7 +66,7 @@ const connectButton = () => h('button', { type: 'button', class: 'primary', oncl
 
 export async function renderAgents(el) {
   el.replaceChildren(pageHeader('Agents'), h('p', { class: 'muted' }, 'Loading…'));
-  const [keys, activity, apps] = await Promise.all([api('GET', '/api/agents'), api('GET', `/api/activity?limit=${ACTIVITY_LIMIT}`), api('GET', '/api/projects')]);
+  const [keys, activity, apps] = await Promise.all([api('GET', '/api/agents').then(withDistinctNames), api('GET', `/api/activity?limit=${ACTIVITY_LIMIT}`), api('GET', '/api/projects')]);
   const agents = keys.filter((k) => !k.manual);
   const manual = keys.find((k) => k.manual);
   el.replaceChildren(
@@ -83,7 +83,7 @@ export async function renderAgents(el) {
 export async function renderAgent(el, { id }) {
   const back = h('a', { class: 'back', href: '/agents' }, '← Agents');
   el.replaceChildren(back, h('p', { class: 'muted' }, 'Loading…'));
-  const [keys, apps] = await Promise.all([api('GET', '/api/agents'), api('GET', '/api/projects')]);
+  const [keys, apps] = await Promise.all([api('GET', '/api/agents').then(withDistinctNames), api('GET', '/api/projects')]);
   const agent = keys.find((k) => k.id === id);
   if (!agent) return el.replaceChildren(back, pageHeader('Agent'), h('div', { class: 'empty' }, 'No such agent in your account. It may have been revoked.'));
   const activity = await api('GET', `/api/activity?limit=${ACTIVITY_LIMIT}&agent=${agent.manual ? 'dashboard' : agent.id}`);
@@ -91,7 +91,7 @@ export async function renderAgent(el, { id }) {
   const head = h('header', { class: 'page-h' }, agentBadge(monogram(agent.tool || agent.name)), h('h2', {}, agent.name),
     agent.manual ? null : h('div', { class: 'row page-actions' },
       h('button', { type: 'button', class: 'sm', onclick: () => { head.querySelector('h2').replaceChildren(name.cell); name.edit(); } }, 'Rename'),
-      h('button', { type: 'button', class: 'sm danger', onclick: async () => { if (await revoke(agent)) navigate('/agents'); } }, 'Revoke')));
+      h('button', { type: 'button', class: 'sm danger', onclick: guarded(async () => { if (await revoke(agent)) navigate('/agents'); }) }, 'Revoke')));
   el.replaceChildren(back, head,
     h('p', { class: 'muted small' }, [agent.tool, agent.machine && `on ${agent.machine}`].filter(Boolean).join(' ') || (agent.manual ? 'Your manual token, and changes made from the dashboard' : 'Agent'),
       ` · last seen ${agent.last_used_at ? ago(agent.last_used_at) : 'never'} · connected ${ago(agent.created)}`),

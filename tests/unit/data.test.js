@@ -116,6 +116,7 @@ describe('emptying collections', () => {
     await assert.rejects(clearData('shop', { collections: ['other__products'] }, deps()), (e) => e.status === 404);
     await assert.rejects(clearData('shop', { collections: [] }, deps()), (e) => e.status === 400 && /Name the collections/.test(e.message));
     await assert.rejects(clearData('shop', {}, deps()), (e) => e.status === 400);
+    await assert.rejects(clearData('shop', { collections: ['n'.repeat(500)] }, deps()), (e) => e.status === 404 && e.message === `Collection "${'n'.repeat(40)}…" not found`, 'a long name is cut short');
     assert.equal(pb.records('shop__products').length, 2);
     assert.ok(!existsSync(join(dataDir, 'snapshots')));
   });
@@ -226,6 +227,12 @@ describe('deleting by filter or ids', () => {
     const r = await clearData('shop', { collection: 'products', filter: 'title != ""', all_matching: true }, deps({ maxMatches: 1 }));
     assert.equal(r.matches, 2);
   });
+  test('by ids, the 10,000 limit counts the records that match, not the ids given', async () => {
+    const many = ['p1', 'p2', ...Array.from({ length: 5 }, (_, i) => `gone${i}`)];
+    await assert.rejects(clearData('shop', { collection: 'products', ids: many }, deps({ maxMatches: 1 })), (e) => e.status === 409 && /^Those ids match 2 records, more than 1\./.test(e.message));
+    const r = await clearData('shop', { collection: 'products', ids: ['p1', ...many.slice(2)], dry_run: true }, deps({ maxMatches: 1 }));
+    assert.deepEqual([r.matches, r.missing.length], [1, 5], '7 ids, 1 match: under the limit');
+  });
   test('a filter with a foreign @collection is refused before it runs', async () => {
     await assert.rejects(clearData('shop', { collection: 'products', filter: '@collection.other__products.title != ""' }, deps()), (e) => e.status === 403);
     assert.equal(pb.records('other__products').length, 1);
@@ -233,6 +240,14 @@ describe('deleting by filter or ids', () => {
   });
   test('a filter PocketBase can\'t read is a 400 with its message', async () => {
     await assert.rejects(clearData('shop', { collection: 'products', filter: 'title = ' }, deps()), (e) => e.status === 400 && /PocketBase rejected the filter/.test(e.message));
+  });
+  test("a rejected filter says which names aren't fields of the collection, or how a filter looks", async () => {
+    // PocketBase only answers "Something went wrong while processing your request." for any filter it can't use.
+    const vague = (filter) => clearData('shop', { collection: 'products', filter }, deps());
+    await assert.rejects(vague('nope = 1 && title.x = "nope" && @now > created && strftime(\'%Y\', created) = "2026"'), (e) => e.status === 400
+      && e.message === 'PocketBase rejected the filter: products has no field "nope" (its fields: id, title, photo, created, updated). A filter looks like done = false && title ~ "milk".');
+    await assert.rejects(vague('title = '), (e) => e.status === 400
+      && e.message === 'PocketBase rejected the filter: check its operators (=, !=, >, <, ~, ?=, &&, ||) and that text is in quotes. A filter looks like done = false && title ~ "milk".');
   });
   test('PocketBase being down while matching is passed on as it is', async () => {
     const real = pb.collection.bind(pb);
@@ -416,6 +431,12 @@ describe('filters run as superuser, so they may only reach this app', () => {
   test('back-relations from another app\'s collections are refused too', () => {
     refused('other__orders_via_product.qty > 0', /"other__orders"/);
     refused('cubby_projects_via_owner.slug != ""', /"cubby_projects"/);
+  });
+  test("accounts' password hashes and token keys can't be matched on (as superuser, a filter would be a way to read them)", () => {
+    refused('owner.password ~ "$2a$"', /password/);
+    refused('owner.tokenKey != ""', /tokenKey/);
+    refused('(password:lower != "")', /password/);
+    for (const f of ['title = "password"', "note ~ 'tokenKey'", 'password_hint != ""', 'owner.passwords > 0']) assert.doesNotThrow(() => checkDataFilter(f, 'shop__'), f);
   });
   test('a filter is a non-empty string of at most 2000 characters', () => {
     for (const bad of ['', '   ', 42, null, 'x'.repeat(2001)]) assert.throws(() => checkDataFilter(bad, 'shop__'), (e) => e.status === 400, String(bad));
