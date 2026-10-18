@@ -244,6 +244,8 @@ A ban blocks Cubby's web ports only; SSH keeps fail2ban's own `sshd` jail. Bans 
 because ports Docker publishes skip the host's normal firewall chain. For fail2ban to see requests, Caddy writes an access log
 to `/var/log/cubby/` (root only): no headers or cookies, no `?token=`, kept 7 days.
 
+<img src="docs/assets/dashboard-admin-security.png?v=2820b3d0" alt="Admin Security: IPs banned now with why, when the ban lifts and Unban; a scanner that swept six apps with the paths it asked for; and the last 90 days of bans" width="720">
+
 See and lift bans on **Admin → Security** (current bans with the hosts and paths each IP swept, and 90 days of
 history), with `cubby admin bans` from your agent, or on the server:
 

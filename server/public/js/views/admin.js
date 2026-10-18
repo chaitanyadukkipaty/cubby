@@ -425,8 +425,9 @@ async function securityTab(body) {
       h('p', { class: 'muted small' }, 'It bans IPs that scan apps for secret files or keep hitting the login limit. Turn it on from the server:'),
       h('div', {}, copyChip(FAIL2BAN_ENABLE, { what: 'Command copied', label: 'Copy command' }))));
   }
+  // replaceChildren prints null as text, so the optional note is spread in, not passed as null.
   body.replaceChildren(intro,
-    r.enabled ? null : h('p', { class: 'small warn' }, 'fail2ban is off on this server now; these are its earlier bans. Turn it back on with ', h('code', {}, FAIL2BAN_ENABLE), '.'),
+    ...(r.enabled ? [] : [h('p', { class: 'small warn' }, 'fail2ban is off on this server now; these are its earlier bans. Turn it back on with ', h('code', {}, FAIL2BAN_ENABLE), '.')]),
     sectionH(`Banned now (${r.current.length})`),
     r.current.length ? bannedNow(r.current) : h('p', { class: 'muted small' }, 'Nobody is banned right now.'),
     sectionH(`Last 90 days (${r.history.length})`),

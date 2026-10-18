@@ -40,6 +40,8 @@ test('security: a scanner\'s ban shows what it swept, and unbanning moves it to 
   await expect(admin.currentTab).toHaveText('Security');
   const row = admin.banRow(ip);
   await expect(row).toBeVisible();
+  // Nothing renders as stray text (DOM methods print null and undefined as words).
+  expect(await page.locator('body').innerText()).not.toMatch(/\b(null|undefined)\b/);
   await expect(row).toContainText('Scanning for secret files');
   await expect(row).toContainText(/lifts in (9|10) min/);
   await expect(row).toContainText('Swept 2 apps: todo.example.test, chat.example.test');
