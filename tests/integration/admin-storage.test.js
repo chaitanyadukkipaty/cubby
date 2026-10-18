@@ -1,7 +1,7 @@
 // Admin storage breakdown and backup management (API ↔ PocketBase backups ↔ disk).
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
 import { startServer, ADMIN } from '../helpers/server.js';
@@ -66,6 +66,16 @@ describe('admin storage and backups', () => {
     const [logged] = (await adminCall('GET', '/api/activity')).data;
     assert.equal(logged.action, 'admin.backup.create');
     assert.match(logged.summary, new RegExp(`Started a backup \\(${today}\\)`));
+    // Again the same day: the new pair replaces the day's, and PocketBase still knows it by the day's name.
+    assert.equal((await adminCall('POST', '/api/admin/backups')).status, 200);
+    const again = await waitForBackup();
+    assert.equal(again.last.ok, true, again.last.error);
+    assert.deepEqual(again.backups.filter((x) => x.date === today).map((x) => x.complete), [true]);
+    assert.deepEqual(readdirSync(join(srv.dataDir, 'pb_data', 'backups')).filter((n) => n.includes(today)).sort(), [`cubby-${today}.zip`, `cubby-${today}.zip.attrs`]);
+    assert.deepEqual(readdirSync(join(srv.dataDir, 'backups')).filter((n) => n.includes(today)), [`sites-${today}.tar.gz`]);
+    const pb = new PocketBase(srv.pbUrl);
+    await pb.collection('_superusers').authWithPassword(srv.env.PB_SUPERUSER_EMAIL, srv.env.PB_SUPERUSER_PASSWORD);
+    assert.ok((await pb.backups.getFullList()).some((x) => x.key === `cubby-${today}.zip`));
   });
   test('delete removes both files of a pair, warns about the newest, and refuses the only backup without leave_none', async () => {
     const today = new Date().toISOString().slice(0, 10);

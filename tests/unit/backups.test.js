@@ -1,6 +1,9 @@
-import { test, describe, mock } from 'node:test';
+import { test, describe, mock, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { backupDue, scheduleBackups, createBackupRunner, runMaintenance } from '../../server/src/backups.js';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { backupDue, scheduleBackups, createBackupRunner, runMaintenance, runBackup } from '../../server/src/backups.js';
 
 describe('createBackupRunner', () => {
   test('shows the backup as running, refuses a second one meanwhile, and records how it ended', async () => {
@@ -116,5 +119,69 @@ describe('runMaintenance', () => {
   test('the nightly cleanups are the activity prune, the metrics rollup and the snapshot prune', async () => {
     const { MAINTENANCE } = await import('../../server/src/backups.js');
     assert.deepEqual(MAINTENANCE.map(([name]) => name), ['activity prune', 'metrics rollup', 'snapshot prune']);
+  });
+});
+
+describe('runBackup', () => {
+  // PocketBase's backups API, writing into pb_data/backups like the real one (a zip and its .attrs file).
+  function fakeBackups(dataDir, { fail = false, dir = join(dataDir, 'pb_data', 'backups') } = {}) {
+    return {
+      backups: {
+        getFullList: async () => readdirSync(dir).filter((n) => n.endsWith('.zip')).map((key) => ({ key, size: statSync(join(dir, key)).size })),
+        create: async (name) => {
+          if (fail) throw new Error('disk full');
+          writeFileSync(join(dir, name), 'new db');
+          writeFileSync(join(dir, `${name}.attrs`), '{}');
+        },
+        delete: async (name) => { rmSync(join(dir, name)); rmSync(join(dir, `${name}.attrs`), { force: true }); },
+      },
+    };
+  }
+  const NOW = new Date('2026-10-18T10:00:00Z');
+  let dataDir;
+  beforeEach(() => {
+    dataDir = mkdtempSync(join(tmpdir(), 'cubby-backup-'));
+    mkdirSync(join(dataDir, 'backups'));
+    mkdirSync(join(dataDir, 'pb_data', 'backups'), { recursive: true });
+    // This morning's backup, made earlier today.
+    writeFileSync(join(dataDir, 'pb_data', 'backups', 'cubby-2026-10-18.zip'), 'old db');
+    writeFileSync(join(dataDir, 'backups', 'sites-2026-10-18.tar.gz'), 'old sites');
+    mkdirSync(join(dataDir, 'sites', 'app'), { recursive: true });
+    writeFileSync(join(dataDir, 'sites', 'app', 'index.html'), 'hi');
+  });
+  afterEach(() => rmSync(dataDir, { recursive: true, force: true }));
+  const files = () => [...readdirSync(join(dataDir, 'pb_data', 'backups')), ...readdirSync(join(dataDir, 'backups'))].sort();
+  const read = (...p) => readFileSync(join(dataDir, ...p), 'utf8');
+  const run = (pb, extra) => runBackup({ keep: 7, pb, dataDir, now: () => NOW, log: () => {}, ...extra });
+
+  test("a second backup the same day replaces the day's pair, once the new one is complete", async () => {
+    await run(fakeBackups(dataDir));
+    assert.deepEqual(files(), ['cubby-2026-10-18.zip', 'cubby-2026-10-18.zip.attrs', 'sites-2026-10-18.tar.gz']);
+    assert.equal(read('pb_data', 'backups', 'cubby-2026-10-18.zip'), 'new db');
+    assert.notEqual(read('backups', 'sites-2026-10-18.tar.gz'), 'old sites');
+  });
+  test('a PocketBase keeping its files elsewhere (not started by Cubby) gets the day\'s backup replaced through its API', async () => {
+    const elsewhere = join(dataDir, 'elsewhere');
+    mkdirSync(elsewhere);
+    writeFileSync(join(elsewhere, 'cubby-2026-10-18.zip'), 'old db');
+    await run(fakeBackups(dataDir, { dir: elsewhere }));
+    assert.deepEqual(readdirSync(elsewhere).sort(), ['cubby-2026-10-18.zip', 'cubby-2026-10-18.zip.attrs']);
+    assert.equal(readFileSync(join(elsewhere, 'cubby-2026-10-18.zip'), 'utf8'), 'new db');
+  });
+  test('a new backup left over by a run that died halfway is cleared first', async () => {
+    writeFileSync(join(dataDir, 'pb_data', 'backups', 'cubby-2026-10-18-new.zip'), 'half');
+    await run(fakeBackups(dataDir));
+    assert.deepEqual(files(), ['cubby-2026-10-18.zip', 'cubby-2026-10-18.zip.attrs', 'sites-2026-10-18.tar.gz']);
+  });
+  test("if the database backup fails, the day's earlier pair is kept", async () => {
+    await assert.rejects(run(fakeBackups(dataDir, { fail: true })), /disk full/);
+    assert.deepEqual(files(), ['cubby-2026-10-18.zip', 'sites-2026-10-18.tar.gz']);
+    assert.equal(read('pb_data', 'backups', 'cubby-2026-10-18.zip'), 'old db');
+  });
+  test("a failed sites tarball fails the backup (never a half pair), and the day's earlier pair is kept", async () => {
+    const createTar = async () => { throw new Error('EACCES: sites'); };
+    await assert.rejects(run(fakeBackups(dataDir), { createTar }), /EACCES/);
+    assert.deepEqual(files(), ['cubby-2026-10-18.zip', 'sites-2026-10-18.tar.gz']);
+    assert.deepEqual([read('pb_data', 'backups', 'cubby-2026-10-18.zip'), read('backups', 'sites-2026-10-18.tar.gz')], ['old db', 'old sites']);
   });
 });
