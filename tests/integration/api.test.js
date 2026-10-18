@@ -324,6 +324,10 @@ describe('browser-approval login', () => {
   });
   test('regenerating rotates only the manual token; agents keep their own keys', async () => {
     const agent = await deviceLogin(api(srv.url, fay), { tool: 'Cursor', machine: 'box' });
+    const byAgent = await api(srv.url, agent)('POST', '/api/token/regenerate');
+    assert.equal(byAgent.status, 403, 'an agent key could otherwise mint a token that outlives revoking it');
+    assert.match(byAgent.data.error, /dashboard/);
+    assert.equal((await api(srv.url, fay)('GET', '/api/me')).status, 200, 'the manual token is untouched');
     const r = await api(srv.url, fay)('POST', '/api/token/regenerate');
     assert.match(r.data.token, /^hk_/);
     assert.notEqual(r.data.token, fay);

@@ -110,7 +110,7 @@ const routes = [
   ['PATCH', '/api/agents/:id', 'user', async (req, user, { id }) => renameAgent(user, id, (await readJson(req)).name)],
   ['DELETE', '/api/agents/:id', 'user', async (req, user, { id }) => revokeAgent(user, id)],
   ['GET', '/api/activity', 'user', async (req, user, params, url) => listActivity(user, Object.fromEntries(url.searchParams))],
-  ['POST', '/api/token/regenerate', 'user', async (req, user) => ({ token: await regenerateToken(user.id) })],
+  ['POST', '/api/token/regenerate', 'user', async (req, user) => ({ token: await regenerateToken(user) })],
 
   ['GET', '/api/projects', 'user', async (req, user) => {
     const list = await admin.collection('cubby_projects').getFullList({ filter: admin.filter('owner = {:u}', { u: user.id }), sort: '-created' });

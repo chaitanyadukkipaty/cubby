@@ -76,7 +76,11 @@ export async function revokeAgent(user, id) {
 }
 
 // Replaces the manual token. Agents keep their own keys; they're revoked one at a time (revokeAgent).
-export async function regenerateToken(userId) {
+// Only the manual token itself (the dashboard, or `cubby login --token`) may do this: an agent that could mint the
+// manual token would keep full access after `cubby agents revoke`, which only ever deletes the agent's own key.
+export async function regenerateToken(user) {
+  if (user.agent) throw new HttpError(403, 'Agent keys can\'t replace the manual token. Use Regenerate on the dashboard.');
+  const userId = user.id;
   const old = await admin.collection('cubby_api_keys').getFullList({ filter: admin.filter('owner = {:u} && kind != "agent"', { u: userId }) });
   for (const k of old) {
     await admin.collection('cubby_api_keys').delete(k.id);
