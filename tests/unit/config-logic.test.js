@@ -206,6 +206,13 @@ describe('logic patches', () => {
     for (const bad of ['', '   ', '\u0007', undefined, 42, 'x'.repeat(61)]) rejects(() => logic.agentLabel(bad), 400, /Agent name must be 1-60 characters/);
     assert.equal(logic.agentLabel('x'.repeat(60)).length, 60);
   });
+  test('names drop bidi overrides and other invisible format characters, so they can\'t disguise themselves', () => {
+    // U+202E (right-to-left override) would show "ma\u202Eenihc" as "machine"; U+200B and U+2066 are invisible.
+    assert.deepEqual(logic.agentHint({ tool: 'Co\u202Edex', machine: 'ma\u202Eenihc\u2066\u200B\u061C\u200F' }), { tool: 'Codex', machine: 'maenihc' });
+    assert.equal(logic.agentLabel('\u202Etwin\u202C'), 'twin');
+    rejects(() => logic.agentLabel('\u202E\u200B'), 400, /Agent name must be/);
+    assert.equal(logic.agentLabel('dev 👩\u200D💻 ✨'), 'dev 👩\u200D💻 ✨', 'emoji sequences keep their zero-width joiner');
+  });
   test('touchThrottle lets a key record its use at most once per interval, each key on its own clock', () => {
     const t = logic.touchThrottle(60_000);
     assert.equal(t.due('a', 0), true, 'first use is recorded');

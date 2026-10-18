@@ -52,7 +52,9 @@ export const deployClient = (header) => String(header ?? '').slice(0, 60);
 
 // --- Agents: one API key per approved `cubby login` ---
 // What a CLI says about itself when it starts a device login. Older CLIs send nothing, so every part is optional.
-const hintText = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+// Control and format characters (\p{Cc}, \p{Cf}) go: bidi overrides like U+202E would reorder a name on the
+// approval page and in the activity feed, and zero-width ones hide in it. The zero-width joiner stays: emoji need it.
+const hintText = (v, max) => (typeof v === 'string' ? v.replace(/(?!\u200d)[\p{Cc}\p{Cf}]/gu, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
 // 40 + " · " + 57 = 100, the key label's limit.
 export const agentHint = (body) => ({ tool: hintText(body?.tool, 40), machine: hintText(body?.machine, 57) });
 
