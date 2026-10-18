@@ -326,6 +326,7 @@ history), with `cubby admin bans` from your agent, or on the server:
 | `cubby admin storage` | Admins: disk use by category (database, uploads, current/older deploys, backups) and per app |
 | `cubby admin backups [create \| delete <date> --yes \| keep <n>]` | Admins: list backups by date, back up now, delete a backup pair (`--leave-none` for the only one), set how many nightly backups to keep |
 | `cubby admin deploys <app> [prune [--keep <n>] \| delete <id>] --yes` | Admins: list an app's deploys, delete older ones oldest first or one by id (never the current one) |
+| `cubby admin bans [unban <ip> --yes]` | Admins: IPs fail2ban banned (now, with what they swept, and 90 days back); lift one, logged in activity |
 | `cubby skill install \| remove \| status` | Manage the agent skill |
 | `cubby version` | Show which CLI version runs for the current server, and the server's version |
 | `cubby help [<command>] [--json]` | Every command and flag the targeted server supports |

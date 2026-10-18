@@ -59,7 +59,8 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   (JavaScript). Keep to syntax both read the same; a leading `(?i)` is the only flag. Check changes with real
   `fail2ban-regex` against real Caddy lines, not only the unit test.
 - Caddy writes the access log only when `CUBBY_ACCESS_LOG` is set (fail2ban on), without headers or `?token=`, kept
-  7 days; `disable` deletes it. Don't log more fields or keep it longer: it's the only raw-IP log Cubby has.
+  7 days; `disable` deletes it. Don't log more fields or keep it longer. Besides it, raw IPs are kept only in
+  `cubby_bans` (banned addresses, 90 days, pruned nightly).
 
 ## Schema changes must never lose data
 

@@ -531,6 +531,7 @@ cubby data restore 20261017T101500-a1b2c3
           <tr><td><code>cubby admin storage</code></td><td>Admins only: disk use by category (database, uploads, current and older deploys, backups) and per app, with free disk.</td></tr>
           <tr><td><code>cubby admin backups [create | delete &lt;date&gt; --yes | keep &lt;n&gt;]</code></td><td>Admins only: list backups by date, back up now, delete one (both files; the only backup also needs <code>--leave-none</code>), or set how many nightly backups to keep (1 to 90; <code>--yes</code> when that deletes some).</td></tr>
           <tr><td><code>cubby admin deploys &lt;app&gt; [prune [--keep n] | delete &lt;id&gt;] --yes</code></td><td>Admins only: list an app's deploys, delete older ones oldest first (sparing the newest <i>n</i>) or one by id. Never the deploy the app is serving.</td></tr>
+          <tr><td><code>cubby admin bans [unban &lt;ip&gt; --yes]</code></td><td>Admins only: IPs fail2ban banned (now, with the hosts and paths they swept, and 90 days back); lift a ban, logged in the activity feed.</td></tr>
           <tr><td><code>cubby skill install | remove | status</code></td><td>Manage the agent skill. <code>login</code> installs it too.</td></tr>
           <tr><td><code>--server &lt;name|url&gt;</code></td><td>On any command: which server to use. Otherwise it's <code>CUBBY_SERVER</code>, then the app's <code>cubby.json</code>, then the default.</td></tr>
         </tbody>
