@@ -48,7 +48,8 @@ const isoOrNull = (d) => (d ? new Date(ms(d)).toISOString() : null);
 
 /**
  * The cubby_bans platform collection (pb.js adds the locked rules and timestamps): one row per ban, with the hosts
- * and sample paths a scanner swept. It holds raw IPs on purpose, only of banned addresses, for 90 days.
+ * and sample paths a scanner swept. It holds raw IPs on purpose, only of banned addresses: while banned, and for 90
+ * days from the ban.
  */
 export const BANS_COLLECTION = {
   name: 'cubby_bans',
@@ -81,9 +82,14 @@ export function bansStore(admin) {
       .catch((err) => { if (err.status === 404) return null; throw err; }),
     // Every record of this ip that wasn't unbanned, in any jail.
     openFor: (ip) => col().getFullList({ filter: admin.filter('ip = {:ip} && unbanned_at = ""', { ip }) }),
-    since: (from) => col().getFullList({ filter: admin.filter('banned_at >= {:from}', { from: new Date(from) }), sort: '-banned_at', batch: 1000 }),
-    async removeBefore(before) {
-      const filter = admin.filter('banned_at < {:before}', { before: new Date(before) });
+    // Records of bans since `from`, and older ones still in force at `now` (permanent bans).
+    since: (from, now) => col().getFullList({
+      filter: admin.filter('banned_at >= {:from} || (unbanned_at = "" && expires_at = "") || (unbanned_at = "" && expires_at > {:now})', { from: new Date(from), now: new Date(now) }),
+      sort: '-banned_at', batch: 1000,
+    }),
+    // Deletes records of bans from before `before` that are over at `now`: a ban in force keeps its record.
+    async removeBefore(before, now) {
+      const filter = admin.filter('(banned_at < {:before} && unbanned_at != "") || (banned_at < {:before} && expires_at != "" && expires_at <= {:now})', { before: new Date(before), now: new Date(now) });
       let gone = 0;
       for (;;) {
         const { items } = await col().getList(1, 200, { filter, fields: 'id', skipTotal: true });
@@ -95,10 +101,13 @@ export function bansStore(admin) {
   };
 }
 
-/** Nightly (backups.MAINTENANCE): records of bans from more than 90 days ago go, IPs and sweeps with them. */
-export const pruneBans = (store, now = new Date()) => store.removeBefore(new Date(now.getTime() - BAN_DAYS * DAY).toISOString());
+/**
+ * Nightly (backups.MAINTENANCE): records of bans from more than 90 days ago go, IPs and sweeps with them, unless the
+ * ban is still in force (permanent bans): the record is what the Security tab shows and lifts.
+ */
+export const pruneBans = (store, now = new Date()) => store.removeBefore(new Date(now.getTime() - BAN_DAYS * DAY).toISOString(), now.toISOString());
 
-/** GET /api/admin/bans from records of the last 90 days: bans in force now, and the rest, newest first. */
+/** GET /api/admin/bans from records of the last 90 days and bans still in force: those in force now, and the rest, newest first. */
 export function bansView(records, now = new Date()) {
   const sorted = [...records].sort((a, b) => ms(b.banned_at) - ms(a.banned_at));
   const view = (r) => ({
@@ -267,7 +276,7 @@ export function createBans({ dir, accessLog, store, now = () => new Date(), log 
     async list() {
       await ingest();
       const t = now();
-      return { enabled: Boolean(dir), ...bansView(await store.since(new Date(t.getTime() - BAN_DAYS * DAY).toISOString()), t) };
+      return { enabled: Boolean(dir), ...bansView(await store.since(new Date(t.getTime() - BAN_DAYS * DAY).toISOString(), t.toISOString()), t) };
     },
   };
 }

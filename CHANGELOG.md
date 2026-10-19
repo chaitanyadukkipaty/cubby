@@ -5,6 +5,13 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- IPs that scan for secret files (the `cubby-probe` jail) are now banned for good instead of for 10 minutes: scanners
+  rarely come back from the same address, so the doubling ban never grew. Bans are kept in an `ipset` (installed with
+  fail2ban, and by `cubby-server upgrade` where fail2ban is already on), and the Security tab keeps listing a permanent
+  ban past 90 days until you lift it. Login floods (`cubby-ratelimit`) are still banned for 10 minutes, doubling.
+
 ## [0.1.7] - 2026-10-18
 
 ### Fixed

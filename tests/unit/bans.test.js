@@ -184,6 +184,22 @@ describe('prune: records are kept 90 days', () => {
     assert.deepEqual(pb.records('cubby_bans').map((r) => r.ip), ['198.51.100.4']);
     assert.equal(await bans.prune(), 0);
   });
+
+  test('a permanent ban stays in force and on the list past 90 days, and is pruned 90 days after it began once lifted', async () => {
+    const { bans, event, clock, pb } = await setup();
+    event(ban({ bantime: -1 }));
+    await bans.ingest();
+    clock.at = T0 + 200 * 86400;
+    assert.equal(await bans.prune(), 0);
+    const { current } = await bans.list();
+    assert.deepEqual(current.map((b) => [b.ip, b.expires_at]), [['203.0.113.9', null]]);
+
+    event(ban({ event: 'unban', time: clock.at - 60 }));
+    await bans.ingest();
+    assert.deepEqual(await bans.list(), { enabled: true, current: [], history: [] });
+    assert.equal(await bans.prune(), 1);
+    assert.deepEqual(pb.records('cubby_bans'), []);
+  });
 });
 
 describe('ingest: event files become ban records', () => {
