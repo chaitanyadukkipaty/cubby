@@ -5,6 +5,8 @@ All notable changes to Cubby are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-19
+
 ### Changed
 
 - IPs that scan for secret files (the `cubby-probe` jail) are now banned for good instead of for 10 minutes: scanners
