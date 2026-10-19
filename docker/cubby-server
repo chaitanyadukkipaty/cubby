@@ -79,16 +79,19 @@ container_running() { docker ps -q --filter "name=^${NAME}$" | grep -q .; }
 
 fail2ban_enabled() { [[ "$(get_env CUBBY_FAIL2BAN)" == 1 ]]; }
 
+# fail2ban, and ipset for the scanner jail's permanent bans (one set lookup, however many IPs). Without ipset, Cubby
+# still works: fail2ban_install_config falls back to one iptables rule per IP.
 fail2ban_install_package() {
-  fail2ban-client --version >/dev/null 2>&1 && return 0
+  fail2ban-client --version >/dev/null 2>&1 && ipset version >/dev/null 2>&1 && return 0
   echo "Installing fail2ban…"
   if command -v apt-get >/dev/null; then
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban >/dev/null 2>&1 || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban >/dev/null; } || true
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban ipset >/dev/null 2>&1 || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban ipset >/dev/null; } || true
   fi
   if ! fail2ban-client --version >/dev/null 2>&1 && command -v dnf >/dev/null; then
-    dnf install -y -q fail2ban || { dnf install -y -q epel-release && dnf install -y -q fail2ban; } || true # RHEL ships it in EPEL
+    dnf install -y -q fail2ban ipset || { dnf install -y -q epel-release && dnf install -y -q fail2ban ipset; } || true # RHEL ships fail2ban in EPEL
   fi
   fail2ban-client --version >/dev/null 2>&1 || die "Couldn't install fail2ban. Install it with your package manager, then re-run: sudo cubby-server fail2ban enable"
+  ipset version >/dev/null 2>&1 || echo "ipset isn't installed: banned scanners get one firewall rule each. Install ipset, then re-run: sudo cubby-server fail2ban enable"
 }
 
 # Cubby's filters, action and jails (from this version's source), and the systemd units. Safe to repeat.
@@ -101,7 +104,10 @@ fail2ban_install_config() {
   touch "$LOG_DIR/access.log" # fail2ban refuses a jail whose log doesn't exist yet
   cp "$conf"/filter.d/cubby-*.conf "$F2B_ETC/filter.d/"
   cp "$conf"/action.d/cubby-*.conf "$F2B_ETC/action.d/"
-  sed -e "s#__LOG__#$LOG_DIR/access.log#g" -e "s#__CUBBY_BIN__#$CUBBY_BIN#g" -e "s#__CUBBY_HOME__#$CUBBY_HOME#g" "$conf/jail.d/cubby.conf" > "$F2B_ETC/jail.d/cubby.conf"
+  local ipset_action=iptables-ipset-proto6
+  ipset version >/dev/null 2>&1 || ipset_action=iptables-multiport
+  sed -e "s#__LOG__#$LOG_DIR/access.log#g" -e "s#__CUBBY_BIN__#$CUBBY_BIN#g" -e "s#__CUBBY_HOME__#$CUBBY_HOME#g" \
+    -e "s#__IPSET_ACTION__#$ipset_action#g" "$conf/jail.d/cubby.conf" > "$F2B_ETC/jail.d/cubby.conf"
   # Debian 12 without rsyslog has no auth.log, so the stock sshd jail can't start and takes fail2ban down with it.
   # Debian's fix: read sshd from the journal.
   if [[ -f "$F2B_ETC/paths-debian.conf" && ! -f "$HOST_ROOT/var/log/auth.log" ]]; then
@@ -308,6 +314,7 @@ cmd_upgrade() {
   after="$(server_info | json_field version)"
   echo "Upgraded Cubby ${before_version:-?} → ${after:-?} ($CUBBY_TARGET_REF). Data is untouched."
   if fail2ban_enabled; then
+    (fail2ban_install_package) || true # ipset, on servers that enabled fail2ban before scanners were banned for good
     fail2ban_install_config # this version's filters and jails
     systemctl daemon-reload
     systemctl restart fail2ban

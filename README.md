@@ -237,17 +237,20 @@ two jails of Cubby's own:
 
 | Jail | Bans an IP that | For |
 | --- | --- | --- |
-| `cubby-probe` | asks for scanner paths (dotfiles, `*.php`, `/wp-*`, `/cgi-bin/`, `../` …) 5 times in 10 minutes | 10 minutes, doubling for each new ban |
+| `cubby-probe` | asks for scanner paths (dotfiles, `*.php`, `/wp-*`, `/cgi-bin/`, `../` …) 5 times in 10 minutes | for good, until you lift it |
 | `cubby-ratelimit` | hits the login/signup limit (10 a minute) 30 times in 10 minutes | 10 minutes, doubling |
 
 A ban blocks Cubby's web ports only; SSH keeps fail2ban's own `sshd` jail. Bans live in Docker's `DOCKER-USER` chain,
-because ports Docker publishes skip the host's normal firewall chain. For fail2ban to see requests, Caddy writes an access log
+because ports Docker publishes skip the host's normal firewall chain; scanner bans are kept in an `ipset`, so thousands
+of them cost one lookup per connection. Only scanners ask for those paths, so their bans never lift on their own and
+survive restarts. Most sweeps come from cloud servers whose addresses get reused, though: lift one if it turns out to
+belong to someone you want in. For fail2ban to see requests, Caddy writes an access log
 to `/var/log/cubby/` (root only): no headers or cookies, no `?token=`, kept 7 days.
 
 <img src="docs/assets/dashboard-admin-security.png?v=2820b3d0" alt="Admin Security: IPs banned now with why, when the ban lifts and Unban; a scanner that swept six apps with the paths it asked for; and the last 90 days of bans" width="720">
 
 See and lift bans on **Admin → Security** (current bans with the hosts and paths each IP swept, and 90 days of
-history), with `cubby admin bans` from your agent, or on the server:
+history; a permanent ban stays listed for as long as it lasts), with `cubby admin bans` from your agent, or on the server:
 
 | Command | Does |
 | --- | --- |

@@ -5,7 +5,7 @@
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync, existsSync, cpSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync, existsSync, cpSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -95,10 +95,12 @@ esac
 exit 0
 `);
   writeFileSync(join(fakebin, 'systemctl'), '#!/bin/bash\necho "systemctl $*" >> "$STATE/log"\n');
+  // ipset: missing until a package manager "installs" it (FAKE_NO_IPSET: it can't).
+  writeFileSync(join(fakebin, 'ipset'), '#!/bin/bash\n[[ -f "$STATE/ipset-installed" ]] || exit 127\necho "ipset v7.17"\n');
   for (const pm of ['apt-get', 'dnf']) {
-    writeFileSync(join(fakebin, pm), `#!/bin/bash\necho "${pm} $*" >> "$STATE/log"\n[[ "$FAKE_PM" == ${pm} && "$*" == *fail2ban* ]] && touch "$STATE/f2b-installed"\nexit 0\n`);
+    writeFileSync(join(fakebin, pm), `#!/bin/bash\necho "${pm} $*" >> "$STATE/log"\n[[ "$FAKE_PM" == ${pm} && "$*" == *fail2ban* ]] && touch "$STATE/f2b-installed"\n[[ "$FAKE_PM" == ${pm} && -z "$FAKE_NO_IPSET" && "$*" == *ipset* ]] && touch "$STATE/ipset-installed"\nexit 0\n`);
   }
-  for (const tool of ['docker', 'curl', 'ss', 'uname', 'fail2ban-client', 'systemctl', 'apt-get', 'dnf']) chmodSync(join(fakebin, tool), 0o755);
+  for (const tool of ['docker', 'curl', 'ss', 'uname', 'fail2ban-client', 'systemctl', 'ipset', 'apt-get', 'dnf']) chmodSync(join(fakebin, tool), 0o755);
 });
 
 function install(ref, channel, runningVersion) {
@@ -130,7 +132,7 @@ function baseEnv(home, state) {
 function cubbyServer(inst, args, extraEnv = {}) {
   const env = { ...inst.env, ...extraEnv };
   // Safety: these tests must never reach a real docker or curl (a real `cubby` container may be running).
-  for (const tool of ['docker', 'curl', 'ss', 'fail2ban-client', 'systemctl', 'apt-get', 'dnf']) {
+  for (const tool of ['docker', 'curl', 'ss', 'fail2ban-client', 'systemctl', 'ipset', 'apt-get', 'dnf']) {
     const found = spawnSync('bash', ['-c', `command -v ${tool}`], { env, encoding: 'utf8' }).stdout.trim();
     assert.equal(found, join(fakebin, tool), `${tool} must resolve to the fake`);
   }
@@ -338,7 +340,7 @@ describe('install.sh ports', () => {
     let tty = join(home, 'no-tty');
     if (answers !== null) writeFileSync((tty = join(home, 'tty')), answers);
     const env = { ...baseEnv(home, state), CUBBY_HOME: join(home, 'cubby'), CUBBY_TTY: tty, ...extraEnv };
-    for (const tool of ['docker', 'curl', 'ss', 'uname', 'fail2ban-client', 'systemctl', 'apt-get', 'dnf']) {
+    for (const tool of ['docker', 'curl', 'ss', 'uname', 'fail2ban-client', 'systemctl', 'ipset', 'apt-get', 'dnf']) {
       assert.equal(spawnSync('bash', ['-c', `command -v ${tool}`], { env, encoding: 'utf8' }).stdout.trim(), join(fakebin, tool));
     }
     const r = spawnSync('bash', [join(ROOT, 'install.sh'), '--admin-email', 'admin@example.com', '--admin-password-file', join(home, 'pw'), '--name', 'Test', ...args], { env, encoding: 'utf8' });
@@ -477,6 +479,43 @@ describe('cubby-server fail2ban', () => {
     const run = dockerRun(inst);
     assert.match(run, new RegExp(`-v ${host(inst, 'var/log/cubby')}:/var/log/cubby -e CUBBY_ACCESS_LOG=/var/log/cubby/access\\.log`));
     assert.match(run, new RegExp(`-v ${host(inst, 'var/lib/cubby/fail2ban')}:/var/lib/cubby/fail2ban -e CUBBY_FAIL2BAN_DIR=/var/lib/cubby/fail2ban`));
+  });
+
+  // One jail's settings from jail.d/cubby.conf, as { key: value } (continuation lines joined).
+  const jailSection = (inst, name) => {
+    const text = readFileSync(host(inst, 'etc/fail2ban/jail.d/cubby.conf'), 'utf8');
+    const body = text.split(/^\[/m).find((s) => s.startsWith(`${name}]`)) ?? '';
+    return Object.fromEntries(body.replace(/\n\s+/g, ' ').split('\n').map((l) => l.match(/^([\w.]+)\s*=\s*(.*)$/)).filter(Boolean).map((m) => [m[1], m[2]]));
+  };
+
+  test('scanners are banned for good, in an ipset; login floods for a while, doubling', () => {
+    const inst = install('v0.1.1', 'release', '0.1.1');
+    assert.equal(cubbyServer(inst, ['fail2ban', 'enable'], running).status, 0);
+    assert.match(log(inst), /apt-get install -y -qq fail2ban ipset/);
+    const probe = jailSection(inst, 'cubby-probe');
+    assert.equal(probe.bantime, '-1');
+    assert.equal(probe.banaction, 'iptables-ipset-proto6');
+    assert.equal(probe.chain, 'DOCKER-USER');
+    const limit = jailSection(inst, 'cubby-ratelimit');
+    assert.equal(limit.bantime, undefined, "fail2ban's default, 10 minutes");
+    assert.equal(limit['bantime.increment'], 'true');
+    assert.equal(limit.banaction, 'iptables-multiport');
+  });
+
+  test('upgrade installs ipset where an older version enabled fail2ban without it; if it can\'t, bans stay permanent in plain rules', () => {
+    const inst = install('v0.1.0', 'release', '0.1.0');
+    assert.equal(cubbyServer(inst, ['fail2ban', 'enable']).status, 0);
+    rmSync(join(inst.state, 'ipset-installed'));
+    writeFileSync(join(inst.state, 'log'), '');
+    assert.equal(cubbyServer(inst, ['upgrade', '--no-backup']).status, 0);
+    assert.match(log(inst), /apt-get install -y -qq fail2ban ipset/);
+    assert.equal(jailSection(inst, 'cubby-probe').banaction, 'iptables-ipset-proto6');
+
+    const without = install('v0.1.0', 'release', '0.1.0');
+    assert.equal(cubbyServer(without, ['fail2ban', 'enable'], { FAKE_NO_IPSET: '1' }).status, 0);
+    const probe = jailSection(without, 'cubby-probe');
+    assert.equal(probe.banaction, 'iptables-multiport');
+    assert.equal(probe.bantime, '-1');
   });
 
   test('Debian without /var/log/auth.log: the stock sshd jail reads the journal, or fail2ban would not start', () => {

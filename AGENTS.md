@@ -60,7 +60,9 @@ Traps that aren't obvious from reading the code. For workflow (branches, commits
   `fail2ban-regex` against real Caddy lines, not only the unit test.
 - Caddy writes the access log only when `CUBBY_ACCESS_LOG` is set (fail2ban on), without headers or `?token=`, kept
   7 days; `disable` deletes it. Don't log more fields or keep it longer. Besides it, raw IPs are kept only in
-  `cubby_bans` (banned addresses, 90 days, pruned nightly).
+  `cubby_bans` (banned addresses, 90 days, pruned nightly). `cubby-probe` bans are permanent (`bantime = -1`): their
+  records stay while in force, since the Security tab lists and lifts bans from them. The prune and the list both
+  filter on that; keep them in step.
 
 ## Schema changes must never lose data
 
